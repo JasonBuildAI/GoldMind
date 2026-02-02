@@ -582,8 +582,8 @@ This project is licensed under the [MIT License](./LICENSE).
 
 If you have any questions, suggestions, or collaboration inquiries, please feel free to contact us:
 
-- 📮 **Email**: noreply@example.com
-- 📮 **QQ**: noreply@example.com
+- 📮 **Gmail**: noreply@example.com
+- 📮 **QQ Mail**: noreply@example.com
 
 ---
 
