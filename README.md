@@ -172,12 +172,13 @@
 
 ## 🚀 快速开始
 
-### 环境要求
+### 前置要求
 
-- Python 3.11+
-- Node.js 18+
-- MySQL 8.0
-- Docker (可选)
+| 工具 | 版本要求 | 说明 | 安装检查 |
+|------|----------|------|----------|
+| Node.js | 18+ | 前端运行环境，包含 npm | `node -v` |
+| Python | 3.11 - 3.12 | 后端运行环境 | `python --version` |
+| MySQL | 8.0+ | 数据存储 | `mysql --version` |
 
 ### 方式一：Docker部署（推荐）
 
@@ -200,42 +201,103 @@ docker-compose up -d
 
 ### 方式二：本地开发
 
-**1. 后端启动**
+#### 1. 配置环境变量
+
+```bash
+# 复制示例配置文件
+cd backend
+cp .env.example .env
+
+# 编辑 .env 文件，填入必要的 API 密钥
+```
+
+**必需的环境变量：**
+
+```bash
+# ============================================
+# 数据库配置
+# ============================================
+# MySQL数据库连接URL
+DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
+
+# ============================================
+# AI API 密钥配置
+# ============================================
+# 智谱AI (Zhipu AI) - 用于实时搜索、新闻分析、机构预测
+# 获取地址: https://open.bigmodel.cn/
+ZHIPU_API_KEY=your_zhipu_api_key_here
+
+# DeepSeek - 用于深度推理、投资建议生成
+# 获取地址: https://www.deepseek.com/
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+```
+
+#### 2. 安装依赖
+
+**后端依赖：**
 
 ```bash
 cd backend
 
-# 创建虚拟环境
+# 创建虚拟环境（推荐）
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 激活虚拟环境
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
 
 # 安装依赖
 pip install -r requirements.txt
-
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入数据库和API配置
-
-# 初始化数据库
-python init_db.py
-
-# 启动服务
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**2. 前端启动**
+**前端依赖：**
 
 ```bash
 cd app
 
 # 安装依赖
 npm install
-
-# 启动开发服务器
-npm run dev
-
-# 访问 http://localhost:5173
 ```
+
+#### 3. 初始化数据库
+
+```bash
+cd backend
+
+# 确保MySQL服务已启动，并创建数据库
+# 登录MySQL执行: CREATE DATABASE gold_analysis CHARACTER SET utf8mb4;
+
+# 初始化数据表
+python init_db.py
+```
+
+#### 4. 启动服务
+
+**同时启动前后端（在项目根目录执行）：**
+
+```bash
+# Windows PowerShell
+.\start_all.ps1
+
+# 或者分别启动
+```
+
+**单独启动：**
+
+```bash
+# 后端（在 backend 目录）
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# 前端（在 app 目录）
+npm run dev
+```
+
+**服务地址：**
+- 前端: http://localhost:5173
+- 后端API: http://localhost:8000
+- API文档: http://localhost:8000/docs
 
 ---
 
