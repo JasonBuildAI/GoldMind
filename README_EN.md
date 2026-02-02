@@ -578,6 +578,15 @@ This project is licensed under the [MIT License](./LICENSE).
 
 ---
 
+## 📧 Contact Author
+
+If you have any questions, suggestions, or collaboration inquiries, please feel free to contact us:
+
+- 📮 **Email**: noreply@example.com
+- 📮 **QQ**: noreply@example.com
+
+---
+
 <p align="center">
   <strong>GoldMind</strong> - Empowering Investment Decisions with Intelligence
 </p>
