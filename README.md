@@ -32,7 +32,8 @@
 
 <p align="center">
   <a href="#-快速开始">快速开始</a> •
-  <a href="#-文档">文档</a> •
+  <a href="#-项目概述">项目概述</a> •
+  <a href="#-agent原理">Agent原理</a> •
   <a href="#-贡献">贡献</a>
 </p>
 
