@@ -175,11 +175,36 @@ npm install
 ```bash
 cd backend
 
-# 确保MySQL服务已启动，并创建数据库
-# 登录MySQL执行: CREATE DATABASE gold_analysis CHARACTER SET utf8mb4;
+# 确保MySQL服务已启动
 
-# 初始化数据表
+# 初始化数据库（自动创建数据库、数据表，并填充2025年至今的历史数据）
 python init_db.py
+```
+
+**数据初始化说明：**
+
+`init_db.py` 会自动完成以下操作：
+1. 创建数据库 `gold_analysis`（如果不存在）
+2. 创建所有数据表结构
+3. **自动获取并填充历史数据**（2025年1月1日至今）
+   - 黄金价格数据：开盘价、最高价、最低价、收盘价
+   - 美元指数数据：开盘价、最高价、最低价、收盘价
+
+**数据源优先级（国内优先）：**
+- 黄金数据：新浪财经 → 东方财富 → Yahoo Finance
+- 美元指数：新浪财经 → 东方财富 → Yahoo Finance
+
+> 💡 **提示**：脚本会自动尝试多个数据源，确保国内用户也能成功获取数据。如果所有数据源都失败，您可以稍后再运行 `python seed_data.py` 重试。
+
+**跳过数据填充（仅创建表结构）：**
+```bash
+SKIP_SEED=1 python init_db.py
+```
+
+**手动填充数据：**
+```bash
+# 如果初始化时跳过数据填充，或需要更新数据
+python seed_data.py
 ```
 
 #### 4. 启动服务
@@ -256,9 +281,18 @@ docker-compose up -d --build
 # 查看服务状态
 docker-compose ps
 
-# 查看日志
-docker-compose logs -f
+# 查看日志（观察数据初始化进度）
+docker-compose logs -f backend
 ```
+
+**首次启动说明：**
+
+Docker 部署会自动完成以下初始化：
+1. ✅ 创建 MySQL 数据库和数据表
+2. ✅ **自动获取并填充历史数据**（2025年至今的黄金和美元指数数据）
+3. ✅ 启动后端服务
+
+数据获取过程可能需要 1-3 分钟，请观察日志等待初始化完成。
 
 #### 3. 访问应用
 
@@ -266,6 +300,8 @@ docker-compose logs -f
 - 前端: http://localhost
 - 后端API: http://localhost:8000
 - API文档: http://localhost:8000/docs
+
+> 💡 **提示**：首次访问时，如果看到 "数据加载中"，说明后端仍在初始化数据，请稍等片刻刷新页面。
 
 #### 4. 常用命令
 
@@ -360,7 +396,7 @@ docker exec -it goldmind_mysql mysql -uroot -p
 
 ---
 
-## �📚 文档
+## �� 文档
 
 | 文档 | 说明 | 链接 |
 |------|------|------|
