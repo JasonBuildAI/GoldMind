@@ -242,6 +242,8 @@ npm run dev
 | Docker | 20.10+ | 容器化平台 | `docker --version` |
 | Docker Compose | 2.0+ | 多容器编排 | `docker compose version` |
 
+> ⚠️ **网络要求**：需要能够访问 Docker Hub 下载镜像。国内用户可能需要配置 VPN/代理。
+
 #### 1. 配置环境变量
 
 ```bash
@@ -272,6 +274,8 @@ ZHIPU_API_KEY=your_zhipu_api_key_here
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 ```
 
+> 💡 **注意**：`docker-compose.yml` 已配置自动加载 `backend/.env` 文件，无需手动设置环境变量。
+
 #### 2. 启动服务
 
 ```bash
@@ -284,6 +288,19 @@ docker-compose ps
 # 查看日志（观察数据初始化进度）
 docker-compose logs -f backend
 ```
+
+**国内用户网络配置（如无法下载镜像）：**
+
+如果使用 Clash/V2Ray 等代理工具：
+
+1. 开启系统代理或 TUN 模式
+2. 在 Docker Desktop → Settings → Resources → Proxies 中配置：
+   - HTTP Proxy: `http://127.0.0.1:7890`
+   - HTTPS Proxy: `http://127.0.0.1:7890`
+3. Apply & Restart
+4. 重试 `docker-compose up -d --build`
+
+> ⚠️ 如果网络问题无法解决，建议使用**本地开发方式**（方式一）。
 
 **首次启动说明：**
 

@@ -41,9 +41,11 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    env_file:
+      - ./backend/.env
     environment:
-      # 数据库配置
-      - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://root:goldmind123@mysql:3306/gold_analysis}
+      # 数据库配置（覆盖.env中的配置）
+      - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-goldmind123}@mysql:3306/gold_analysis
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_USER=root
