@@ -68,6 +68,8 @@ Through technological innovation, we hope to:
 
 > 🤝 **We look forward to your participation!** Whether it's code contributions, feature suggestions, or usage feedback, it will become an important force in driving the project forward.
 
+If this project has been helpful or inspiring to you, a ⭐ **Star** is the best affirmation for us!
+
 ---
 
 ## 📸 System Showcase
