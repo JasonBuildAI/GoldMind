@@ -1,26 +1,33 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/GoldMind-AI%20Gold%20Analysis-gold?style=for-the-badge&logo=chart-line&logoColor=white" alt="GoldMind">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/f229919f32aad75118ed9453b1085bc5.png" alt="GoldMind Logo" width="600">
 </p>
 
 <h1 align="center">🥇 GoldMind</h1>
 
 <p align="center">
-  <strong>AI驱动的黄金市场智能分析平台</strong>
+  <strong>基于多智能体协作的下一代黄金市场智能分析引擎</strong><br>
+  <em>A Next-Generation Multi-Agent Gold Market Intelligence Analysis Engine</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/JasonBuildAI/GoldMind/stargazers">
-    <img src="https://img.shields.io/github/stars/JasonBuildAI/GoldMind?style=social" alt="GitHub Stars">
-  </a>
-  <a href="https://github.com/JasonBuildAI/GoldMind/network/members">
-    <img src="https://img.shields.io/github/forks/JasonBuildAI/GoldMind?style=social" alt="GitHub Forks">
-  </a>
-  <a href="https://github.com/JasonBuildAI/GoldMind/issues">
-    <img src="https://img.shields.io/github/issues/JasonBuildAI/GoldMind" alt="GitHub Issues">
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/github/license/JasonBuildAI/GoldMind" alt="License">
-  </a>
+  <img src="https://img.shields.io/github/stars/JasonBuildAI/GoldMind?color=blue&label=stars&style=flat-square" alt="Stars">
+  <img src="https://img.shields.io/github/watchers/JasonBuildAI/GoldMind?color=green&label=watchers&style=flat-square" alt="Watchers">
+  <img src="https://img.shields.io/github/forks/JasonBuildAI/GoldMind?color=orange&label=forks&style=flat-square" alt="Forks">
+  <img src="https://img.shields.io/github/issues/JasonBuildAI/GoldMind?color=red&label=issues&style=flat-square" alt="Issues">
+  <img src="https://img.shields.io/github/issues-pr/JasonBuildAI/GoldMind?color=purple&label=pull%20requests&style=flat-square" alt="Pull Requests">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/Ask%20DeepWiki-智能问答-blue?style=flat-square&logo=bookstack" alt="DeepWiki">
+  <img src="https://img.shields.io/badge/Docker-部署就绪-2496ED?style=flat-square&logo=docker" alt="Docker">
+  <img src="https://img.shields.io/badge/version-v1.0.0-brightgreen?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
+  <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react" alt="React">
+</p>
+
+<p align="center">
+  <a href="./README_EN.md">English</a> | <strong>中文文档</strong>
 </p>
 
 <p align="center">
