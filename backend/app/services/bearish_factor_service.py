@@ -11,6 +11,7 @@ from functools import partial
 from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
+from app.services.cache_manager import CacheManager
 from app.services.zhipu_service import get_zhipu_service
 import json
 
@@ -510,6 +511,7 @@ class BearishFactorService:
         self.db = db
         self.analyzer = BearishFactorAnalyzer()
         self._cache_key = "bearish_factors"
+        self.cache = CacheManager("bearish_factors", ttl=7200)  # 2小时缓存
 
     def _get_from_memory_cache(self) -> Optional[Dict[str, Any]]:
         """从内存缓存获取数据"""
