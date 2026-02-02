@@ -10,16 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/stars/JasonBuildAI/GoldMind?color=blue&label=stars&style=flat-square" alt="Stars">
-  <img src="https://img.shields.io/github/watchers/JasonBuildAI/GoldMind?color=green&label=watchers&style=flat-square" alt="Watchers">
-  <img src="https://img.shields.io/github/forks/JasonBuildAI/GoldMind?color=orange&label=forks&style=flat-square" alt="Forks">
-  <img src="https://img.shields.io/github/issues/JasonBuildAI/GoldMind?color=red&label=issues&style=flat-square" alt="Issues">
-  <img src="https://img.shields.io/github/issues-pr/JasonBuildAI/GoldMind?color=purple&label=pull%20requests&style=flat-square" alt="Pull Requests">
-</p>
-
-<p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
-  <img src="https://img.shields.io/badge/Ask%20DeepWiki-智能问答-blue?style=flat-square&logo=bookstack" alt="DeepWiki">
   <img src="https://img.shields.io/badge/Docker-部署就绪-2496ED?style=flat-square&logo=docker" alt="Docker">
   <img src="https://img.shields.io/badge/version-v1.0.0-brightgreen?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
