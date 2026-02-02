@@ -449,6 +449,15 @@ docker exec -it goldmind_mysql mysql -uroot -p
 
 ---
 
+## 📧 联系作者
+
+如果您有任何问题、建议或合作意向，欢迎通过以下方式联系我们：
+
+- 📮 **邮箱**：JasonBuildAI@gmail.com
+- 📮 **QQ**：3310145612@qq.com
+
+---
+
 <p align="center">
   <sub>Built with ❤️ by <a href="https://github.com/JasonBuildAI">JasonBuildAI</a></sub>
 </p>
