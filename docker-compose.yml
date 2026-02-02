@@ -42,9 +42,17 @@ services:
       mysql:
         condition: service_healthy
     environment:
+      # 数据库配置
       - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://root:goldmind123@mysql:3306/gold_analysis}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=${MYSQL_ROOT_PASSWORD:-goldmind123}
+      - DB_NAME=gold_analysis
+      # AI API 密钥
       - ZHIPU_API_KEY=${ZHIPU_API_KEY}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      # 应用配置
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     ports:
