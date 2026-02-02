@@ -1,0 +1,81 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache
+.cache/
+*.cache
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Large data files (keep structure, ignore content)
+# Uncomment if you want to ignore large data files
+# *.csv
+# *.xlsx
+# *.parquet
+
+# Backup files
+*_backup.py
+*_backup.json
+*_backup.*
+
+# Local development files
+*.local
+local_settings.py
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Misc
+*.pid
+*.seed
+*.pid.lock

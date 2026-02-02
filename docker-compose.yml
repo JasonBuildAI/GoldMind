@@ -1,0 +1,112 @@
+# GoldMind - 完整部署配置
+# 一键启动：前端 + 后端 + 数据库
+
+version: '3.8'
+
+services:
+  # ============================================
+  # MySQL 数据库服务
+  # ============================================
+  mysql:
+    image: mysql:8.0
+    container_name: goldmind_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-goldmind123}
+      MYSQL_DATABASE: gold_analysis
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - goldmind_network
+
+  # ============================================
+  # FastAPI 后端服务
+  # ============================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: goldmind_backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://root:goldmind123@mysql:3306/gold_analysis}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_cache:/app/cache
+      - backend_logs:/app/logs
+    networks:
+      - goldmind_network
+
+  # ============================================
+  # React 前端服务 (Nginx)
+  # ============================================
+  frontend:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: goldmind_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://backend:8000
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - goldmind_network
+
+  # ============================================
+  # Nginx 反向代理 (可选，用于生产环境)
+  # ============================================
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: goldmind_nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf
+  #     - ./ssl:/etc/nginx/ssl
+  #   depends_on:
+  #     - frontend
+  #     - backend
+  #   networks:
+  #     - goldmind_network
+
+# ============================================
+# 数据卷定义
+# ============================================
+volumes:
+  mysql_data:
+    driver: local
+  backend_cache:
+    driver: local
+  backend_logs:
+    driver: local
+
+# ============================================
+# 网络定义
+# ============================================
+networks:
+  goldmind_network:
+    driver: bridge
