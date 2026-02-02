@@ -98,6 +98,16 @@
 
 ---
 
+## 🔄 工作流程
+
+1. **数据采集层**：实时金价API抓取 & 新闻舆情Web搜索 & 机构研报智能检索
+2. **多Agent并行分析**：Market Analysis Agent技术面量化 & News Intelligence Agent情绪解析 & Institution Research Agent观点追踪
+3. **ReAct推理决策**：各Agent基于RAG检索历史数据 → Thought分析 → Action工具调用 → Observation整合 → Final Answer输出
+4. **结果融合引擎**：DeepSeek-V3接收四维结构化数据 → 多源信息交叉验证 → 逻辑一致性校验 → 生成综合投资判断
+5. **智能报告生成**：Investment Advisory Agent整合所有分析结果 → 生成策略建议与风险提示 → 结构化JSON响应前端可视化
+
+---
+
 ## 🚀 快速开始
 
 ### 环境要求
