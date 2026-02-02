@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/f229919f32aad75118ed9453b1085bc5.png" alt="GoldMind Logo" width="600">
+  <img src="D:\App\AgentProjects\Kimi_Agent_gold\docs\images\6779ac1d5f10d9ad61b395a725e21bbd.png" alt="GoldMind Logo" width="600">
 </p>
 
 <h1 align="center">🥇 GoldMind</h1>
@@ -42,24 +42,26 @@
 
 ## ⚡ 项目概述
 
-**GoldMind** 是一款基于多智能体协作技术的下一代黄金市场智能分析引擎。通过构建高保真的数字孪生市场，将全球黄金市场的实时行情、宏观经济信号、地缘政治事件与舆情情绪等多维数据注入「智能体社会」——在此空间内，**Market Agent**（市场分析器）、**News Agent**（舆情解析器）、**Insight Agent**（趋势洞察器）与**Advisor Agent**（策略建议器）四大专业智能体进行链式思维碰撞与协同推演，突破单一模型的认知局限，生成具备深度、准度与多维视角的投资决策支持。
+**GoldMind** 是一个基于 **LangChain Multi-Agent 架构** 的黄金市场智能分析平台，融合 **ReAct 推理框架**、**RAG（检索增强生成）** 与 **多模型协作** 技术，为投资者提供深度市场洞察。
 
-> 你只需：关注黄金市场动态，系统7×24小时自动采集全球数据并实时分析  
-> GoldMind 将返回：一份融合技术面、基本面、情绪面的综合分析报告，以及基于多智能体共识的投资策略建议
+系统基于 **GLM-4-Plus**（智谱AI）与 **DeepSeek-V3** 双引擎驱动，通过专用 Agent 分工协作：**Market Analysis Agent** 负责技术面量化分析，**News Intelligence Agent** 基于实时搜索进行舆情解析，**Institution Research Agent** 追踪主流机构观点，**Investment Advisory Agent** 融合多源信息生成策略建议。各 Agent 通过结构化输出实现结果融合，形成对黄金市场的全景认知。
 
-### 🎯 核心能力
+> 你只需：关注黄金市场动态，系统自动采集数据并分析  
+> GoldMind 将返回：融合价格走势、市场情绪、机构观点的综合分析报告
 
-**🚀 多智能体协同分析引擎**  
-系统不仅依赖单一LLM进行分析，更融合了多智能体协作架构与深度学习模型。通过Market Agent进行技术面量化分析、News Agent进行舆情情绪识别、Insight Agent进行趋势推演、Advisor Agent进行策略生成——多智能体在独立的「论坛」环境中进行思维碰撞与辩论，由Orchestrator Engine协调并引导，确保分析结果的深度、准度与多维视角。
+### 🎯 核心技术架构
 
-**🌐 全域数据感知与实时处理**  
-系统配备分布式数据采集集群，可对伦敦金、纽约金、上海金等全球主要市场的实时行情进行毫秒级捕获；同时整合宏观经济指标、央行政策、地缘政治事件等10+维度数据源进行7×24小时监控。具备强大的多模态解析能力，能深度处理新闻文本、社交媒体情绪与市场交易信号。
+**🚀 LangChain Multi-Agent 框架**  
+基于 LangChain 构建的模块化 Agent 系统，每个 Agent 封装独立的分析逻辑与工具链。通过 `BaseAgent` 抽象基类统一 LLM 调用接口，支持 DeepSeek 与智谱AI 双模型后端灵活切换。Agent 间通过结构化数据传递实现协作，避免单点失效，提升系统鲁棒性。
 
-**🧠 智能体「论坛」协作机制**  
-系统的技术核心之一。每个Agent在独立的「论坛」环境中进行链式思维碰撞与辩论，由Forum Engine监控并引导。这种机制避免了单一模型的思维局限与交流导致的同质化，催生出更高质量的集体智能——让AI像专业投研团队一样进行头脑风暴与交叉验证。
+**🌐 GLM-4-Plus 实时搜索增强**  
+集成智谱AI **GLM-4-Plus** 模型的 **Web Search** 能力，实现对机构研报、财经新闻、市场动态的实时检索与理解。相比传统静态数据源，系统能够捕捉最新市场变化，为分析提供时效性信息支撑。
 
-**📊 轻量化与高扩展性框架**  
-基于纯Python模块化设计，实现轻量化、一键式部署。代码结构清晰，开发者可轻松集成自定义数据源、分析模型与业务逻辑，实现平台的快速扩展与深度定制。支持从个人投资者到机构级部署的弹性架构。
+**🧠 DeepSeek 深度推理与多 Agent 融合**  
+采用 **DeepSeek-V3** 作为核心推理引擎，结合其强大的长文本理解与逻辑推理能力，对多 Agent 输出进行融合分析。通过设计特定的融合 Prompt，将技术面、基本面、情绪面、机构观点四维信息整合，生成具备逻辑一致性的投资判断。
+
+**📊 ReAct 推理 + RAG 检索增强**  
+在 Agent 内部实现 **ReAct（Reasoning + Acting）** 推理模式：Thought（分析当前状态）→ Action（调用工具获取数据）→ Observation（整合观察结果）→ Final Answer（输出结论）。结合 RAG 技术从本地数据库检索历史价格、新闻舆情等上下文信息，增强 LLM 的事实性与准确性。
 
 ---
 
