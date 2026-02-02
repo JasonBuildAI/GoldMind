@@ -180,26 +180,7 @@
 | Python | 3.11 - 3.12 | 后端运行环境 | `python --version` |
 | MySQL | 8.0+ | 数据存储 | `mysql --version` |
 
-### 方式一：Docker部署（推荐）
-
-```bash
-# 1. 克隆仓库
-git clone https://github.com/JasonBuildAI/GoldMind.git
-cd GoldMind
-
-# 2. 配置环境变量
-cp backend/.env.example backend/.env
-# 编辑 backend/.env 填入你的API密钥
-
-# 3. 启动服务
-docker-compose up -d
-
-# 4. 访问应用
-# 前端: http://localhost:5173
-# API文档: http://localhost:8000/docs
-```
-
-### 方式二：本地开发
+### 方式一：本地开发（推荐）
 
 #### 1. 配置环境变量
 
@@ -298,6 +279,84 @@ npm run dev
 - 前端: http://localhost:5173
 - 后端API: http://localhost:8000
 - API文档: http://localhost:8000/docs
+
+### 方式二：Docker部署
+
+#### 前置要求
+
+| 工具 | 版本要求 | 说明 | 安装检查 |
+|------|----------|------|----------|
+| Docker | 20.10+ | 容器化平台 | `docker --version` |
+| Docker Compose | 2.0+ | 多容器编排 | `docker compose version` |
+
+#### 1. 配置环境变量
+
+```bash
+# 复制示例配置文件
+cp backend/.env.example backend/.env
+
+# 编辑 .env 文件，填入必要的 API 密钥
+```
+
+**必需的环境变量：**
+
+```bash
+# ============================================
+# 数据库配置（Docker内部使用）
+# ============================================
+MYSQL_ROOT_PASSWORD=your_secure_password
+DATABASE_URL=mysql+pymysql://root:your_secure_password@mysql:3306/gold_analysis
+
+# ============================================
+# AI API 密钥配置
+# ============================================
+# 智谱AI (Zhipu AI) - 用于实时搜索、新闻分析、机构预测
+# 获取地址: https://open.bigmodel.cn/
+ZHIPU_API_KEY=your_zhipu_api_key_here
+
+# DeepSeek - 用于深度推理、投资建议生成
+# 获取地址: https://www.deepseek.com/
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+```
+
+#### 2. 启动服务
+
+```bash
+# 构建并启动所有服务（前端 + 后端 + 数据库）
+docker-compose up -d --build
+
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f
+```
+
+#### 3. 访问应用
+
+**服务地址：**
+- 前端: http://localhost
+- 后端API: http://localhost:8000
+- API文档: http://localhost:8000/docs
+
+#### 4. 常用命令
+
+```bash
+# 停止服务
+docker-compose down
+
+# 停止并删除数据卷（清空数据库）
+docker-compose down -v
+
+# 重启服务
+docker-compose restart
+
+# 进入后端容器
+docker exec -it goldmind_backend /bin/bash
+
+# 进入数据库容器
+docker exec -it goldmind_mysql mysql -uroot -p
+```
 
 ---
 
