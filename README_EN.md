@@ -27,7 +27,8 @@
   <a href="#-agent-principles">Agent Principles</a> •
   <a href="#-system-showcase">System Showcase</a> •
   <a href="#-workflow">Workflow</a> •
-  <a href="#-contributing">Contributing</a>
+  <a href="#-contributing">Contributing</a> •
+  <a href="#-contact-author">Contact Author</a>
 </p>
 
 ---
