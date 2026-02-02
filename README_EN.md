@@ -57,6 +57,19 @@ Implements the **ReAct (Reasoning + Acting)** reasoning pattern within Agents: T
 
 ---
 
+## 🌟 Our Vision
+
+**GoldMind** is committed to building a **real and usable AI Agent international gold market data analysis and price prediction platform** through community collaboration.
+
+Through technological innovation, we hope to:
+- 📉 **Reduce information asymmetry** - Enable every investor to access professional-grade market analysis
+- 🛡️ **Enhance risk resistance** - Provide multi-dimensional risk assessment and early warnings
+- 💡 **Practical investment advice** - Based on data and logic, provide actionable investment strategies
+
+> 🤝 **We look forward to your participation!** Whether it's code contributions, feature suggestions, or usage feedback, it will become an important force in driving the project forward.
+
+---
+
 ## 📸 System Showcase
 
 ### Dashboard
