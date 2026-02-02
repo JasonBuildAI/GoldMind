@@ -396,16 +396,6 @@ docker exec -it goldmind_mysql mysql -uroot -p
 
 ---
 
-## �� 文档
-
-| 文档 | 说明 | 链接 |
-|------|------|------|
-| API文档 | 接口规范与示例 | [docs/API.md](./docs/API.md) |
-| 架构设计 | 系统架构详解 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) |
-| 贡献指南 | 如何参与项目 | [CONTRIBUTING.md](./CONTRIBUTING.md) |
-
----
-
 ## 🤝 贡献
 
 我们欢迎所有形式的贡献！请查看我们的[贡献指南](./CONTRIBUTING.md)了解如何参与项目。
