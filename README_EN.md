@@ -582,8 +582,8 @@ This project is licensed under the [MIT License](./LICENSE).
 
 If you have any questions, suggestions, or collaboration inquiries, please feel free to contact us:
 
-- 📮 **Email**: JasonBuildAI@gmail.com
-- 📮 **QQ**: 3310145612@qq.com
+- 📮 **Gmail**: JasonBuildAI@gmail.com
+- 📮 **QQ Mail**: 3310145612@qq.com
 
 ---
 
