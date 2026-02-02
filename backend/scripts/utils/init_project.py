@@ -169,7 +169,7 @@ class Settings(BaseSettings):
     
     # LLM 配置
     LLM_PROVIDER: str = "deepseek"
-    DEEPSEEK_API_KEY: str = "sk-d655427bbfb24d6aa3b074a70d95857c"
+    DEEPSEEK_API_KEY: str = "your_deepseek_api_key_here"
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
     
     # 应用配置
