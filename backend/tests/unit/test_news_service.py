@@ -2,10 +2,15 @@
 
 重点是钉住三个曾经存在的静默故障：
 1. 抓取端写 `link`/`summary`，存储端读 `url`/`content` —— URL 与正文被丢弃。
-2. `published_at` 塞 RSS 原始字符串进 DateTime 列。
+2. `published_at` 塞 RSS 原始字符串进 DateTime 列；
+   后来又发现直接 `datetime(*parsed[:6])` 存的是 **UTC 墙上时间**，
+   与本地时间混用会把「最近24小时」的窗口撑到约 32 小时。
 3. 内置「RSS 源」其实是 HTML 页面，永远返回 0 条目。
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from app.config import settings
 
 import pytest
 
@@ -14,6 +19,14 @@ from app.services import news_service
 from app.services.news_service import NewsService, parse_rss_sources
 
 FEED_TIME = (2026, 2, 3, 10, 30, 0, 0, 0, 0)
+
+# RSS 的 pubDate 是 GMT；库里存的是**部署时区**的本地时间。
+# 见 tests/unit/test_news_timezone.py 与 news_service.to_local_naive。
+EXPECTED_PUBLISHED = (
+    datetime(2026, 2, 3, 10, 30, tzinfo=timezone.utc)
+    .astimezone(ZoneInfo(settings.SCHEDULER_TIMEZONE))
+    .replace(tzinfo=None)
+)
 
 
 class _FakeFeed:
@@ -95,7 +108,9 @@ def test_fetch_from_rss_parses_published_into_datetime(db_session, stub_feed):
     item = service.fetch_from_rss("https://feed.invalid/rss", "测试源")[0]
 
     assert isinstance(item["published_at"], datetime)
-    assert item["published_at"] == datetime(2026, 2, 3, 10, 30, 0)
+    # RSS 报的是 GMT，落库前要换算成本地时间（不再直接塞 UTC 墙上时间）
+    assert item["published_at"] == EXPECTED_PUBLISHED
+    assert item["published_at"] != datetime(2026, 2, 3, 10, 30, 0)
 
 
 @pytest.mark.unit
@@ -143,7 +158,7 @@ def test_fetch_then_save_roundtrip_persists_url_and_content(db_session, stub_fee
     assert saved.url == "https://example.invalid/a"
     assert saved.content == "正文摘要"
     assert saved.source == "测试源"
-    assert saved.published_at == datetime(2026, 2, 3, 10, 30, 0)
+    assert saved.published_at == EXPECTED_PUBLISHED
     assert saved.sentiment == SentimentType.NEUTRAL
 
 

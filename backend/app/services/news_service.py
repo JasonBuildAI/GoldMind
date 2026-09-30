@@ -1,5 +1,5 @@
 """新闻服务"""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import feedparser
@@ -21,6 +21,35 @@ DEFAULT_RSS_SOURCES = (
     "CNBC Markets|https://www.cnbc.com/id/100003114/device/rss/rss.html,"
     "WSJ Markets|https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
 )
+
+
+def to_local_naive(parsed) -> Optional[datetime]:
+    """把 feedparser 的时间结构转成**部署时区的本地 naive 时间**。
+
+    feedparser 的 ``published_parsed`` 是 **UTC** 的 ``time.struct_time``。
+    原实现直接 ``datetime(*parsed[:6])`` —— 那得到的是「UTC 的墙上时间」，
+    而库里其他地方（``save_news`` 的兜底、``get_recent_news`` 的窗口）
+    用的都是本地时间。两者相差一个时区偏移：
+
+        东八区部署下，一条刚发布的新闻被存成「8 小时前」，
+        「最近 24 小时」的窗口实际覆盖到约 32 小时。
+
+    正确做法是先按 UTC 解释，再转到 ``SCHEDULER_TIMEZONE``，
+    最后去掉 tzinfo（库里存的是 naive 本地时间）。
+    """
+    if not parsed:
+        return None
+    try:
+        moment = datetime(*parsed[:6], tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+
+        moment = moment.astimezone(ZoneInfo(settings.SCHEDULER_TIMEZONE))
+    except Exception:       # 缺 tzdata 时退回 UTC，至少不比原来更差
+        logger.warning(f"[新闻] 无法加载时区 {settings.SCHEDULER_TIMEZONE}，RSS 时间按 UTC 存")
+    return moment.replace(tzinfo=None)
 
 
 def parse_rss_sources(raw: str) -> List[tuple[str, str]]:
@@ -133,8 +162,10 @@ class NewsService:
                 if not title:
                     continue
 
-                parsed = entry.get("published_parsed") or entry.get("updated_parsed")
-                published_at = datetime(*parsed[:6]) if parsed else None
+                # RSS 时间统一转成本地时间再存，见 to_local_naive 的说明
+                published_at = to_local_naive(
+                    entry.get("published_parsed") or entry.get("updated_parsed")
+                )
 
                 news_list.append(
                     {
