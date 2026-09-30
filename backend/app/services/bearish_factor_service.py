@@ -14,7 +14,7 @@ from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
-from app.services.cache_manager import CacheManager
+from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 from app.services.web_search_service import get_web_search_service
@@ -27,7 +27,7 @@ _executor = ThreadPoolExecutor(max_workers=4)
 # 内存缓存
 _cache = {}
 _cache_lock = threading.Lock()
-_cache_ttl = 7200  # 2小时
+_cache_ttl = AI_ANALYSIS_CACHE_TTL
 
 
 class BearishFactorAnalyzer:
@@ -445,7 +445,7 @@ class BearishFactorService:
         self.db = db
         self.analyzer = BearishFactorAnalyzer()
         self._cache_key = "bearish_factors"
-        self.cache = CacheManager("bearish_factors", ttl=7200)  # 2小时缓存
+        self.cache = CacheManager("bearish_factors", ttl=AI_ANALYSIS_CACHE_TTL)
 
     def _get_from_memory_cache(self) -> Optional[Dict[str, Any]]:
         """从内存缓存获取数据"""

@@ -91,14 +91,29 @@ def _replace_with_retry(source: Path, target: Path, attempts: int = 5) -> None:
     if last is not None:
         raise last
 
+# 分析结果的缓存时长（秒）。
+#
+# **必须 >= `UPDATE_AI_ANALYSIS_CRON` 的间隔**（当前 2 小时），原因：
+# 缓存过期时会有一个用户请求触发一次**按需的付费 LLM 分析**，
+# 而调度器本来马上就会刷新同一份结果。
+# 机构预测原先用 3600（1 小时）而调度器每 2 小时才刷新一次 ——
+# 于是每个周期都白白多花一次分析。
+#
+# 这条关系由 tests/unit/test_cache_ttl_vs_schedule.py 守住。
+AI_ANALYSIS_CACHE_TTL = 7200
+
+# 实时金价：这是「取一次外部行情」的缓存，与上面的分析缓存节奏完全不同
+REALTIME_PRICE_CACHE_TTL = 30
+
+
 class CacheManager:
     """缓存管理器"""
     
-    def __init__(self, cache_key: str, ttl: int = 7200):
+    def __init__(self, cache_key: str, ttl: int = AI_ANALYSIS_CACHE_TTL):
         """
         Args:
             cache_key: 缓存键
-            ttl: 缓存过期时间（秒），默认2小时
+            ttl: 缓存过期时间（秒），默认见 AI_ANALYSIS_CACHE_TTL
         """
         self.cache_key = cache_key
         self.ttl = ttl

@@ -122,7 +122,27 @@ MySQL(gold_news, gold_prices)
 | 内存 | 进程内 dict | 最快；多进程不共享 |
 | 文件 | `CACHE_DIR/*.json` | 原子写入（临时文件 + rename）；重启后仍可命中 |
 
-TTL 默认 2 小时。`CACHE_DIR` 可配置（默认 `backend/cache`），测试用独立目录。
+TTL 由两个常量定义（`services/cache_manager.py`）：
+
+| 常量 | 值 | 用途 |
+|---|---|---|
+| `AI_ANALYSIS_CACHE_TTL` | 7200（2 小时） | 五份 AI 分析结果 |
+| `REALTIME_PRICE_CACHE_TTL` | 30 | 实时行情（「取一次外部报价」的缓存） |
+
+**分析缓存必须 >= 调度器的刷新间隔。** 缓存过期时，**一个用户请求会触发一次
+按需的付费 LLM 分析**（见各服务的 `get_xxx(use_cache=True)`），而调度器本来就会
+按 `UPDATE_AI_ANALYSIS_CRON` 刷新同一份结果：
+
+```
+TTL >= 刷新间隔  ->  过期时调度器几乎已写好新结果，不会多花钱
+TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
+```
+
+机构预测原先单独写了 **3600**（1 小时），而调度器每 **2 小时**才刷新一次 ——
+每个周期都多花一次分析。现在五个服务共用同一个常量，
+`tests/unit/test_cache_ttl_vs_schedule.py` 会解析 cron 并守住这条关系。
+
+`CACHE_DIR` 可配置（默认 `backend/cache`），测试用独立目录。
 缓存文件**不入库**（`.gitignore` 忽略）。
 
 ---

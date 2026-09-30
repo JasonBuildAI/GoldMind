@@ -12,7 +12,7 @@ from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
-from app.services.cache_manager import CacheManager
+from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 from app.services.web_search_service import get_web_search_service
@@ -437,7 +437,7 @@ class BullishFactorService:
     def __init__(self, db: Session):
         self.db = db
         self.analyzer = BullishFactorAnalyzer()
-        self.cache = CacheManager("bullish_factors", ttl=7200)  # 2小时缓存
+        self.cache = CacheManager("bullish_factors", ttl=AI_ANALYSIS_CACHE_TTL)
     
     def get_bullish_factors(self, use_cache: bool = True) -> Dict[str, Any]:
         """

@@ -11,7 +11,7 @@ from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.analysis import InstitutionView
 from app.config import settings
-from app.services.cache_manager import CacheManager
+from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 from app.services.web_search_service import get_web_search_service
@@ -280,7 +280,7 @@ class InstitutionPredictionService:
     def __init__(self, db: Session):
         self.db = db
         self.analyzer = InstitutionPredictionAnalyzer()
-        self.cache = CacheManager("institution_predictions", ttl=3600)  # 1小时缓存（实时数据更频繁更新）
+        self.cache = CacheManager("institution_predictions", ttl=AI_ANALYSIS_CACHE_TTL)  # 与调度器的刷新间隔对齐，见该常量的说明
         self.web_search_service = get_web_search_service()
 
     def get_institution_predictions(self, use_cache: bool = True) -> Dict[str, Any]:

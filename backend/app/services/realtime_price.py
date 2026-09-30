@@ -32,14 +32,14 @@ from typing import Any, Dict, Optional
 import requests
 
 from app.utils import timeutil
-from app.services.cache_manager import CacheManager
+from app.services.cache_manager import CacheManager, REALTIME_PRICE_CACHE_TTL
 from loguru import logger
 
 # 依次尝试的数据源
 SOURCE_ORDER = ("tencent", "sina", "eastmoney")
 
 # 实时价缓存：30 秒，够短以免页面看到过期价，够长以免每次请求都打上游
-CACHE_TTL_SECONDS = 30
+CACHE_TTL_SECONDS = REALTIME_PRICE_CACHE_TTL
 
 _USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 

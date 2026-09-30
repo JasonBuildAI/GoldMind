@@ -10,7 +10,7 @@ import logging
 from app.services.news_service import format_news_for_prompt
 from app.utils import timeutil
 from app.config import settings
-from app.services.cache_manager import CacheManager
+from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 from loguru import logger
@@ -236,7 +236,7 @@ class MarketSummaryService:
     def __init__(self, db: Session):
         self.db = db
         self.analyzer = MarketSummaryAnalyzer()
-        self.cache = CacheManager("market_summary", ttl=7200)  # 2小时
+        self.cache = CacheManager("market_summary", ttl=AI_ANALYSIS_CACHE_TTL)
 
     def _get_realtime_price(self) -> float:
         """获取实时金价"""

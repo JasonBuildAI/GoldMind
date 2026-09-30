@@ -10,7 +10,7 @@ from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.gold_price import GoldPrice
 from app.config import settings
-from app.services.cache_manager import CacheManager
+from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 import json
@@ -323,7 +323,7 @@ class InvestmentAdviceService:
     def __init__(self, db: Session):
         self.db = db
         self.analyzer = InvestmentAdviceAnalyzer()
-        self.cache = CacheManager("investment_advice", ttl=7200)  # 2小时缓存
+        self.cache = CacheManager("investment_advice", ttl=AI_ANALYSIS_CACHE_TTL)
 
     def get_investment_advice(
         self,
