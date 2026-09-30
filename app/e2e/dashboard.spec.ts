@@ -99,4 +99,25 @@ test.describe('GoldMind 看板端到端', () => {
       timeout: 30_000,
     })
   })
+
+  test('全页可见文本不出现未实现的能力宣称', async ({ page }) => {
+    // 界面曾把「多 Agent 协作 / ReAct / RAG / 智能驱动」写成既有能力，
+    // 而实现是单轮 LLM 调用（见 docs/00-产品方向.md 第三节）。
+    // 这不是文案偏好：那些词等于替系统编造能力，违反项目红线。
+    await page.goto('/')
+
+    // 先把五个区块都填上内容再扫描 —— 空白页扫不出什么，
+    // 真正会漏的是「有数据之后」才渲染出来的那些行。
+    await page.getByTestId('bullish-factors').getByRole('button', { name: '重新分析' }).click()
+    await page.getByTestId('bearish-factors').getByRole('button', { name: '重新分析' }).click()
+    await page.getByRole('button', { name: '重新抓取' }).click()
+    await page.locator('#strategy').getByRole('button', { name: '重新分析' }).click()
+    await page.locator('#conclusion').getByRole('button', { name: '重新分析' }).click()
+
+    await expect(page.getByText('端到端看涨因子').first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('端到端市场共识').first()).toBeVisible({ timeout: 30_000 })
+
+    const text = await page.locator('body').innerText()
+    expect(text).not.toMatch(/Agent|ReAct|RAG|多智能体|智能驱动/i)
+  })
 })

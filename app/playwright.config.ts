@@ -49,6 +49,9 @@ export default defineConfig({
         MIMO_API_KEY: 'e2e-mock-key',
         MIMO_BASE_URL: `http://127.0.0.1:${MOCK_PORT}/v1`,
         MIMO_MODEL: 'mimo-v2.6-flash',
+        // 前端 e2e 会在一次跑动里连续触发多次分析（远超默认的 6 次/分钟）。
+        // 那个上限保护的是真实额度，这里打的是假 LLM，放开以消除与被测行为无关的 429。
+        RATE_LIMIT_AI_PER_MINUTE: '100',
       },
       reuseExistingServer: false,
       timeout: 90_000,
