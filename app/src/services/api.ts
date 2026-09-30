@@ -133,7 +133,7 @@ export const goldApi = {
     return response.data;
   },
 
-  getCorrelation: async (days: number = 30): Promise<CorrelationData[]> => {
+  getCorrelation: async (days: number = 180): Promise<CorrelationData[]> => {
     const response = await api.get<CorrelationData[]>(`/api/gold/prices/correlation?days=${days}`);
     return response.data;
   },

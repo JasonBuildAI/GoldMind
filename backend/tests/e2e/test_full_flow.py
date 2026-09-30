@@ -10,6 +10,7 @@ conftest 的出网拦截兜底，数据库是内存 SQLite。
 """
 from __future__ import annotations
 
+from datetime import timedelta
 import json
 from typing import Any
 
@@ -204,7 +205,10 @@ def test_full_user_journey(client, seed_gold_prices, seed_news, smart_llm):
     # --- 2. 行情：日线 + 统计 + 相关性 ---
     daily = client.get("/api/gold/prices/daily").json()
     assert len(daily) >= 10
-    assert daily[0]["date"] == "2025-01-02"
+    # 夹具的数据截至今天，所以首日应当是「今天往前 9 天」
+    from app.utils import timeutil
+
+    assert daily[0]["date"] == (timeutil.today() - timedelta(days=9)).isoformat()
     assert daily[0]["price"] == 2600.0
 
     stats = client.get("/api/gold/stats")

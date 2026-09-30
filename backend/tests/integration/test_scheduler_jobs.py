@@ -39,7 +39,11 @@ def test_is_trading_day(day, expected):
 async def test_calculate_period_statistics(db_session, seed_gold_prices):
     seed_gold_prices(days=5, start=2600.0, step=10.0)  # 2600..2640，high=+5，low=-5
 
-    stats = await sched.calculate_period_statistics(db_session, date(2026, 1, 1))
+    # 传「今天」而不是写死的 2026-01-01 —— 夹具的数据截至今天，
+    # 写死的过去日期会把它们全过滤掉（`date <= today`）。
+    from app.utils import timeutil
+
+    stats = await sched.calculate_period_statistics(db_session, timeutil.today())
 
     assert stats["period_high"] == 2645.0
     assert stats["period_low"] == 2595.0
@@ -51,7 +55,9 @@ async def test_calculate_period_statistics(db_session, seed_gold_prices):
 @pytest.mark.integration
 async def test_calculate_period_statistics_on_empty_database(db_session):
     """空库不能崩，也不能除零。"""
-    stats = await sched.calculate_period_statistics(db_session, date(2026, 1, 1))
+    from app.utils import timeutil
+
+    stats = await sched.calculate_period_statistics(db_session, timeutil.today())
 
     assert stats["period_high"] == 0
     assert stats["period_low"] == 0

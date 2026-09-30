@@ -270,12 +270,20 @@ def client(_prepare_database):
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def seed_gold_prices(db_session):
-    """插入 2025-01-02 起的连续金价与美元指数，用于统计/相关性测试。"""
+    """插入**截至今天**的连续金价与美元指数，用于统计/相关性测试。
+
+    日期是**相对今天**的，不是钉死在 2025-01-02。原因：接口里有
+    「最近 N 天」这类时间窗（如 `/prices/correlation?days=`），
+    固定日期会让夹具数据整个落在窗口外 —— 于是窗口逻辑在测试里
+    **完全测不到**，而且一旦真去按窗口裁，测试就红。
+    """
+    from app.utils import timeutil
 
     def _seed(days: int = 10, start: float = 2600.0, step: float = 10.0):
         from app.models.gold_price import DollarIndex, GoldPrice
 
-        base = date(2025, 1, 2)
+        # 最后一天就是今天，往前铺 days 天
+        base = timeutil.today() - timedelta(days=days - 1)
         for i in range(days):
             day = base + timedelta(days=i)
             price = start + step * i

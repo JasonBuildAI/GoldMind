@@ -1,5 +1,5 @@
 """黄金价格 API 路由"""
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Query, HTTPException
 from anyio import to_thread
@@ -110,6 +110,7 @@ async def get_daily_prices(
 @router.get("/prices/correlation", response_model=List[CorrelationDataResponse])
 async def get_correlation_data(
     limit: int = Query(default=100, ge=1, le=500),
+    days: int = Query(default=180, ge=1, le=3650, description="只返回最近 N 天的数据"),
     include_realtime: bool = Query(default=True, description="是否包含实时价格作为最新数据点")
 ):
     """
@@ -117,7 +118,13 @@ async def get_correlation_data(
 
     - 历史数据使用当日收盘价
     - 最后一个数据点使用实时价格（如果include_realtime=True）
-    - limit 表示**最多返回多少个点**，保留最近的
+    - `days` 是**时间窗**（最近 N 天），`limit` 是**点数上限**，保留最近的
+    - 两个都生效：先按时间窗裁，再按点数裁
+
+    注意：`days` 此前**根本没有被声明**，而前端一直在传
+    `?days=30` —— FastAPI 会静默忽略未声明的查询参数，所以那个参数
+    从来没有生效过，调用方以为拿到 30 天，实际拿到最多 100 个点。
+    这与本端点此前修过的 `limit` 是同一类问题（声明了却不用 / 传了却不认）。
     """
     # 在线程池中执行同步数据库操作
     def fetch_data():
@@ -179,8 +186,14 @@ async def get_correlation_data(
                     dollar_index=current_dollar_index
                 ))
 
-    # 与 daily 一致：limit 此前完全没生效（service.get_correlation_data 收了参数
-    # 却从不使用），传 limit=4 照样返回全部点。
+    # 先按**时间窗**裁（days 此前完全没被声明，前端传了也没用）。
+    # `days=3` 表示「今天在内的最近 3 天」，所以减的是 days-1：
+    # 减 days 会连边界那天一起算进来，实际返回 4 天。
+    cutoff = timeutil.today() - timedelta(days=days - 1)
+    result = [item for item in result if date.fromisoformat(item.date) >= cutoff]
+
+    # 再按**点数**裁。limit 此前也完全没生效
+    #（service.get_correlation_data 收了参数却从不使用），传 limit=4 照样返回全部点。
     if len(result) > limit:
         result = result[-limit:]
 

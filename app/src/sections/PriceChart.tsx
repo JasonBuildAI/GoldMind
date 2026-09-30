@@ -177,7 +177,7 @@ export default function PriceChart() {
             黄金价格<span className="gold-text">历史走势</span>
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto">
-            从 2025 年初至今的日线走势与金价／美元指数相关性。数值全部来自后端接口。
+            最近 180 天的日线走势与金价／美元指数相关性。数值全部来自后端接口。
           </p>
         </div>
 

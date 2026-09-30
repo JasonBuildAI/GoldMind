@@ -22,9 +22,12 @@ def _seed(client) -> None:
     from app.models.gold_price import DollarIndex, GoldPrice
     from app.models.news import GoldNews, SentimentType
 
+    from app.utils import timeutil
+
     db = SessionLocal()
     try:
-        base = date(2025, 1, 2)
+        # 日期相对今天 —— 固定日期会让「最近 N 天」的窗口逻辑在测试里失效
+        base = timeutil.today() - timedelta(days=9)
         for i in range(10):
             d = base + timedelta(days=i)
             db.add(GoldPrice(date=d, open_price=2600 + i, high_price=2610 + i,
@@ -107,12 +110,22 @@ def test_daily_invalid_date_is_422_not_500(seeded):
 
 @pytest.mark.integration
 def test_daily_date_range_filters(seeded):
+    """日期区间要真的生效。用相对日期，别写死 —— 夹具的数据截至今天。"""
+    from app.utils import timeutil
+
+    base = timeutil.today() - timedelta(days=9)
+    start = (base + timedelta(days=1)).isoformat()
+    end = (base + timedelta(days=3)).isoformat()
+
     body = seeded.get(
-        "/api/gold/prices/daily"
-        "?start_date=2025-01-03&end_date=2025-01-05&include_realtime=false"
+        f"/api/gold/prices/daily?start_date={start}&end_date={end}&include_realtime=false"
     ).json()
 
-    assert [p["date"] for p in body] == ["2025-01-03", "2025-01-04", "2025-01-05"]
+    assert [p["date"] for p in body] == [
+        (base + timedelta(days=1)).isoformat(),
+        (base + timedelta(days=2)).isoformat(),
+        (base + timedelta(days=3)).isoformat(),
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -207,3 +220,38 @@ def test_factors_type_filter(seeded):
 @pytest.mark.integration
 def test_factors_limit(seeded):
     assert len(seeded.get("/api/gold/factors?limit=2").json()) == 2
+
+@pytest.mark.integration
+def test_correlation_days_actually_filters(seeded):
+    """回归：`days` **从未被声明**，前端一直在传 `?days=30` 而它毫无作用。
+
+    FastAPI 会静默忽略未声明的查询参数，所以调用方以为拿到 30 天，
+    实际拿到最多 100 个点（在真实库上跨 385 天）。
+    这与本端点此前修过的 `limit` 是同一类问题：参数看着有用，其实没用。
+    """
+    from app.utils import timeutil
+
+    wide = seeded.get("/api/gold/prices/correlation?days=3650&include_realtime=false").json()
+    narrow = seeded.get("/api/gold/prices/correlation?days=3&include_realtime=false").json()
+
+    assert len(wide) == 10, f"大窗口应当拿到全部 10 天，实际 {len(wide)}"
+    assert len(narrow) == 3, f"days=3 应当只拿到 3 天，实际 {len(narrow)}"
+    # 窄窗口拿到的必须是**最近**的几天
+    assert narrow[-1]["date"] == timeutil.today().isoformat()
+    assert [p["date"] for p in narrow] == [p["date"] for p in wide[-3:]]
+
+
+@pytest.mark.integration
+def test_correlation_days_and_limit_combine(seeded):
+    """时间窗与点数上限都要生效：先按天裁，再按点数裁。"""
+    body = seeded.get(
+        "/api/gold/prices/correlation?days=3650&limit=4&include_realtime=false"
+    ).json()
+
+    assert len(body) == 4
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("value", ["0", "-1", "abc"])
+def test_correlation_rejects_bad_days(seeded, value):
+    assert seeded.get(f"/api/gold/prices/correlation?days={value}").status_code == 422
