@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 
+from app.services.news_service import format_news_for_prompt
 from app.utils import timeutil
 from app.config import settings
 from app.services.cache_manager import CacheManager
@@ -108,15 +109,12 @@ class MarketSummaryAnalyzer:
             for pred in institution_predictions[:6]
         ]) if institution_predictions else "暂无数据"
 
-        # 整理新闻
-        news_text = ""
-        if recent_news:
-            news_text = "\n".join([
-                f"- [{news.get('sentiment', 'neutral')}] {news.get('title', '')}"
-                for news in recent_news[:10]
-            ])
-        else:
-            news_text = "暂无数据"
+        # 整理新闻（统一入口）
+        #
+        # 原实现打的是 `news.get('sentiment')`，而入库时 sentiment 一律是
+        # NEUTRAL（见 news_service.save_news）—— 把恒定值喂给模型只是噪音，
+        # 还容易让它以为做过情感分析。换成发布时间，那才是有信息量的字段。
+        news_text = format_news_for_prompt(recent_news, limit=10) if recent_news else "暂无数据"
 
         prompt = f"""你是一位资深的黄金市场分析师，拥有20年以上的贵金属市场研究经验。
 

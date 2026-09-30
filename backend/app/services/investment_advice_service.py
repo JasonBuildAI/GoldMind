@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
+from app.services.news_service import format_news_for_prompt
 from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.gold_price import GoldPrice
@@ -90,14 +91,12 @@ class InvestmentAdviceAnalyzer:
         return None
 
     def _format_news(self, news_list: List[GoldNews]) -> str:
-        """格式化新闻内容"""
-        if not news_list:
-            return "暂无新闻数据"
-        
-        formatted = []
-        for news in news_list[:10]:
-            formatted.append(f"- [{news.created_at.strftime('%Y-%m-%d %H:%M')}] {news.title}")
-        return "\n".join(formatted)
+        """格式化新闻内容。
+
+        统一走 `news_service.format_news_for_prompt` —— 这里原先自己拼一份，
+        用的是 `created_at`（入库时刻）而不是 `published_at`（发布时刻）。
+        """
+        return format_news_for_prompt(news_list, limit=10)
 
     def _format_prices(self, prices: List[GoldPrice]) -> str:
         """格式化价格数据"""

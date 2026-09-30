@@ -246,7 +246,8 @@ TTL 默认 2 小时。`CACHE_DIR` 可配置（默认 `backend/cache`），测试
 
 Redis、消息总线、WebSocket 推送、K8s / Istio、WAF、CSRF Token、
 认证/鉴权中间件、日志追踪中间件、RAG（向量库 / embedding / 检索）、
-ReAct 推理循环、多 Agent 协作、TF-IDF / NER、预测准确率追踪。
+ReAct 推理循环、多 Agent 协作、TF-IDF / NER、预测准确率追踪、
+新闻情感分析（`sentiment` 字段恒为 `NEUTRAL`，只为接口形状稳定）。
 
 `app/agents/` 包（`BaseAgent` / `MarketAnalyzerAgent` / `NewsAnalyzerAgent`）
 从未被任何地方实例化，已删除。

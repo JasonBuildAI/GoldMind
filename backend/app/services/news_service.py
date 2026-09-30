@@ -48,6 +48,41 @@ def to_local_naive(parsed) -> Optional[datetime]:
     return timeutil.from_utc_naive(as_utc)
 
 
+def format_news_for_prompt(news_list, limit: int = 15) -> str:
+    """把新闻列表拼成 prompt 里的一段。**所有分析服务的统一入口。**
+
+    原先五个服务各写一份，其中 `investment_advice_service` 用的是
+    `created_at`（**入库时刻**）而不是 `published_at`（**发布时刻**）：
+
+        f"- [{news.created_at.strftime('%Y-%m-%d %H:%M')}] {news.title}"
+
+    等于告诉模型「这条新闻是刚刚抓到的」，而它可能是 20 小时前的。
+    而且 `created_at` 来自数据库的 `func.now()`（库服务器本地时间），
+    按项目红线也不该直接当时间展示。
+
+    时间缺失时依次回退 `created_at` → 「时间未知」，不猜。
+
+    接受 ORM 对象与 dict 两种形状（联网搜索拿到的是 dict）。
+    """
+    if not news_list:
+        return "暂无新闻数据"
+
+    def field(item, name):
+        return item.get(name) if isinstance(item, dict) else getattr(item, name, None)
+
+    lines = []
+    for item in news_list[:limit]:
+        title = (field(item, "title") or "").strip()
+        if not title:
+            continue
+        source = field(item, "source") or "未知来源"
+        published = field(item, "published_at") or field(item, "created_at")
+        stamp = published.strftime("%Y-%m-%d %H:%M") if published else "时间未知"
+        lines.append(f"- [{stamp}] [{source}] {title}")
+
+    return "\n".join(lines) if lines else "暂无新闻数据"
+
+
 def parse_rss_sources(raw: str) -> List[tuple[str, str]]:
     """把 ``"名称|URL,名称|URL"`` 解析为 ``[(名称, URL)]``。
 

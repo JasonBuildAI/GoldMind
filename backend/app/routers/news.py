@@ -63,7 +63,7 @@ async def get_news_detail(news_id: int, db: Session = Depends(get_db)):
 
 @router.get("/news/sentiment/summary")
 async def get_sentiment_summary(db: Session = Depends(get_db)):
-    """获取新闻情感分布统计。"""
+    """新闻情感分布统计。注：入库时 sentiment 一律为 NEUTRAL，本项目没有做情感分析，这里恒为全中性，保留字段只为接口形状稳定。"""
     service = NewsService(db)
     summary = service.get_sentiment_summary()
     

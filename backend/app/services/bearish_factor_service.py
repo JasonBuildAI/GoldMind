@@ -9,6 +9,7 @@ import threading
 import asyncio
 from functools import partial
 
+from app.services.news_service import format_news_for_prompt
 from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
@@ -282,17 +283,11 @@ class BearishFactorAnalyzer:
         if not news:
             web_news = self.fetch_news_from_web()
             if web_news:
-                news_content = "\n".join([
-                    f"[{n.get('source', '未知')}] {n.get('title', '')}"
-                    for n in web_news[:15]
-                ])
+                news_content = format_news_for_prompt(web_news, limit=15)
             else:
                 news_content = "暂无最新新闻数据，将基于当前市场状况进行分析。"
         else:
-            news_content = "\n".join([
-                f"[{n.source}] {n.title}"
-                for n in news[:15]
-            ])
+            news_content = format_news_for_prompt(news, limit=15)
 
         # 2. 获取当前金价数据
         gold_data = self.get_current_gold_data(db)
