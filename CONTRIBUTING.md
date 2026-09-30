@@ -43,13 +43,12 @@ git checkout -b fix/bug描述
 - MySQL
 
 **前端**
-- React 18
-- TypeScript
-- Tailwind CSS
+- React 19
+- TypeScript 5.9（`strict: true`）
+- Tailwind CSS 3
 
 **AI**
-- 小米 MiMo（OpenAI 兼容协议）
-- 小米 MiMo API
+- 小米 MiMo（OpenAI 兼容协议）—— 所有调用只经 `backend/app/services/llm_provider.py`
 
 ### 代码风格
 
@@ -61,21 +60,23 @@ git checkout -b fix/bug描述
 
 #### TypeScript
 
-- 使用严格模式
+- 使用严格模式（`tsconfig.app.json` 里 `strict: true`）
 - 有意义的变量名
 - 复杂逻辑添加注释
 
 ### 提交信息规范
 
+前缀的**唯一真源是 [`AGENTS.md`](AGENTS.md) 的硬性要求第 2 条**，这里只列常用几个：
+
 ```
-feat: 添加新功能
-fix: 修复 Bug
-docs: 更新文档
-refactor: 代码重构
-test: 添加测试
-style: 代码格式调整
-chore: 构建/依赖更新
+feat: 添加新功能        fix: 修复 Bug
+refactor: 代码重构      perf: 性能优化
+docs: 更新文档          test: 添加测试
+chore: 构建/依赖更新    build: 构建系统      ci: CI 配置
 ```
+
+一个 commit 只用一个前缀、只做一件事；第一行说清改了什么。
+注意 message **用英文**（见 `AGENTS.md`）。
 
 ## 🏗️ 项目结构
 
@@ -111,6 +112,10 @@ GoldMind/
 - 使用 `.env` 文件存储敏感信息
 - 确保 `.env` 在 `.gitignore` 中
 - 提交前检查 `git diff`
+
+**已自动化**：`backend/tests/unit/test_no_secrets_in_repo.py` 会扫描所有受版本控制
+的文件，密钥形状的字符串、个人邮箱与 QQ 号都会让闸门变红。它守的是「从此往后」，
+历史里的泄漏只能靠重写来消除（步骤见 `docs/10-密钥与隐私.md`）。
 
 ## 🐛 报告 Bug
 
