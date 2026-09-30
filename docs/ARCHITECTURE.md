@@ -159,7 +159,9 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | `gold_news` | 新闻；`published_at` 有索引 |
 | `market_factors` | 多空因子（`type` 区分） |
 | `institution_views` | 机构观点 |
-| `predictions` | **当前没有任何代码写入**，接口恒返回空（产品方向里列为「目标」，不是现状） |
+| `predictions` | 量化引擎（`services/quant/service.py`）每次刷新写入：方向、周期、基准价、目标价、得分、期望收益、不确定度与模型版本 |
+| `factor_observations` | 量化因子观测，`(factor_key, obs_date)` 唯一；只存成功观测，失败在同步报告里说明 |
+| `model_evaluations` | 走查式回测结果（命中率 / 基准对照 / Brier / 逐因子指标），每次评估追加一行 |
 
 > `update_logs` 已删除：没有任何写入方、读取方或接口，产品方向里也没把它列为目标，
 > 属于纯死表。同理，`schema.sql` 与模型的一致性由
@@ -263,6 +265,8 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 更新美元指数 | 同金价 | |
 | 更新新闻 | 偶数整点 | RSS 抓取 |
 | 更新 AI 分析 | 偶数整点 | 依次跑 4 个分析服务 |
+| 同步量化因子 | `15 */2 * * *` | 各源按自身节奏跳过未到期的抓取（`QUANT_ENABLED=false` 可整体关闭） |
+| 重算量化预测 | `45 */2 * * *` | 重算 1 / 5 / 20 个交易日预测；回测按 24 小时节流 |
 
 ---
 
@@ -293,13 +297,43 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 
 ---
 
-## 十一、明确不存在的能力
+## 十一、量化预测引擎
+
+`app/services/quant/`：把「影响国际金价的四类因素」（货币政策与利率 / 避险与信用 /
+供需结构 / 市场与技术面）变成可回测的信号。因子清单、权重、方向先验与新鲜度上限
+只在 `app/services/quant/definitions.py` 定义一处，接口按它输出 —— 文档不另抄一份。
+
+| 环节 | 位置 | 要点 |
+|---|---|---|
+| 数据源 | `sources/*.py` | 全部免费、无需密钥；HTTP 客户端可注入，测试永不真出网 |
+| 派生 | `derive.py` | 原始序列 → 因子值，单位与口径只在这一层固定 |
+| 落库 | `storage.py` | `factor_observations`，唯一约束 `(factor_key, obs_date)`，幂等 |
+| 同步 | `sync.py` | 按源节流（6h ~ 24h）、增量抓取、逐源降级并写入同步报告 |
+| 信号 | `engine.py` | 滚动 z → 方向对齐 → 加权合成 → 上行概率与期望收益 |
+| 回测 | `backtest.py` | 走查式命中率 + 三个基准 + 逐因子命中率与 IC |
+| 出口 | `service.py` | 调度任务与 `POST /api/gold/quant/refresh` 共用同一条链路 |
+
+三条不能破的口径：
+
+1. **无前视**。滚动统计与回归样本全部 `shift` 到 t 之前；在黄金收盘之后才发布的
+   数据源（财政部收益率曲线、纽约联储 EFFR、CFTC 持仓）由
+   `sources/base.py::shift_to_next_trading_day` 整体右移一个工作日。
+   守卫：`backend/tests/unit/quant/test_no_lookahead.py` —— 把 t 之后的数据改成
+   垃圾值，t 时刻的信号必须逐位不变。
+2. **不编造**。可用因子少于 3 个、价格序列缺失、单因子数据陈旧（超过该因子的
+   更新周期）都返回「不可用 + 原因」；缺失因子按剩余权重归一，不会被当成 0。
+3. **时间只走一个时区**。所有「现在」都用 `app.utils.timeutil`（调度器时区），
+   与第七条同一口径。
+
+---
+
+## 十二、明确不存在的能力
 
 以下内容在早期文档中出现过，但代码里没有：
 
 Redis、消息总线、WebSocket 推送、K8s / Istio、WAF、CSRF Token、
 认证/鉴权中间件、日志追踪中间件、RAG（向量库 / embedding / 检索）、
-ReAct 推理循环、多 Agent 协作、TF-IDF / NER、预测准确率追踪、
+ReAct 推理循环、多 Agent 协作、TF-IDF / NER、
 新闻情感分析（`sentiment` 字段恒为 `NEUTRAL`，只为接口形状稳定）。
 
 `app/agents/` 包（`BaseAgent` / `MarketAnalyzerAgent` / `NewsAnalyzerAgent`）

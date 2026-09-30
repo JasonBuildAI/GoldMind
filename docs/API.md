@@ -14,7 +14,8 @@
 - **前缀**：所有业务接口都在 `/api/gold` 下（不是 `/api/analysis` 或 `/api/news`）
 - **鉴权**：无。若要公开部署，请在反向代理层加访问控制
 - **限流**：按客户端 IP 的滑动窗口。普通接口默认 60 次/分钟；
-  路径以 `/refresh` 结尾的接口会真实调用 LLM，默认仅 6 次/分钟。
+  路径以 `/refresh` 结尾的接口按「重操作」限流，默认仅 6 次/分钟
+  （AI 分析刷新会真实调用 LLM，量化刷新会出网抓取全部数据源）。
   `/health` 不限流。超限返回 `429`，响应体含 `retry_after`（秒）
 - **CORS**：仅允许 `CORS_ALLOW_ORIGINS` 中列出的来源
 - **错误格式**：FastAPI 默认的 `{"detail": ...}`；限流为 `{"error", "retry_after"}`
@@ -46,10 +47,14 @@
 | `GET` | `/api/gold/news` | 获取新闻列表，可按来源与情感过滤（无分页，只取前 limit 条）。 |
 | `GET` | `/api/gold/news/sentiment/summary` | 新闻情感分布统计。注：入库时 sentiment 一律为 NEUTRAL，本项目没有做情感分析，这里恒为全中性，保留字段只为接口形状稳定。 |
 | `GET` | `/api/gold/news/{news_id}` | 获取单条新闻详情。 |
-| `GET` | `/api/gold/predictions` | 获取价格预测列表。注意：当前没有任何代码写入 predictions 表，该接口恒返回空数组。 |
-| `GET` | `/api/gold/predictions/latest` | 获取最新一条价格预测。注意：当前没有任何代码写入 predictions 表，该接口恒返回「暂无预测数据」。 |
+| `GET` | `/api/gold/predictions` | 价格预测列表。表里现在有真实数据：量化引擎（services/quant）每次刷新写入。 |
+| `GET` | `/api/gold/predictions/latest` | 最新一条已落库的价格预测。 |
 | `GET` | `/api/gold/prices/correlation` | 获取黄金与美元指数相关性数据 |
 | `GET` | `/api/gold/prices/daily` | 获取日线价格数据 |
+| `GET` | `/api/gold/quant/accuracy` | 走查式回测的命中率：与「永远看多 / 动量 / 抛硬币」并排对照。 |
+| `GET` | `/api/gold/quant/factors` | 四类影响因素的当前快照：值、方向、贡献、来源与数据截至时间。 |
+| `GET` | `/api/gold/quant/predictions` | 量化预测：方向、上行概率、目标价与逐因子贡献。 |
+| `POST` | `/api/gold/quant/refresh` | 立即抓取因子、重算预测并追加一次回测（耗时数十秒，已按付费档限流）。（**重操作**，限流更严） |
 | `GET` | `/api/gold/stats` | 获取 2025 年至今的金价统计（当前价、涨跌幅、波动区间等）。 |
 
 ### 其他

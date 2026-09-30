@@ -58,3 +58,5 @@ def test_doc_flags_the_llm_backed_endpoints():
     assert "会调用 LLM" in doc
     # 五个分析接口各有一个 refresh 端点
     assert doc.count("会调用 LLM") == 5
+    # 不花 LLM 额度、但同样按重操作限流的端点（如量化刷新）也要标出来
+    assert "重操作" in doc

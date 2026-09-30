@@ -107,6 +107,8 @@ class Settings(BaseSettings):
     # 因子同步：每 2 小时的第 15 分钟。各源还会按自己的最小间隔跳过未到期的抓取
     # （见 services/quant/sync.py 的 SOURCE_MIN_INTERVALS）。
     UPDATE_FACTORS_CRON: str = "15 */2 * * *"
+    # 量化预测与回测：每 2 小时的第 45 分钟（回测本身按 24 小时节流）。
+    UPDATE_QUANT_CRON: str = "45 */2 * * *"
     # 首次回填的年数（之后都是增量抓取）。
     QUANT_HISTORY_YEARS: int = 10
     

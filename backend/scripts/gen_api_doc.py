@@ -68,6 +68,11 @@ def _is_expensive(path: str) -> bool:
     return path.endswith("/refresh")
 
 
+def _is_llm_backed(path: str) -> bool:
+    """会真实调用 LLM 的刷新端点（与 app/main.py 的 _is_ai_path 同一判据）。"""
+    return path.endswith("/refresh") and "-ai" in path
+
+
 def render() -> str:
     rows = _collect_routes()
     by_prefix: dict[str, list[dict]] = {}
@@ -94,7 +99,8 @@ def render() -> str:
         "- **前缀**：所有业务接口都在 `/api/gold` 下（不是 `/api/analysis` 或 `/api/news`）",
         "- **鉴权**：无。若要公开部署，请在反向代理层加访问控制",
         "- **限流**：按客户端 IP 的滑动窗口。普通接口默认 60 次/分钟；",
-        "  路径以 `/refresh` 结尾的接口会真实调用 LLM，默认仅 6 次/分钟。",
+        "  路径以 `/refresh` 结尾的接口按「重操作」限流，默认仅 6 次/分钟",
+        "  （AI 分析刷新会真实调用 LLM，量化刷新会出网抓取全部数据源）。",
         "  `/health` 不限流。超限返回 `429`，响应体含 `retry_after`（秒）",
         "- **CORS**：仅允许 `CORS_ALLOW_ORIGINS` 中列出的来源",
         "- **错误格式**：FastAPI 默认的 `{\"detail\": ...}`；限流为 `{\"error\", \"retry_after\"}`",
@@ -113,7 +119,11 @@ def render() -> str:
         for row in by_prefix[group]:
             note = row["summary"] or row["name"]
             if _is_expensive(row["path"]):
-                note += "（**会调用 LLM**，限流更严）"
+                note += (
+                    "（**会调用 LLM**，限流更严）"
+                    if _is_llm_backed(row["path"])
+                    else "（**重操作**，限流更严）"
+                )
             lines.append(f"| `{row['method']}` | `{row['path']}` | {note} |")
         lines.append("")
 

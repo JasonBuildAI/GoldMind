@@ -440,6 +440,15 @@ SKIP_SEED=1 python init_db.py        # 只建库建表，不灌数据
 # 修正旧库里的枚举列取值（幂等；只影响 schema.sql 早期版本建出来的库）
 python scripts/fix_enum_columns.py --dry-run
 python scripts/fix_enum_columns.py
+
+# 量化因子引擎：老库升级到带 factor_observations / model_evaluations 的结构（幂等，只加不删）
+python scripts/migrate_quant.py --dry-run    # 先看会做什么
+python scripts/migrate_quant.py
+# 回滚（删除两张新表与 predictions 的量化列，既有数据不动）
+python scripts/migrate_quant.py --drop --yes
+
+# 手动跑一轮因子抓取（首次回填 10 年；之后是增量）
+python -c "from app.database import SessionLocal; from app.services.quant.sync import run_sync; db=SessionLocal(); print(run_sync(db, force=True).to_dict()); db.close()"
 ```
 
 ### 前端

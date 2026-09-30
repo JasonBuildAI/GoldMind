@@ -49,6 +49,7 @@ def test_init_scheduler_registers_factor_sync(fake_scheduler):
     sched.init_scheduler()
 
     assert "update_factors" in fake_scheduler.jobs
+    assert "update_quant_prediction" in fake_scheduler.jobs
     assert fake_scheduler.started is True
 
 
@@ -69,6 +70,31 @@ def test_quant_jobs_are_skipped_when_disabled(fake_scheduler, monkeypatch):
     sched.init_scheduler()
 
     assert "update_factors" not in fake_scheduler.jobs
+    assert "update_quant_prediction" not in fake_scheduler.jobs
+
+
+def test_prediction_job_runs_the_quant_service(fake_scheduler, monkeypatch):
+    """预测任务必须真的接到 service.refresh_predictions 上。"""
+    import app.database as database
+    import app.services.quant.service as quant_service
+
+    class FakeSession:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    session = FakeSession()
+    calls = []
+    monkeypatch.setattr(quant_service, "refresh_predictions", lambda db: calls.append(db))
+    monkeypatch.setattr(database, "SessionLocal", lambda: session)
+
+    sched.init_scheduler()
+    asyncio.run(fake_scheduler.jobs["update_quant_prediction"].func())
+
+    assert calls == [session]
+    assert session.closed is True
 
 
 def test_sync_job_is_registered_before_the_scheduler_starts(monkeypatch):

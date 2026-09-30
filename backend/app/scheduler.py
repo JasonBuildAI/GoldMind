@@ -100,6 +100,15 @@ def init_scheduler():
                 replace_existing=True
             )
             logger.info(f"[调度器] 已添加任务: update_factors ({settings.UPDATE_FACTORS_CRON})")
+
+            scheduler.add_job(
+                update_quant_prediction_job,
+                CronTrigger.from_crontab(settings.UPDATE_QUANT_CRON),
+                id='update_quant_prediction',
+                name='重算量化预测与回测',
+                replace_existing=True
+            )
+            logger.info(f"[调度器] 已添加任务: update_quant_prediction ({settings.UPDATE_QUANT_CRON})")
         else:
             logger.info("[调度器] QUANT_ENABLED=false，跳过量化任务")
         
@@ -430,6 +439,28 @@ def _run_factors_sync():
     db = SessionLocal()
     try:
         run_sync(db, history_years=current_settings.QUANT_HISTORY_YEARS)
+    finally:
+        db.close()
+
+
+async def update_quant_prediction_job():
+    """重算量化预测；回测按 24 小时节流（见 services/quant/service.py）。"""
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, _run_quant_prediction_sync)
+    except Exception as e:
+        logger.error(f"[量化] 预测任务失败: {e}")
+
+
+def _run_quant_prediction_sync():
+    from app.database import SessionLocal
+    from app.services.quant.service import refresh_predictions
+
+    db = SessionLocal()
+    try:
+        refresh_predictions(db)
     finally:
         db.close()
 

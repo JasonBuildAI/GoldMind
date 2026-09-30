@@ -1,6 +1,6 @@
 """分析 Pydantic 模型"""
-from datetime import datetime
-from typing import List, Optional
+from datetime import date, datetime
+from typing import Any, List, Optional
 from pydantic import BaseModel
 from enum import Enum
 
@@ -54,8 +54,18 @@ class PredictionResponse(BaseModel):
     confidence: Optional[float] = None
     timeframe: str
     reasoning: str
-    factors: Optional[List[str]] = None
+    # 老的行是纯文本因子名列表；量化引擎写入的是 {key, name, contribution, signed_z}
+    factors: Optional[List[Any]] = None
     created_at: datetime
+    # 量化引擎（services/quant）写入的字段；非量化来源的行这些值为空。
+    direction: Optional[str] = None
+    horizon_days: Optional[int] = None
+    as_of: Optional[date] = None
+    base_price: Optional[float] = None
+    score: Optional[float] = None
+    expected_return: Optional[float] = None
+    uncertainty: Optional[float] = None
+    model_version: Optional[str] = None
     
     class Config:
         from_attributes = True

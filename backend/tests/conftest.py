@@ -369,3 +369,51 @@ def seed_news(db_session):
         return count
 
     return _seed
+
+
+@pytest.fixture
+def seed_quant_panel(db_session):
+    """写入一整块量化因子面板（含基准金价），不访问任何网络。
+
+    与真实数据同样的形状：日频因子每天更新，周度（CFTC）、月度（央行储备）、
+    单点快照（GLD 份额）与短期语料（地缘）按各自的稀疏度写入 ——
+    这样新鲜度判定、前向填充与「可用因子不足」的降级路径才是真的被测到。
+    """
+    from app.services.quant import storage
+    from app.services.quant.definitions import BENCHMARK_KEY, FACTORS
+    from app.services.quant.definitions import factor_by_key
+    from app.utils import timeutil
+
+    def _seed(days: int = 850, *, step: int = 1):
+        import numpy as np
+        import pandas as pd
+
+        end = pd.Timestamp(timeutil.today())
+        calendar = pd.date_range(end=end, periods=days, freq="B")
+        rng = np.random.default_rng(2026)
+
+        written = {}
+        for position, definition in enumerate(FACTORS):
+            values = np.cumsum(rng.normal(0.0, 0.5, len(calendar))) + 100.0 + position * 5.0
+            series = pd.Series(values, index=calendar, name=definition.key)
+            written[definition.key] = series
+
+        written["cftc_positioning"] = written["cftc_positioning"].iloc[::5]
+        written["central_bank"] = written["central_bank"].iloc[::21]
+        written["etf_shares"] = written["etf_shares"].iloc[-1:]
+        written["geopolitical"] = written["geopolitical"].iloc[-70:]
+
+        for key, series in written.items():
+            source = factor_by_key[key].source if key in factor_by_key else "测试夹具"
+            storage.upsert_series(db_session, key, series, source=source, commit=False)
+
+        close = pd.Series(
+            2000.0 * np.exp(np.cumsum(rng.normal(0.0, 0.008, len(calendar)))),
+            index=calendar,
+            name=BENCHMARK_KEY,
+        )
+        storage.upsert_series(db_session, BENCHMARK_KEY, close, source="测试夹具（GC=F 收盘）", commit=False)
+        db_session.commit()
+        return written, close
+
+    return _seed

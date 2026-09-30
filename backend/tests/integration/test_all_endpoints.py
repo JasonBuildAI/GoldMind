@@ -91,7 +91,7 @@ def test_news_detail_for_missing_id_returns_404(client):
 
 @pytest.mark.integration
 def test_predictions_endpoints_are_consistently_empty(client):
-    """predictions 表没有任何代码写入，两个接口都必须是「空」而不是报错。"""
+    """空库时两个接口必须是「空」而不是报错（有数据时的行为见 test_quant_api.py）。"""
     listing = client.get("/api/gold/predictions")
     assert listing.status_code == 200
     assert listing.json() == []
