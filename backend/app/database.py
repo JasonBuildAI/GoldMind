@@ -2,25 +2,56 @@
 from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
-from sqlalchemy.pool import QueuePool, NullPool
+from sqlalchemy.pool import QueuePool, StaticPool
 from app.config import settings
 
-# 使用QueuePool连接池提升性能，自动管理连接生命周期
-engine = create_engine(
-    settings.DATABASE_URL,
-    poolclass=QueuePool,           # 使用队列连接池
-    pool_size=10,                  # 保持10个永久连接
-    max_overflow=20,               # 最多溢出20个临时连接
-    pool_pre_ping=True,            # 连接前ping测试，自动回收死连接
-    pool_recycle=3600,             # 1小时回收连接，防止MySQL wait_timeout
-    pool_timeout=30,               # 获取连接超时时间
-    echo=False,
-    connect_args={
-        "connect_timeout": 10,
-        "read_timeout": 30,
-        "write_timeout": 30
-    } if "mysql" in settings.DATABASE_URL else {}
-)
+
+def _build_engine():
+    """按数据库类型构造引擎。
+
+    MySQL 与 SQLite 的连接参数差异很大，这里显式区分：
+
+    - **SQLite**：必须 `check_same_thread=False`，否则 FastAPI 把同步依赖丢进
+      线程池后会报跨线程错误；内存库还必须用 `StaticPool` 共用同一个连接，
+      否则每个连接看到的是各自独立的空库。
+    - **MySQL**：保留原有连接池与超时设置（生产路径，行为不变）。
+
+    支持 SQLite 是为了让测试可以完全脱离 MySQL 运行。
+    """
+    url = settings.DATABASE_URL
+    kwargs: dict = {"echo": False}
+
+    if url.startswith("sqlite"):
+        kwargs["connect_args"] = {"check_same_thread": False}
+        is_memory = ":memory:" in url or url.rstrip("/") == "sqlite:"
+        if is_memory:
+            kwargs["poolclass"] = StaticPool
+        else:
+            kwargs.update(
+                poolclass=QueuePool,
+                pool_size=10,
+                max_overflow=20,
+                pool_timeout=30,
+            )
+    else:
+        kwargs.update(
+            poolclass=QueuePool,           # 使用队列连接池
+            pool_size=10,                  # 保持10个永久连接
+            max_overflow=20,               # 最多溢出20个临时连接
+            pool_pre_ping=True,            # 连接前ping测试，自动回收死连接
+            pool_recycle=3600,             # 1小时回收连接，防止MySQL wait_timeout
+            pool_timeout=30,               # 获取连接超时时间
+            connect_args={
+                "connect_timeout": 10,
+                "read_timeout": 30,
+                "write_timeout": 30,
+            },
+        )
+
+    return create_engine(url, **kwargs)
+
+
+engine = _build_engine()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

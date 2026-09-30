@@ -1,5 +1,5 @@
 """数据更新日志模型"""
-from sqlalchemy import Column, Integer, String, DateTime, Text, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, Float
 from sqlalchemy.sql import func
 from app.database import Base
 import enum

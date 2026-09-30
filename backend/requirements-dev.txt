@@ -1,0 +1,5 @@
+# 测试与开发依赖
+# 安装：pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=5.0.0
