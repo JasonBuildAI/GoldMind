@@ -232,16 +232,16 @@ class InstitutionPredictionAnalyzer:
                     try:
                         result = json.loads(content[start:end])
                     except:
-                        result = self._get_default_predictions()
+                        result = self.get_default_predictions()
                 else:
-                    result = self._get_default_predictions()
+                    result = self.get_default_predictions()
 
             return result
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
-            return self._get_default_predictions()
+            return self.get_default_predictions()
 
-    def _get_default_predictions(self) -> Dict[str, Any]:
+    def get_default_predictions(self) -> Dict[str, Any]:
         """获取默认机构预测（当LLM调用失败时使用）"""
         return {
             "institutions": [
@@ -428,59 +428,19 @@ class InstitutionPredictionService:
             return result
 
         # 3. 无缓存时，返回默认数据并触发后台更新
-        default_data = self._get_default_response()
+        #
+        # 用 analyzer.get_default_predictions()，而不是本类里那份 _get_default_response()：
+        # 后者把 target_price 写成了字符串（"2,900美元"），而契约是数字。
+        # 前端拿它做 Math.min(...)，结果是 NaN —— 页面显示
+        # 「目标价集中在 NaN-NaN 美元区间」。
+        default_data = self.analyzer.get_default_predictions()
+        default_data["metadata"] = {
+            "cached": False,
+            "status": "analyzing",
+            "message": "AI分析进行中，首次加载可能需要1-2分钟",
+        }
         self._trigger_background_analysis()
         return default_data
-
-    def _get_default_response(self) -> Dict[str, Any]:
-        """获取默认响应（用于无缓存时快速返回）"""
-        return {
-            "institutions": [
-                {
-                    "name": "高盛 (Goldman Sachs)",
-                    "logo": "GS",
-                    "rating": "看涨",
-                    "target_price": "2,800-3,000美元",
-                    "timeframe": "12个月",
-                    "reasoning": "美联储降息周期和央行购金需求将支撑金价上涨",
-                    "key_points": ["降息预期", "央行购金", "避险需求"]
-                },
-                {
-                    "name": "瑞银 (UBS)",
-                    "logo": "UBS",
-                    "rating": "看涨",
-                    "target_price": "2,900美元",
-                    "timeframe": "2025年底",
-                    "reasoning": "地缘政治风险和美元走弱利好黄金",
-                    "key_points": ["地缘风险", "美元走弱", "投资需求"]
-                },
-                {
-                    "name": "摩根士丹利 (Morgan Stanley)",
-                    "logo": "MS",
-                    "rating": "中性偏涨",
-                    "target_price": "2,750美元",
-                    "timeframe": "6个月",
-                    "reasoning": "实际利率下行支撑金价，但需关注美元走势",
-                    "key_points": ["实际利率", "美元走势", "通胀预期"]
-                },
-                {
-                    "name": "花旗 (Citi)",
-                    "logo": "C",
-                    "rating": "看涨",
-                    "target_price": "3,000美元",
-                    "timeframe": "2025年中",
-                    "reasoning": "美国债务问题和货币贬值担忧推动黄金需求",
-                    "key_points": ["债务问题", "货币贬值", "避险资产"]
-                }
-            ],
-            "analysis_summary": "正在分析最新机构预测数据，请稍后刷新查看AI分析结果",
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "metadata": {
-                "cached": False,
-                "status": "analyzing",
-                "message": "AI分析进行中，首次加载可能需要1-2分钟"
-            }
-        }
 
     _ANALYSIS_KEY = "institution_predictions"
 

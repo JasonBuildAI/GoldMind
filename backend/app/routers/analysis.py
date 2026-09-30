@@ -4,6 +4,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.analysis import FactorResponse, InstitutionResponse
+from app.schemas.analysis_ai import (
+    BearishFactorsAIResponse,
+    BullishFactorsAIResponse,
+    InstitutionPredictionsAIResponse,
+    InvestmentAdviceAIResponse,
+    MarketSummaryAIResponse,
+)
 
 router = APIRouter()
 
@@ -116,7 +123,7 @@ async def get_institution_views(limit: int = 10, db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/bullish-factors-ai", response_model=Dict[str, Any])
+@router.get("/bullish-factors-ai", response_model=BullishFactorsAIResponse)
 async def get_bullish_factors_analysis(
     refresh: bool = False,
     db: Session = Depends(get_db)
@@ -171,7 +178,7 @@ async def refresh_bullish_factors(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/bearish-factors-ai", response_model=Dict[str, Any])
+@router.get("/bearish-factors-ai", response_model=BearishFactorsAIResponse)
 async def get_bearish_factors_analysis(
     refresh: bool = False,
     db: Session = Depends(get_db)
@@ -226,7 +233,7 @@ async def refresh_bearish_factors(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/institution-predictions-ai", response_model=Dict[str, Any])
+@router.get("/institution-predictions-ai", response_model=InstitutionPredictionsAIResponse)
 async def get_institution_predictions_analysis(
     refresh: bool = False,
     db: Session = Depends(get_db)
@@ -269,7 +276,7 @@ async def refresh_institution_predictions(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/investment-advice-ai", response_model=Dict[str, Any])
+@router.get("/investment-advice-ai", response_model=InvestmentAdviceAIResponse)
 async def get_investment_advice_analysis(
     refresh: bool = False,
     db: Session = Depends(get_db)
@@ -387,7 +394,7 @@ async def refresh_investment_advice_analysis(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/market-summary-ai", response_model=Dict[str, Any])
+@router.get("/market-summary-ai", response_model=MarketSummaryAIResponse)
 async def get_market_summary_analysis(
     refresh: bool = False,
     db: Session = Depends(get_db)

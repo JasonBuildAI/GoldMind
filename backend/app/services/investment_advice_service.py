@@ -296,14 +296,18 @@ class InvestmentAdviceAnalyzer:
                 
             except json.JSONDecodeError as e:
                 logger.error(f"JSON解析错误: {e}")
-                return self._get_default_advice()
+                return self.get_default_advice()
                 
         except Exception as e:
             logger.error(f"投资建议分析失败: {e}")
-            return self._get_default_advice()
+            return self.get_default_advice()
 
-    def _get_default_advice(self) -> Dict[str, Any]:
-        """获取默认投资建议"""
+    def get_default_advice(self) -> Dict[str, Any]:
+        """默认投资建议 —— 结构与 analyze() 的成功返回完全一致。
+
+        公开是因为 InvestmentAdviceService 在无缓存时要用它：它需要同一套结构，
+        但不该为此真的调一次 LLM。
+        """
         return {
             "market_assessment": {
                 "current_position": "当前市场数据不足，无法准确评估",
@@ -465,7 +469,23 @@ class InvestmentAdviceService:
             return cached_data
 
         # 2. 无缓存时，返回默认数据并触发后台更新
-        default_data = self._get_default_response()
+        #
+        # 这里必须用 analyzer.get_default_advice()：它的结构与 analyze() 一致
+        # （market_assessment / strategies / core_principles / risk_warning / disclaimer）。
+        # 原实现调用的是 _get_default_response() —— 一份结构完全不同的历史遗留
+        # （strategy / allocation / actions / expected_return），
+        # 导致缓存未命中时接口返回的内容里有 4 个前端依赖的字段是 undefined：
+        # 页面显示内置兜底策略、市场评估一片空白、免责声明消失。
+        default_data = self.analyzer.get_default_advice()
+        # analyzer 的默认值不带 metadata，这里补上 ——
+        # 前端靠它判断「这是占位内容还是本次分析结果」。
+        default_data["metadata"] = {
+            "cached": False,
+            "status": "analyzing",
+            "message": "AI分析进行中，首次加载可能需要1-2分钟",
+            "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
+            "analysis_method": "MiMo LLM 综合分析",
+        }
         
         # 触发后台分析
         self._trigger_background_analysis(
@@ -476,46 +496,6 @@ class InvestmentAdviceService:
         )
         
         return default_data
-
-    def _get_default_response(self) -> Dict[str, Any]:
-        """获取默认响应（用于无缓存时快速返回）"""
-        return {
-            "strategy": "保守型投资策略",
-            "allocation": {
-                "gold_etf": "30-40%",
-                "physical_gold": "20-30%",
-                "gold_stocks": "10-20%",
-                "cash": "20-30%"
-            },
-            "actions": [
-                {
-                    "type": "buy",
-                    "description": "在回调时分批买入黄金ETF",
-                    "priority": "高"
-                },
-                {
-                    "type": "hold",
-                    "description": "持有现有黄金仓位，等待突破",
-                    "priority": "中"
-                },
-                {
-                    "type": "watch",
-                    "description": "关注美联储政策动向和地缘政治风险",
-                    "priority": "高"
-                }
-            ],
-            "risk_warning": "黄金市场波动较大，建议控制仓位在总资产的30%以内",
-            "time_horizon": "中长期（6-12个月）",
-            "expected_return": "预期年化收益率8-15%",
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "metadata": {
-                "cached": False,
-                "status": "analyzing",
-                "message": "AI分析进行中，首次加载可能需要1-2分钟",
-                "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
-                "analysis_method": "MiMo LLM 综合分析"
-            }
-        }
 
     _ANALYSIS_KEY = "investment_advice"
 

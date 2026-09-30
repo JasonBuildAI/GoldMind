@@ -75,7 +75,17 @@ def capture_advice(monkeypatch):
 
     def _fake(self, **kwargs):
         captured.update(kwargs)
-        return {"strategies": [], "market_assessment": {}}
+        # 必须返回符合契约的完整结构：响应模型现在会校验顶层键，少一个就 500。
+        # 这些 fixture 原先只返回两个字段 —— 因为当时 response_model 是
+        # Dict[str, Any]，什么都不校验。
+        return {
+            "market_assessment": {},
+            "strategies": [],
+            "core_principles": [],
+            "risk_warning": "测试用风险提示",
+            "disclaimer": "测试用免责声明",
+            "metadata": {"status": "analyzing"},
+        }
 
     monkeypatch.setattr(InvestmentAdviceService, "get_investment_advice", _fake)
     return captured
@@ -88,7 +98,19 @@ def capture_summary(monkeypatch):
 
     def _fake(self, **kwargs):
         captured.update(kwargs)
-        return {"core_bullish_logic": []}
+        # 同上：市场总结的响应模型也校验顶层键
+        return {
+            "core_bullish_logic": [],
+            "main_risks": [],
+            "market_consensus": [],
+            "institution_targets": [],
+            "comprehensive_judgment": {},
+            "core_view": "测试",
+            "investment_recommendation": "测试",
+            "confidence_level": "中",
+            "time_horizon": "中长期",
+            "metadata": {"status": "analyzing"},
+        }
 
     monkeypatch.setattr(MarketSummaryService, "get_market_summary", _fake)
     return captured
