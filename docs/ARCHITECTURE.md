@@ -309,10 +309,10 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 派生 | `derive.py` | 原始序列 → 因子值，单位与口径只在这一层固定 |
 | 落库 | `storage.py` | `factor_observations`，唯一约束 `(factor_key, obs_date)`，幂等 |
 | 同步 | `sync.py` | 按源节流（6h ~ 24h）、增量抓取、逐源降级并写入同步报告 |
-| 信号 | `engine.py` | 滚动 z → 方向对齐 → 按尺度取权重（`definitions.horizon_weights`）合成 → 上行概率与期望收益 |
+| 信号 | `engine.py` | 滚动 z → 方向对齐 → 按尺度取权重（`definitions.horizon_weights`）合成 → 一份校准分布给出期望收益、不确定度、上行概率、目标价与区间 |
 | 公允价 | `decompose.py` | 走查式扩展窗口 OLS（`log 金价 ~ 实际利率 + log 美元指数 + log 央行储备 + VIX`）把金价拆成 宏观锚＋需求溢价＋风险溢价＋情绪残差；偏离度 = 市场价 / 公允价 − 1 |
 | 情景 | `scenarios.py` | 预测分布 N(μ, σ²) 的分位数 → Base [q25, q75]（50%）/ Bull 上 25% / Bear 下 25%；触发与失效条件由该尺度最重因子＋200 日均线生成 |
-| 回测 | `backtest.py` | 走查式命中率 + 三个基准 + 80% 区间覆盖率 + 2022-01-01 前后分段 + 逐因子命中率与 IC |
+| 回测 | `backtest.py` | 走查式命中率（评校准后的方向）+ 三个基准 + 未校准得分方向单列成绩 + 80% 区间覆盖率 + 2022-01-01 前后分段 + 逐因子命中率与 IC |
 | 监测 | `monitor.py` | 周更仪表盘逐行给频率 / 来源 / 值 / 信号 / 数据截至日；信号规则集中在 `_rule`，信息型行 `signal=null`，缺数据标「不可用 + 原因」 |
 | 出口 | `service.py` | 调度任务与 `POST /api/gold/quant/refresh` 共用同一条链路 |
 
@@ -327,6 +327,20 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
    更新周期）都返回「不可用 + 原因」；缺失因子按剩余权重归一，不会被当成 0。
 3. **时间只走一个时区**。所有「现在」都用 `app.utils.timeutil`（调度器时区），
    与第七条同一口径。
+
+预测只有一个分布出口（`engine.build_prediction_frame`）：t 时刻的
+μ = α + β·score（扩展窗口 OLS，样本对满足 s + h ≤ t）、
+σ = std(r_s − μ_s | s + h ≤ t)（**走查预测误差**而非回归残差；已实现误差不足 60 组时
+退回「已实现 h 日收益的扩展标准差」，仍然只用过去的数据）、p_up = Φ(μ/σ)。
+目标价 = 基准价 ×(1+μ)、80% 区间 = μ ± 1.2816σ、三情景 = N(μ, σ²) 的分位数，
+全部由这一份分布派生；页面上的「方向」= sign(μ)（恰为 0 记「持平」）。
+因子合成的 score 是**未校准**的输入：只在因子表与「因子偏向（未校准）」行展示，
+回测里单列成绩（`metrics.score_direction_accuracy`）。回归样本不足 60 组时
+`expected_return` 为 NaN → 该尺度整体「不可用 + 原因」，不退回「预期不变」，
+也不拿得分符号顶替方向。走查误差口径下 80% 区间的实际覆盖率（2026-10-01 实测
+78.4% / 76.4% / 71.7% / 68.4% / 51.8%）比残差口径更接近名义值。
+守卫：`tests/unit/quant/test_engine.py`（方向 / 概率 / σ 三条判据，逐条做过变异验证）、
+`tests/unit/quant/test_backtest_metrics.py`。
 
 四层分解的展示口径固定在 `decompose.py` 一处：需求与风险溢价按链式相乘
 （风险溢价以「中枢＋需求溢价」为基数），使「中枢＋需求溢价＋风险溢价 = 公允价」
