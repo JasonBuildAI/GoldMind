@@ -88,12 +88,15 @@ def fetch_gold_from_sina() -> Optional[List[Dict]]:
     try:
         print("  尝试从新浪财经获取黄金数据...")
         
-        # 新浪财经期货历史数据API
-        url = "https://stock2.finance.sina.com.cn/futures/api/jsonp.php"
-        params = {
-            'var': 'GC',
-            'symbol': 'GC'
-        }
+        # 新浪外盘期货历史数据接口。两个关键点：
+        #   1. 服务名必须写在**路径**里。原实现只传 ?var=GC&symbol=GC，
+        #      服务端直接回 "Invalid service name"，这个数据源从未成功过。
+        #   2. 返回形如 `var _GC=([{...}]);` —— 数组外面还套了一层括号。
+        url = (
+            "https://stock.finance.sina.com.cn/futures/api/jsonp.php/"
+            "var%20_GC=/GlobalFuturesService.getGlobalFuturesDailyKLine"
+        )
+        params = {'symbol': 'GC'}
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Referer': 'https://finance.sina.com.cn'
@@ -106,29 +109,30 @@ def fetch_gold_from_sina() -> Optional[List[Dict]]:
         
         # 解析JSONP响应
         text_data = response.text
-        match = re.search(r'var\s+GC\s*=\s*(\[.*?\]);', text_data, re.DOTALL)
-        
+        match = re.search(r'var\s+_GC=\((\[.*?\])\);', text_data, re.DOTALL)
+
         if not match:
             raise DataSourceError("无法解析响应数据")
-        
+
         data = json.loads(match.group(1))
-        
+
         result = []
         for item in data:
-            # 数据格式: [日期, 开盘价, 最高价, 最低价, 收盘价, 成交量]
-            item_date = datetime.strptime(item[0], '%Y-%m-%d').date()
-            
+            # 实际格式是对象数组：{"date","open","high","low","close","volume",...}
+            # 原实现按数组下标 item[0]/item[1] 取值，与真实格式完全不符。
+            item_date = datetime.strptime(item['date'], '%Y-%m-%d').date()
+
             # 只保留2025年至今的数据
             if item_date < START_DATE:
                 continue
-            
+
             result.append({
                 'date': item_date,
-                'open_price': safe_float(item[1]),
-                'high_price': safe_float(item[2]),
-                'low_price': safe_float(item[3]),
-                'close_price': safe_float(item[4]),
-                'volume': int(safe_float(item[5], 0))
+                'open_price': safe_float(item.get('open')),
+                'high_price': safe_float(item.get('high')),
+                'low_price': safe_float(item.get('low')),
+                'close_price': safe_float(item.get('close')),
+                'volume': int(safe_float(item.get('volume'), 0)),
             })
         
         if result:
@@ -154,7 +158,9 @@ def fetch_gold_from_eastmoney() -> Optional[List[Dict]]:
         # 东方财富黄金期货代码: 黄金主连 (AU0)
         url = "http://push2his.eastmoney.com/api/qt/stock/kline/get"
         params = {
-            'secid': '113.AU0',  # 黄金主连
+            # 113.AU0 是无效代码（服务端返回 data=null）；
+            # 101.GC00Y 才是 COMEX 黄金主连。
+            'secid': '101.GC00Y',
             'fields1': 'f1,f2,f3,f4,f5,f6',
             'fields2': 'f51,f52,f53,f54,f55,f56,f57',
             'klt': '101',  # 日K线
@@ -185,13 +191,20 @@ def fetch_gold_from_eastmoney() -> Optional[List[Dict]]:
             parts = line.split(',')
             if len(parts) >= 6:
                 item_date = datetime.strptime(parts[0], '%Y-%m-%d').date()
+                # 本地也过滤一次：不能只依赖接口的 beg 参数，
+                # 新浪那条路是本地过滤的，两边行为必须一致。
+                if item_date < START_DATE:
+                    continue
                 result.append({
                     'date': item_date,
                     'open_price': safe_float(parts[1]),
                     'close_price': safe_float(parts[2]),
-                    'low_price': safe_float(parts[3]),
-                    'high_price': safe_float(parts[4]),
-                    'volume': int(safe_float(parts[5], 0))
+                    # 东财 klines 的字段顺序是 date,open,close,HIGH,LOW,volume,amount。
+                    # 原实现把 [3] 当最低价、[4] 当最高价，两者正好写反，
+                    # 导致最高价低于最低价，期间高低点与波动区间全部失真。
+                    'high_price': safe_float(parts[3]),
+                    'low_price': safe_float(parts[4]),
+                    'volume': int(safe_float(parts[5], 0)),
                 })
         
         if result:
@@ -279,67 +292,6 @@ def fetch_gold_history() -> List[Dict]:
 # 美元指数数据源
 # =============================================================================
 
-def fetch_dollar_from_sina() -> Optional[List[Dict]]:
-    """
-    从新浪财经获取美元指数历史数据
-    
-    API: 使用新浪财经期货数据接口
-    """
-    try:
-        print("  尝试从新浪财经获取美元指数数据...")
-        
-        # 新浪财经美元指数代码
-        url = "https://stock2.finance.sina.com.cn/futures/api/jsonp.php"
-        params = {
-            'var': 'DINIW',
-            'symbol': 'DINIW'
-        }
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://finance.sina.com.cn'
-        }
-        
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        
-        if response.status_code != 200:
-            raise DataSourceError(f"HTTP {response.status_code}")
-        
-        # 解析JSONP响应
-        text_data = response.text
-        match = re.search(r'var\s+DINIW\s*=\s*(\[.*?\]);', text_data, re.DOTALL)
-        
-        if not match:
-            raise DataSourceError("无法解析响应数据")
-        
-        data = json.loads(match.group(1))
-        
-        result = []
-        for item in data:
-            item_date = datetime.strptime(item[0], '%Y-%m-%d').date()
-            
-            # 只保留2025年至今的数据
-            if item_date < START_DATE:
-                continue
-            
-            result.append({
-                'date': item_date,
-                'open_price': safe_float(item[1]),
-                'high_price': safe_float(item[2]),
-                'low_price': safe_float(item[3]),
-                'close_price': safe_float(item[4])
-            })
-        
-        if result:
-            print(f"  ✅ 新浪财经: 获取到 {len(result)} 条美元指数数据")
-            return sorted(result, key=lambda x: x['date'])
-        else:
-            raise DataSourceError("没有获取到数据")
-            
-    except Exception as e:
-        print(f"  ❌ 新浪财经失败: {e}")
-        return None
-
-
 def fetch_dollar_from_eastmoney() -> Optional[List[Dict]]:
     """
     从东方财富获取美元指数历史数据
@@ -350,7 +302,8 @@ def fetch_dollar_from_eastmoney() -> Optional[List[Dict]]:
         # 东方财富美元指数代码
         url = "http://push2his.eastmoney.com/api/qt/stock/kline/get"
         params = {
-            'secid': '100.DINIW',  # 美元指数
+            # 100.DINIW 返回 data=null；100.UDI 才是美元指数。
+            'secid': '100.UDI',
             'fields1': 'f1,f2,f3,f4,f5,f6',
             'fields2': 'f51,f52,f53,f54,f55,f56,f57',
             'klt': '101',
@@ -380,12 +333,17 @@ def fetch_dollar_from_eastmoney() -> Optional[List[Dict]]:
             parts = line.split(',')
             if len(parts) >= 6:
                 item_date = datetime.strptime(parts[0], '%Y-%m-%d').date()
+                # 本地也过滤一次：不能只依赖接口的 beg 参数，
+                # 新浪那条路是本地过滤的，两边行为必须一致。
+                if item_date < START_DATE:
+                    continue
                 result.append({
                     'date': item_date,
                     'open_price': safe_float(parts[1]),
                     'close_price': safe_float(parts[2]),
-                    'low_price': safe_float(parts[3]),
-                    'high_price': safe_float(parts[4])
+                    # 同上：东财的顺序是 high 在前、low 在后
+                    'high_price': safe_float(parts[3]),
+                    'low_price': safe_float(parts[4]),
                 })
         
         if result:
@@ -447,16 +405,15 @@ def fetch_dollar_from_yahoo() -> Optional[List[Dict]]:
 def fetch_dollar_index_history() -> List[Dict]:
     """
     获取美元指数历史数据（多数据源备选）
-    
-    优先级: 新浪财经 -> 东方财富 -> Yahoo Finance
+
+    优先级: 东方财富 -> Yahoo Finance
+
+    新浪那条路已移除：GlobalFuturesService 对 DINIW 返回 `var _DINIW=(null)`，
+    拿不到任何历史数据。东方财富本身就是国内源，优先级上移到第一位。
     """
     print("\n📊 获取美元指数历史数据...")
-    
+
     # 尝试各个数据源
-    data = fetch_dollar_from_sina()
-    if data:
-        return data
-    
     data = fetch_dollar_from_eastmoney()
     if data:
         return data
