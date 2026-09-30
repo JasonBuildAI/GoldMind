@@ -161,3 +161,74 @@ def test_health_caches_a_failed_probe_too(client, monkeypatch):
 
     assert len(calls) == 1, f"10 次 /health 触发了 {len(calls)} 次出网"
     assert body["services"]["tencent_api"]["status"] == "unavailable"
+
+@pytest.mark.integration
+def test_upstream_probe_cache_expires(client, monkeypatch):
+    """探测结果**必须会过期**。
+
+    变异测试发现的缺口：原有测试只验证了「20 次调用只出网 1 次」，
+    也就是只验证了**缓存生效**；没有任何测试验证它会**失效**。
+    把 `now - at < TTL` 改成永真（永久缓存）后，整套测试仍然全绿 ——
+    那样 `/health` 会永远上报一个陈旧的上下游状态。
+    """
+    import requests
+
+    from app import main
+
+    calls: list[str] = []
+
+    class _Response:
+        status_code = 200
+
+    def counting_get(url, *args, **kwargs):
+        calls.append(url)
+        return _Response()
+
+    monkeypatch.setattr(requests, "get", counting_get)
+    monkeypatch.setattr(main, "_upstream_probe", {"at": 0.0, "payload": None})
+
+    # 用一个可控的时钟，避免真的 sleep
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
+
+    assert client.get("/health").status_code == 200
+    assert len(calls) == 1, "首次应当探测"
+
+    # TTL 内：仍然命中缓存
+    clock["now"] += main._UPSTREAM_PROBE_TTL - 1
+    assert client.get("/health").status_code == 200
+    assert len(calls) == 1, "TTL 内不该重新探测"
+
+    # 超过 TTL：必须重新探测
+    clock["now"] += 2
+    assert client.get("/health").status_code == 200
+    assert len(calls) == 2, "超过 TTL 后没有重新探测 —— 缓存永不过期"
+
+
+@pytest.mark.integration
+def test_upstream_probe_cache_expires_for_failures_too(client, monkeypatch):
+    """失败结果也要过期 —— 上游恢复了要能重新发现。"""
+    import requests
+
+    from app import main
+
+    calls: list[str] = []
+
+    def failing_get(url, *args, **kwargs):
+        calls.append(url)
+        raise requests.ConnectionError("upstream down")
+
+    monkeypatch.setattr(requests, "get", failing_get)
+    monkeypatch.setattr(main, "_upstream_probe", {"at": 0.0, "payload": None})
+
+    clock = {"now": 5000.0}
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
+
+    client.get("/health")
+    assert len(calls) == 1
+
+    clock["now"] += main._UPSTREAM_PROBE_TTL + 1
+    body = client.get("/health").json()
+
+    assert len(calls) == 2, "失败的探测被永久缓存了，上游恢复后不会被重新发现"
+    assert body["services"]["tencent_api"]["status"] == "unavailable"
