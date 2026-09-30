@@ -174,13 +174,13 @@ async def update_prices_job():
     logger.info(f"开始更新黄金价格数据 - 交易日: {today}")
     
     try:
-        from app.services.gold_price_service import get_london_gold_price
+        from app.services.realtime_price import get_realtime_gold_price
         from app.services.gold_service import GoldService
         from app.database import SessionLocal
         from app.models.gold_price import GoldPrice
         
         # 2. 获取伦敦金实时价格（包含完整OHLC数据）
-        realtime_data = get_london_gold_price()
+        realtime_data = get_realtime_gold_price()
         
         if not realtime_data:
             logger.warning("未能获取实时金价，尝试使用备用数据源...")

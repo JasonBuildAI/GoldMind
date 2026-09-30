@@ -210,25 +210,24 @@ def _disable_background_analysis(request, monkeypatch: pytest.MonkeyPatch) -> No
 def _isolate_cache_dir(tmp_path, monkeypatch):
     """把文件缓存重定向到临时目录。
 
-    否则测试会读写仓库里提交的 `backend/cache/*.json`：既让测试结果依赖
-    仓库内容，也可能把仓库文件改坏。同时清空进程内内存缓存，避免用例串味。
+    否则测试会读写仓库里的 `backend/cache/*.json`：既让测试结果依赖仓库内容，
+    也可能把仓库文件改坏。同时清空进程内内存缓存，避免用例串味。
+
+    注意：文件缓存现在只有 CacheManager 一个实现（gold_service 与
+    gold_price_service 各自那份已合并到 realtime_price），所以只需要改它一处。
     """
     import app.services.bearish_factor_service as bearish_factor_service
     import app.services.cache_manager as cache_manager
-    import app.services.gold_service as gold_service
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
 
     monkeypatch.setattr(cache_manager, "CACHE_DIR", cache_dir)
-    monkeypatch.setattr(gold_service, "CACHE_DIR", cache_dir)
 
     cache_manager._memory_cache.clear()
-    gold_service._price_cache.clear()
     bearish_factor_service._cache.clear()
     yield
     cache_manager._memory_cache.clear()
-    gold_service._price_cache.clear()
     bearish_factor_service._cache.clear()
 
 

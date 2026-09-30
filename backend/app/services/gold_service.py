@@ -2,19 +2,12 @@
 import re
 import requests
 import threading
-import json
 from datetime import datetime, date
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from app.models.gold_price import GoldPrice, DollarIndex
-from app.services.cache_manager import CACHE_DIR
-
-# 内存缓存（进程内）
-_price_cache = {}
-_cache_lock = threading.Lock()
-_cache_ttl = 300  # 5分钟缓存
 
 # 创建带重试机制的HTTP Session（提升API稳定性）
 def create_retry_session(
@@ -60,95 +53,6 @@ class GoldService:
     
     def __init__(self, db: Session):
         self.db = db
-    
-    def _get_cached_price(self) -> Optional[Dict]:
-        """从缓存获取价格（先查内存，再查文件）"""
-        # 1. 检查内存缓存
-        with _cache_lock:
-            if 'realtime_price' in _price_cache:
-                cached_data, timestamp = _price_cache['realtime_price']
-                if datetime.now().timestamp() - timestamp < _cache_ttl:
-                    return cached_data
-        
-        # 2. 检查文件缓存
-        try:
-            cache_file = CACHE_DIR / "realtime_price.json"
-            if cache_file.exists():
-                with open(cache_file, 'r', encoding='utf-8') as f:
-                    cached = json.load(f)
-                    timestamp = cached.get('_timestamp', 0)
-                    if datetime.now().timestamp() - timestamp < _cache_ttl:
-                        data = cached.get('data')
-                        # 更新内存缓存
-                        with _cache_lock:
-                            _price_cache['realtime_price'] = (data, timestamp)
-                        return data
-        except Exception as e:
-            print(f"[GoldService] 读取文件缓存失败: {e}")
-        
-        return None
-    
-    def _set_cached_price(self, data: Dict) -> None:
-        """设置价格缓存（同时更新内存和文件）"""
-        timestamp = datetime.now().timestamp()
-        
-        # 1. 更新内存缓存
-        with _cache_lock:
-            _price_cache['realtime_price'] = (data, timestamp)
-        
-        # 2. 更新文件缓存
-        try:
-            cache_file = CACHE_DIR / "realtime_price.json"
-            cache_data = {
-                'data': data,
-                '_timestamp': timestamp,
-                '_created_at': datetime.now().isoformat()
-            }
-            with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"[GoldService] 写入文件缓存失败: {e}")
-    
-    def get_realtime_price_from_tencent(self) -> Optional[Dict]:
-        """从腾讯财经获取实时金价 - 实时获取，不缓存（带重试机制）"""
-        # 实时获取最新价格，不使用缓存
-        try:
-            url = "https://qt.gtimg.cn/q=hf_GC"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            # 使用带重试的session，设置较短的超时时间
-            session = get_http_session()
-            response = session.get(url, headers=headers, timeout=3)
-            
-            if response.status_code == 200:
-                # 解析数据
-                match = re.search(r'v_hf_GC="([^"]+)"', response.text)
-                if match:
-                    data = match.group(1).split(',')
-                    latest = float(data[0])
-                    prev_close = float(data[7])
-                    change_pct = (latest - prev_close) / prev_close * 100
-                    
-                    result = {
-                        "price": latest,
-                        "previous_close": prev_close,
-                        "change_percent": round(change_pct, 2),
-                        "open": float(data[2]),
-                        "high": float(data[3]),
-                        "low": float(data[4]),
-                        "updated_at": datetime.now().isoformat(),
-                        "date": data[12],
-                        "source": "腾讯财经-纽约黄金"
-                    }
-                    # 不缓存，直接返回实时数据
-                    return result
-        except requests.exceptions.Timeout:
-            print("[GoldService] 腾讯财经API超时，使用数据库数据")
-        except Exception as e:
-            print(f"[GoldService] 获取腾讯财经金价失败: {e}")
-        
-        return None
     
     def get_realtime_dollar_index(self) -> Optional[Dict]:
         """从新浪财经获取实时美元指数(DXY/DINIW) - 带超时和重试机制"""
@@ -236,31 +140,41 @@ class GoldService:
         ).first()
     
     def get_realtime_price_info(self) -> Optional[Dict]:
-        """获取当前金价信息（优先使用腾讯财经实时数据，带缓存）"""
-        # 首先尝试获取腾讯财经实时数据（带缓存）
-        tencent_data = self.get_realtime_price_from_tencent()
-        if tencent_data:
-            return tencent_data
-        
-        # 如果失败，使用数据库最新数据
+        """获取当前金价：多源实时价优先，全部失败则退回数据库最新记录。
+
+        实时部分交给 app/services/realtime_price.py —— 全项目唯一入口，
+        内部按 腾讯 → 新浪 → 东方财富 依次尝试。
+        原先只试腾讯，腾讯一挂就只能用数据库里的旧数据。
+        """
+        from app.services.realtime_price import get_realtime_gold_price
+
+        realtime = get_realtime_gold_price()
+        if realtime:
+            return realtime
+
+        # 实时源全部不可用时，退回数据库里的最新一条
         latest = self.get_latest_price()
         if not latest:
             return None
-        
+
         prev = self.db.query(GoldPrice).filter(
             GoldPrice.date < latest.date
         ).order_by(GoldPrice.date.desc()).first()
-        
+
         prev_close = prev.close_price if prev else latest.close_price
         daily_change = ((latest.close_price - prev_close) / prev_close * 100) if prev_close else 0
-        
+
         return {
             "price": latest.close_price,
             "previous_close": prev_close,
+            "change": round(latest.close_price - prev_close, 2),
             "change_percent": round(daily_change, 2),
             "updated_at": datetime.now().isoformat(),
             "date": latest.date.strftime("%Y-%m-%d"),
-            "source": "数据库历史数据"
+            # source 用稳定的短 id，source_name 给人看。
+            # 上层据此判断这个价格到底是不是实时的。
+            "source": "database",
+            "source_name": "数据库历史数据",
         }
     
     def get_2025_start_price(self) -> float:
@@ -349,7 +263,11 @@ class GoldService:
             "market_status": market_status["status"],
             "market_status_desc": market_status["description"],
             "updated_at": realtime_info["updated_at"],
-            "data_source": realtime_info.get("source", "未知")
+            # 数据来源与新鲜度：前端据此决定显示「实时」还是「历史数据」。
+            # 原先这个字段既没进响应模型、也没人读，属于白算。
+            "data_source": realtime_info.get("source_name")
+            or realtime_info.get("source", "未知"),
+            "is_realtime": realtime_info.get("source") != "database",
         }
     
     def _calculate_market_status(
