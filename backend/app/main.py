@@ -212,9 +212,15 @@ async def health_check():
             "response_time_ms": "<50"
         }
     except Exception as e:
+        # 只回异常**类型**，不回异常文本。
+        # /health 是公开接口（本项目无鉴权），而数据库异常的文本里会带
+        # 主机、用户名、驱动细节 —— 例如
+        # "Access denied for user 'root'@'localhost'"。
+        # 完整信息写进服务端日志，运维照样能查。
+        logger.error(f"[健康检查] 数据库连接失败: {e}")
         health_status["services"]["database"] = {
             "status": "disconnected",
-            "error": str(e)
+            "error_type": type(e).__name__,
         }
         has_error = True
     
@@ -231,9 +237,10 @@ async def health_check():
             "response_code": response.status_code
         }
     except Exception as e:
+        logger.error(f"[健康检查] 腾讯行情接口不可用: {e}")
         health_status["services"]["tencent_api"] = {
             "status": "unavailable",
-            "error": str(e)
+            "error_type": type(e).__name__,
         }
     
     # 3. 检查缓存状态
@@ -251,13 +258,16 @@ async def health_check():
             "status": "ok" if file_cache_ok else "degraded",
             "files_count": len(cache_status["file_cache_keys"]),
             "memory_keys": cache_status["memory_cache_keys"],
-            "cache_dir": cache_status["cache_dir"],
+            # 只给目录名：完整路径会暴露服务器目录结构，而这是公开接口。
+            # 需要完整路径时看服务端日志。
+            "cache_dir_name": os.path.basename(cache_status["cache_dir"]),
             "file_cache_enabled": file_cache_ok,
         }
     except Exception as e:
+        logger.error(f"[健康检查] 缓存状态读取失败: {e}")
         health_status["services"]["cache"] = {
             "status": "error",
-            "error": str(e)
+            "error_type": type(e).__name__,
         }
     
     # 4. 检查定时任务调度器
@@ -268,9 +278,10 @@ async def health_check():
             "jobs_count": len(scheduler.get_jobs())
         }
     except Exception as e:
+        logger.error(f"[健康检查] 调度器状态读取失败: {e}")
         health_status["services"]["scheduler"] = {
             "status": "error",
-            "error": str(e)
+            "error_type": type(e).__name__,
         }
     
     # 5. 检查AI服务配置
@@ -283,9 +294,10 @@ async def health_check():
             **llm_info,
         }
     except Exception as e:
+        logger.error(f"[健康检查] AI 配置读取失败: {e}")
         health_status["services"]["ai_config"] = {
             "status": "error",
-            "error": str(e)
+            "error_type": type(e).__name__,
         }
     
     # 根据错误情况设置总体状态

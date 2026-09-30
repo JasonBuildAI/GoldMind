@@ -56,7 +56,7 @@ GoldMind/
     │   ├── main.py        应用入口、限流、CORS
     │   ├── config.py      全部配置项（pydantic-settings）
     │   ├── database.py    引擎与会话（MySQL / SQLite 双支持）
-    │   ├── models/        7 张表的 ORM 定义
+    │   ├── models/        6 张表的 ORM 定义
     │   ├── routers/       4 个路由模块
     │   ├── services/      业务逻辑（见下）
         │   └── utils/         rate_limit 等

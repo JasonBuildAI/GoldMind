@@ -9,6 +9,12 @@
 #   - langchain-core: the API surface of langchain-openai, pinned so an upstream
 #     breaking change cannot slip in
 #   - python-multipart: required by FastAPI/Starlette to parse forms
+#
+# Versions are pinned exactly, to the versions the test suite was run against.
+# Loose ranges mean a fresh `pip install` can pull a new major with breaking
+# changes and nobody finds out until deployment; the frontend pins through
+# package-lock.json for the same reason.
+#
 # Everything else arrives transitively and is intentionally not repeated here:
 #   annotated-types (pydantic), tenacity (langchain-core),
 #   pandas + numpy + beautifulsoup4 (yfinance)
@@ -16,32 +22,32 @@
 # FastAPI and Server
 fastapi==0.115.0
 uvicorn[standard]==0.22.0
-python-multipart>=0.0.6
+python-multipart==0.0.32
 
 # Database
-sqlalchemy>=2.0.0
-pymysql>=1.1.0
+sqlalchemy==2.1.1
+pymysql==1.2.3
 
 # LLM (all clients are built by app/services/llm_provider.py)
 langchain-core==1.2.7
 langchain-openai==1.1.6
-openai>=1.0.0
+openai==2.54.0
 
 # Validation
 pydantic==2.10.0
 pydantic-settings==2.12.0
 
 # External Data
-yfinance>=1.0.0
-requests>=2.31.0
-feedparser>=6.0.10
+yfinance==1.7.0
+requests==2.34.2
+feedparser==6.0.14
 
 # Scheduler
-apscheduler>=3.10.0
+apscheduler==3.11.3
 
 # Utilities
-python-dotenv>=1.0.0
-loguru>=0.7.0
+python-dotenv==1.2.3
+loguru==0.7.3
 # [socks] pulls in socksio. If the host sets a SOCKS proxy, httpx raises while
 # building a client without it, which makes every LLM call fail (see MIMO_TRUST_ENV).
-httpx[socks]>=0.26.0
+httpx[socks]==0.28.1

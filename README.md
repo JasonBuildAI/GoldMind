@@ -197,13 +197,18 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+> **版本是钉死的**（`==`，不是 `>=`），钉的是测试实际跑过的版本。
+> 松散范围意味着 `pip install` 随时可能拉到带破坏性变更的新大版本，
+> 而问题要到部署时才暴露。前端同理 —— `package-lock.json` 已入库，
+> 用 `npm ci` 而不是 `npm install`。
+
 **前端依赖：**
 
 ```bash
 cd app
 
-# 安装依赖
-npm install
+# 安装依赖（用 ci 而不是 install：严格按 lockfile，可重现）
+npm ci
 ```
 
 #### 3. 初始化数据库

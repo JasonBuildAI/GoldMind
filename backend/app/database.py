@@ -121,14 +121,15 @@ def mysql_connection_params(include_database: bool = True) -> dict:
             params["database"] = (parsed.path or "/").lstrip("/") or "gold_analysis"
         return params
 
-    # 没配 DATABASE_URL（或用的不是 MySQL）时，退回旧的 DB_* 约定
+    # 没配 DATABASE_URL（或用的不是 MySQL）时，退回旧的 DB_* 约定。
+    # 密码同样**不给默认值** —— 凭据只能来自环境（AGENTS.md 红线 2）。
     import os
 
     params = {
         "host": os.getenv("DB_HOST", "localhost"),
         "port": int(os.getenv("DB_PORT", "3306")),
         "user": os.getenv("DB_USER", "root"),
-        "password": os.getenv("DB_PASSWORD", "root123"),
+        "password": os.getenv("DB_PASSWORD", ""),
         "charset": "utf8mb4",
     }
     if include_database:

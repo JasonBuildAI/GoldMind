@@ -8,7 +8,11 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # 数据库配置
-    DATABASE_URL: str = "mysql+pymysql://root:root123@localhost:3306/gold_analysis"
+    # 默认指向本机 MySQL，但**故意不带密码**：凭据只能来自 .env 与部署环境
+    # （AGENTS.md 的红线 2）。带一个弱默认密码的后果是「没配也能连上」——
+    # 那会掩盖配置缺失，也让弱口令看起来是正常用法。
+    # 没配 .env 时这里会认证失败，是期望的行为。
+    DATABASE_URL: str = "mysql+pymysql://root@localhost:3306/gold_analysis"
     
     # LLM 供应商（当前仅支持 mimo）
     LLM_PROVIDER: str = "mimo"
@@ -46,11 +50,16 @@ class Settings(BaseSettings):
     # 应用配置
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
-    DEBUG: bool = True
+    # 只影响 `uvicorn --reload`（见 main.py 末尾）。
+    #
+    # 默认 False：没有 .env 时（例如直接部署、或忘了复制模板）不该默认打开
+    # 开发期的自动重载 —— 它在生产里白耗资源，也不是 uvicorn 建议的用法。
+    # 本地开发想要热重载就在 .env 里显式写 DEBUG=true；
+    # docker-compose 已用 `DEBUG=${DEBUG:-false}` 覆盖。
+    DEBUG: bool = False
     # 日志级别：DEBUG / INFO / WARNING / ERROR。
     # .env.example 里一直写着这一项，但此前没有任何代码读它 —— 设了也不生效。
     LOG_LEVEL: str = "INFO"
-    SECRET_KEY: str = "your-secret-key-change-in-production"
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
     # 新闻 RSS 源，格式 "名称|URL,名称|URL"；留空则使用 news_service 内置默认源
