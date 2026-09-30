@@ -7,6 +7,7 @@ from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from app.utils import timeutil
 from app.models.gold_price import GoldPrice, DollarIndex
 from loguru import logger
 
@@ -109,11 +110,11 @@ class GoldService:
                             "open": round(_field(5, latest), 2),
                             "high": round(_field(6, latest), 2),
                             "low": round(_field(7, latest), 2),
-                            "updated_at": datetime.now().isoformat(),
+                            "updated_at": timeutil.now_iso(),
                             "date": (
                                 values[10]
                                 if len(values) > 10 and values[10]
-                                else datetime.now().strftime("%Y-%m-%d")
+                                else timeutil.today_str()
                             ),
                             "source": "新浪财经-ICE美元指数(DXY)",
                         }
@@ -200,7 +201,7 @@ class GoldService:
             "previous_close": prev_close,
             "change": round(latest.close_price - prev_close, 2),
             "change_percent": round(daily_change, 2),
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": timeutil.now_iso(),
             "date": latest.date.strftime("%Y-%m-%d"),
             # source 用稳定的短 id，source_name 给人看。
             # 上层据此判断这个价格到底是不是实时的。
@@ -259,21 +260,21 @@ class GoldService:
             
             # 判断最高价是历史数据还是当前实时价格
             if max_price == current_price:
-                max_date = datetime.now().strftime("%Y-%m-%d")
+                max_date = timeutil.today_str()
             else:
                 max_price_obj = max(prices_2025, key=lambda x: x.high_price or 0)
                 max_date = max_price_obj.date.strftime("%Y-%m-%d")
             
             # 判断最低价是历史数据还是当前实时价格
             if min_price == current_price:
-                min_date = datetime.now().strftime("%Y-%m-%d")
+                min_date = timeutil.today_str()
             else:
                 min_price_obj = min(prices_2025, key=lambda x: x.low_price or float('inf'))
                 min_date = min_price_obj.date.strftime("%Y-%m-%d")
         else:
             max_price = current_price
             min_price = start_price
-            max_date = datetime.now().strftime("%Y-%m-%d")
+            max_date = timeutil.today_str()
             min_date = "2025-01-02"
         
         # 计算市场状态

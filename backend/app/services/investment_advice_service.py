@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
+from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.gold_price import GoldPrice
 from app.config import settings
@@ -366,7 +367,7 @@ class InvestmentAdviceService:
                 result["metadata"] = {
                     "cached": False,
                     "cache_source": "mimo_realtime",
-                    "generated_at": datetime.now().isoformat(),
+                    "generated_at": timeutil.now_iso(),
                     "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
                     "analysis_method": "MiMo LLM 实时分析"
                 }
@@ -382,7 +383,7 @@ class InvestmentAdviceService:
             cached_data["metadata"] = {
                 "cached": True,
                 "cache_source": "file",
-                "generated_at": datetime.now().isoformat(),
+                "generated_at": timeutil.now_iso(),
                 "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
                 "analysis_method": "MiMo LLM 综合分析"
             }

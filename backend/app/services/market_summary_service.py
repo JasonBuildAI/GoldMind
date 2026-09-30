@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 
+from app.utils import timeutil
 from app.config import settings
 from app.services.cache_manager import CacheManager
 from app.services.single_flight import single_flight
@@ -299,7 +300,7 @@ class MarketSummaryService:
                 result["metadata"] = {
                     "cached": False,
                     "cache_source": "mimo_realtime",
-                    "generated_at": datetime.now().isoformat(),
+                    "generated_at": timeutil.now_iso(),
                     "data_sources": ["实时金价数据", "看涨因子", "看跌因子", "机构预测", "24小时新闻"],
                     "analysis_method": "MiMo LLM 综合分析"
                 }
@@ -316,7 +317,7 @@ class MarketSummaryService:
             cached_data["metadata"] = {
                 "cached": True,
                 "cache_source": "file",
-                "generated_at": datetime.now().isoformat(),
+                "generated_at": timeutil.now_iso(),
                 "data_sources": ["实时金价数据", "看涨因子", "看跌因子", "机构预测", "24小时新闻"],
                 "analysis_method": "MiMo LLM 综合分析"
             }

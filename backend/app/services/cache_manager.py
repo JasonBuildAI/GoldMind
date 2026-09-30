@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from pathlib import Path
 
+from app.utils import timeutil
 from app.config import settings
 from loguru import logger
 
@@ -153,7 +154,7 @@ class CacheManager:
             cache_data = {
                 'data': data,
                 '_timestamp': timestamp,
-                '_created_at': datetime.now().isoformat()
+                '_created_at': timeutil.now_iso()
             }
 
             # 每次写入用**独立的**临时文件名。

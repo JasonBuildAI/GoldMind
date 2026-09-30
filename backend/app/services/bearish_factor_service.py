@@ -8,6 +8,7 @@ import threading
 import asyncio
 from functools import partial
 
+from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
@@ -206,7 +207,7 @@ class BearishFactorAnalyzer:
             # 检查搜索结果是否有效
             if search_result.get("bearish_factors") and len(search_result["bearish_factors"]) > 0:
                 logger.info(f"[BearishFactor] 成功获取 {len(search_result['bearish_factors'])} 个看空因素")
-                search_result["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                search_result["last_updated"] = timeutil.now_str()
                 search_result["data_source"] = "MiMo 联网搜索"
                 return search_result
             else:
@@ -296,7 +297,7 @@ class BearishFactorAnalyzer:
         gold_data = self.get_current_gold_data(db)
 
         # 3. 构建prompt并调用LLM
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_time = timeutil.now_str()
         prompt = self.prompt_template.format(
             # gold_data 可能为 None（数据库里没有金价）—— 那时如实写「暂无数据」，
             # 而不是解引用一个编造的默认值
@@ -403,7 +404,7 @@ class BearishFactorAnalyzer:
                 }
             ],
             "analysis_summary": "基于当前市场状况的综合分析",
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "last_updated": timeutil.now_str()
         }
 
     def save_to_database(self, db: Session, analysis_result: Dict[str, Any]) -> None:
@@ -502,7 +503,7 @@ class BearishFactorService:
                 result["metadata"] = {
                     "cached": False,
                     "cache_source": "realtime_search",
-                    "generated_at": datetime.now().isoformat(),
+                    "generated_at": timeutil.now_iso(),
                     "message": "基于MiMo 联网搜索的最新数据"
                 }
                 return result
@@ -517,7 +518,7 @@ class BearishFactorService:
             memory_cache["metadata"] = {
                 "cached": True,
                 "cache_source": "memory",
-                "generated_at": datetime.now().isoformat()
+                "generated_at": timeutil.now_iso()
             }
             return memory_cache
 
@@ -527,7 +528,7 @@ class BearishFactorService:
             cached_data["metadata"] = {
                 "cached": True,
                 "cache_source": "file",
-                "generated_at": datetime.now().isoformat()
+                "generated_at": timeutil.now_iso()
             }
             return cached_data
 
@@ -549,7 +550,7 @@ class BearishFactorService:
         return {
             "bearish_factors": [],
             "analysis_summary": "",
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "last_updated": timeutil.now_str(),
             "metadata": {
                 "cached": False,
                 "status": "analyzing",

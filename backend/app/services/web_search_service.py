@@ -31,6 +31,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from app.utils import timeutil
 from app.config import settings
 from app.services import llm_provider
 
@@ -123,7 +124,7 @@ class WebSearchService:
             return {
                 "available": False,
                 "reason": reason,
-                "search_time": datetime.now().strftime("%Y-%m-%d"),
+                "search_time": timeutil.today_str(),
             }
 
         parsed = extract_json_object(content)
@@ -132,11 +133,11 @@ class WebSearchService:
                 "available": False,
                 "reason": "搜索结果无法解析为 JSON",
                 "raw_content": content,
-                "search_time": datetime.now().strftime("%Y-%m-%d"),
+                "search_time": timeutil.today_str(),
             }
 
         parsed["available"] = True
-        parsed.setdefault("search_time", datetime.now().strftime("%Y-%m-%d"))
+        parsed.setdefault("search_time", timeutil.today_str())
         return parsed
 
     def search_institution_predictions(self) -> Dict[str, Any]:

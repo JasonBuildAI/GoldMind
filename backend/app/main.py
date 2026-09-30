@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 
+from app.utils import timeutil
 from app.config import settings
 from app.database import engine, Base
 from app.routers import gold_prices, analysis, news, predictions
@@ -218,7 +219,7 @@ async def health_check():
     
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": timeutil.now_iso(),
         "version": "1.0.0",
         "services": {}
     }

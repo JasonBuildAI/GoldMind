@@ -30,6 +30,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
+from app.utils import timeutil
 from app.services.cache_manager import CacheManager
 from loguru import logger
 
@@ -85,7 +86,7 @@ def _build_result(
         "open": round(open_price, 2),
         "high": round(high, 2),
         "low": round(low, 2),
-        "updated_at": datetime.now().isoformat(),
+        "updated_at": timeutil.now_iso(),
         "date": date_str,
         "update_time": f"{date_str} {time_str}",
         "source": source,
@@ -111,7 +112,7 @@ def _parse_hq_payload(payload: str, *, source: str, source_name: str) -> Optiona
         open_price=_safe_float(parts[_F_OPEN]),
         high=_safe_float(parts[_F_HIGH]),
         low=_safe_float(parts[_F_LOW]),
-        date_str=parts[_F_DATE] or datetime.now().strftime("%Y-%m-%d"),
+        date_str=parts[_F_DATE] or timeutil.today_str(),
         time_str=parts[_F_TIME] if len(parts) > _F_TIME else "",
         source=source,
         source_name=source_name,

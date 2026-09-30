@@ -4,6 +4,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
 from app.config import settings
+from app.utils import timeutil
 
 scheduler = AsyncIOScheduler(timezone=settings.SCHEDULER_TIMEZONE)
 
@@ -16,15 +17,8 @@ def scheduler_now() -> datetime:
     会算错：同一个「北京时间 06:30」的任务，在 UTC 容器里算出的是前一天，
     在东八区机器上算出的又是当天，同一份行情被记到相差一天的日期上。
     """
-    try:
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo(settings.SCHEDULER_TIMEZONE))
-    except Exception:       # 缺 tzdata 时退回本地时间，至少不崩
-        logger.warning(
-            f"[调度器] 无法加载时区 {settings.SCHEDULER_TIMEZONE}（缺 tzdata？），"
-            "退回服务器本地时间"
-        )
-        return datetime.now()
+    # 实现收敛到 app.utils.timeutil（全项目唯一的时区入口）
+    return timeutil.now()
 
 
 def scheduler_today():

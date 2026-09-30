@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Query, HTTPException
 from anyio import to_thread
+from app.utils import timeutil
 from app.database import get_db_context
 from app.schemas.gold_price import (
     DailyPriceResponse,
@@ -44,7 +45,7 @@ async def get_daily_prices(
     - limit 表示**最多返回多少个点**，保留最近的；ge=1 让 0 与负数直接 422
     """
     start = _parse_date(start_date, "start_date") if start_date else datetime(2025, 1, 1)
-    end = _parse_date(end_date, "end_date") if end_date else datetime.now()
+    end = _parse_date(end_date, "end_date") if end_date else timeutil.now()
     
     # 在线程池中执行同步数据库操作，避免阻塞事件循环
     def fetch_data():
@@ -80,7 +81,7 @@ async def get_daily_prices(
         
         realtime_info = await to_thread.run_sync(fetch_realtime)
         if realtime_info:
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = timeutil.today_str()
             current_price = realtime_info.get("price", 0)
             
             # 检查最后一天是否是今天
@@ -157,7 +158,7 @@ async def get_correlation_data(
         realtime_info, dollar_realtime = await to_thread.run_sync(fetch_realtime)
 
         if realtime_info:
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = timeutil.today_str()
             current_gold_price = realtime_info.get("price", 0)
 
             if dollar_realtime:

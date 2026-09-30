@@ -6,6 +6,7 @@ from sqlalchemy import and_
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
+from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.analysis import InstitutionView
 from app.config import settings
@@ -161,7 +162,7 @@ class InstitutionPredictionAnalyzer:
             # 会被混为一谈，上层就无法决定是否该回退。
             if search_result.get("available") and search_result.get("institutions"):
                 logger.info(f"[InstitutionPrediction] 成功获取 {len(search_result['institutions'])} 家机构预测")
-                search_result["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                search_result["last_updated"] = timeutil.now_str()
                 search_result["data_source"] = "MiMo 联网搜索"
                 return search_result
             else:
@@ -195,7 +196,7 @@ class InstitutionPredictionAnalyzer:
             ])
 
         # 2. 构建prompt并调用LLM
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_time = timeutil.now_str()
         prompt = self.prompt_template.format(
             news_content=news_content,
             current_time=current_time
@@ -242,7 +243,7 @@ class InstitutionPredictionAnalyzer:
         return {
             "institutions": [],
             "analysis_summary": "",
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "last_updated": timeutil.now_str(),
         }
 
     def save_to_database(self, db: Session, analysis_result: Dict[str, Any]) -> None:
@@ -316,7 +317,7 @@ class InstitutionPredictionService:
                 result["metadata"] = {
                     "cached": False,
                     "cache_source": "realtime_search",
-                    "generated_at": datetime.now().isoformat(),
+                    "generated_at": timeutil.now_iso(),
                     "message": "基于MiMo 联网搜索的最新数据"
                 }
                 return result
@@ -331,7 +332,7 @@ class InstitutionPredictionService:
             cached_data["metadata"] = {
                 "cached": True,
                 "cache_source": "file",
-                "generated_at": datetime.now().isoformat()
+                "generated_at": timeutil.now_iso()
             }
             return cached_data
 
@@ -357,11 +358,11 @@ class InstitutionPredictionService:
                     for v in recent_views[:4]
                 ],
                 "analysis_summary": "基于最新市场数据的机构预测",
-                "last_updated": recent_views[0].updated_at.strftime("%Y-%m-%d %H:%M:%S") if recent_views else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "last_updated": recent_views[0].updated_at.strftime("%Y-%m-%d %H:%M:%S") if recent_views else timeutil.now_str(),
                 "metadata": {
                     "cached": True,
                     "cache_source": "database",
-                    "generated_at": datetime.now().isoformat()
+                    "generated_at": timeutil.now_iso()
                 }
             }
             # 更新文件缓存

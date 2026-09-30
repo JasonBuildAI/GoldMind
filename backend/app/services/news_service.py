@@ -1,5 +1,5 @@
 """新闻服务"""
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, List, Optional
 
 import feedparser
@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.utils import timeutil
 from app.models.news import GoldNews, SentimentType
 from app.utils.enum_values import resolve_enum
 from loguru import logger
@@ -40,16 +41,11 @@ def to_local_naive(parsed) -> Optional[datetime]:
     if not parsed:
         return None
     try:
-        moment = datetime(*parsed[:6], tzinfo=timezone.utc)
+        as_utc = datetime(*parsed[:6])
     except (TypeError, ValueError):
         return None
-    try:
-        from zoneinfo import ZoneInfo
-
-        moment = moment.astimezone(ZoneInfo(settings.SCHEDULER_TIMEZONE))
-    except Exception:       # 缺 tzdata 时退回 UTC，至少不比原来更差
-        logger.warning(f"[新闻] 无法加载时区 {settings.SCHEDULER_TIMEZONE}，RSS 时间按 UTC 存")
-    return moment.replace(tzinfo=None)
+    # 换算逻辑收敛到 app.utils.timeutil（全项目唯一的时区入口）
+    return timeutil.from_utc_naive(as_utc)
 
 
 def parse_rss_sources(raw: str) -> List[tuple[str, str]]:
