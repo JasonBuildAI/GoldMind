@@ -517,8 +517,10 @@ python scripts/smoke_mimo.py
 | [`docs/00-产品方向.md`](docs/00-产品方向.md) | 产品要做什么；**现状 vs 目标** | 改需求、加功能前 |
 | [`README.md`](README.md) | 目录、命令、配置（本文件） | 找命令 / 配置时 |
 | [`docs/10-密钥与隐私.md`](docs/10-密钥与隐私.md) | 密钥规则与历史泄漏处理 | 动配置 / 密钥前 |
+| [`docs/20-前端设计规范.md`](docs/20-前端设计规范.md) | 前端视觉语言：令牌、排版、组件、界面文案规则 | 改前端界面前 |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 架构设计 | 动系统结构前 |
 | [`docs/API.md`](docs/API.md) | 接口规范 | 改接口前 |
+| [`docs/specs/`](docs/specs/) | 各轮改动的 spec 与 plan（过程记录，不是第二权威） | 追溯某轮决定时 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 贡献流程 | 提 PR 前 |
 
 > ⚠️ `docs/API.md` 是早期版本，**尚未与当前实现对齐**：它仍以 `/api/analysis/*`
