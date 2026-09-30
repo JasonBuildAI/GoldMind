@@ -39,6 +39,9 @@ MODEL_VERSION = "quant-v1"
 # 用于计算收益与目标价的基准价格序列（COMEX 主力期货日收盘）
 BENCHMARK_KEY = "gold_close"
 
+# 预测周期（交易日）。三档覆盖短线情绪、一周资金流与一个月的宏观定价。
+HORIZONS: tuple[int, ...] = (1, 5, 20)
+
 
 @dataclass(frozen=True)
 class FactorDefinition:
