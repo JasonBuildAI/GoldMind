@@ -1,0 +1,63 @@
+/*
+ * 设计令牌 —— 界面上所有颜色、字体与尺寸的唯一真源。
+ * 规范见 docs/20-前端设计规范.md；组件只引用变量，不写新的十六进制色。
+ */
+:root {
+  /* 纸与墨 */
+  --paper: #f6f6f3;
+  --surface: #ffffff;
+  --ink: #17191b;
+  --ink-muted: #5c6166;
+  --rule: #d9dad4;
+  --gold: #8a6a12;
+
+  /* 涨跌：红涨绿跌。方向必须同时由 ▲▼ 与文字表达，颜色只是加强 */
+  --up: #b4232a;
+  --down: #16653c;
+
+  /* 字体：全部使用系统栈，零下载 */
+  --font-serif: Georgia, "Songti SC", "Noto Serif CJK SC", SimSun, serif;
+  --font-sans: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC",
+    Arial, sans-serif;
+
+  /* 版式 */
+  --max-width: 1180px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --text-3xl: 34px;
+}
+
+/* 动效只用于回应人的操作；用户要求减少动效时全部关闭 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 研究简报应当可打印：去底色、隐藏交互控件、块内避免断页 */
+@media print {
+  :root {
+    --paper: #ffffff;
+    --rule: #999999;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .panel,
+  .data-table,
+  figure,
+  .state {
+    break-inside: avoid;
+  }
+}
