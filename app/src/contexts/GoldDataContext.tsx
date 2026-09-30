@@ -165,15 +165,12 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
   // 单独刷新美元指数（实时更新）
   const refreshDollarRealtime = useCallback(async () => {
     try {
-      console.log('[GoldDataContext] 开始获取实时美元指数...');
       const dollarData = await goldApi.getDollarRealtime();
-      console.log('[GoldDataContext] 获取到实时美元指数:', dollarData);
       setDollarRealtime(dollarData);
 
       // 更新相关性数据中的美元指数
       setCorrelationData(prevData => {
         if (!prevData || prevData.length === 0) {
-          console.log('[GoldDataContext] correlationData为空，不更新');
           return prevData;
         }
 
