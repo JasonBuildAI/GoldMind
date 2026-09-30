@@ -6,6 +6,7 @@ const NAV = [
   { href: '#factors', label: '多空' },
   { href: '#institutions', label: '机构' },
   { href: '#strategy', label: '策略' },
+  { href: '#quant', label: '量化' },
   { href: '#conclusion', label: '总结' },
 ]
 

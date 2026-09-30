@@ -5,6 +5,7 @@ import Market from './sections/Market'
 import Factors from './sections/Factors'
 import Institutions from './sections/Institutions'
 import Strategy from './sections/Strategy'
+import Quant from './sections/Quant'
 import Conclusion from './sections/Conclusion'
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
           <Factors />
           <Institutions />
           <Strategy />
+          <Quant />
           <Conclusion />
         </div>
       </main>

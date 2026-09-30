@@ -61,8 +61,8 @@ test.describe('GoldMind 看板端到端', () => {
     await page.goto('/')
 
     await expect(page.getByRole('heading', { level: 1, name: /GoldMind/ })).toBeVisible()
-    // 报头的五个锚点全部可达 —— 少一个都会让某一节失去入口
-    for (const label of ['行情', '多空', '机构', '策略', '总结']) {
+    // 报头的六个锚点全部可达 —— 少一个都会让某一节失去入口
+    for (const label of ['行情', '多空', '机构', '策略', '量化', '总结']) {
       await expect(page.getByRole('link', { name: label })).toBeVisible()
     }
     // 两条报价都在首屏：纽约黄金与美元指数

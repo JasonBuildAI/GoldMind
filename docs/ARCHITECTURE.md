@@ -46,7 +46,7 @@ GoldMind/
 │   ├── ARCHITECTURE.md    本文件
 │   └── API.md             接口规范
 ├── app/                   前端（浅色研究简报；视觉与文案规则见 docs/20-前端设计规范.md）
-│   ├── src/sections/      五节：行情 / 多空对照 / 机构观点 / 投资策略 / 总结
+│   ├── src/sections/      六节：行情 / 多空对照 / 机构观点 / 投资策略 / 量化预测 / 总结
 │   ├── src/layout/        报头（字标、锚点导航、数据来源）与页脚
 │   ├── src/components/    节内原语（Section / StateBlock / 表格 / 报价……）
 │   ├── src/styles/        设计令牌与基础排版

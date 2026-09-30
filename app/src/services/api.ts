@@ -368,4 +368,169 @@ export const marketSummaryApi = {
   },
 };
 
+// --------------------------------------------------------------------------- //
+// 量化预测（backend/app/services/quant）
+//
+// 这一组接口的原则与后端一致：算不出来的字段是 null，`status` 与 `reason`
+// 说明为什么。前端不补默认值 —— 页面宁可显示「不可用」。
+// --------------------------------------------------------------------------- //
+export type QuantFactorStatus = 'ok' | 'stale' | 'missing' | 'warming'
+
+export interface QuantFactorContribution {
+  key: string
+  name: string
+  category: string
+  category_name: string
+  weight: number
+  sign: number
+  value: number | null
+  obs_date: string | null
+  z: number | null
+  signed_z: number | null
+  contribution: number | null
+  status: QuantFactorStatus
+  reason: string | null
+}
+
+export interface QuantFactorSnapshot extends QuantFactorContribution {
+  unit: string
+  source: string
+  description: string
+  age_days: number | null
+  max_age_days: number
+}
+
+export interface QuantCategoryStatus {
+  key: string
+  name: string
+  total: number
+  available: number
+}
+
+export interface QuantSourceStatus {
+  name: string
+  label: string | null
+  status: string
+  error: string | null
+  reason: string | null
+}
+
+export interface QuantSyncStatus {
+  started_at: string | null
+  finished_at: string | null
+  sources_ok: number | null
+  sources_total: number | null
+}
+
+export interface QuantFactorsResponse {
+  model_version: string
+  as_of: string | null
+  available_factors: number
+  total_factors: number
+  categories: QuantCategoryStatus[]
+  factors: QuantFactorSnapshot[]
+  sources: QuantSourceStatus[]
+  sync: QuantSyncStatus
+  unavailable_reason: string | null
+}
+
+export interface QuantPredictionItem {
+  horizon_days: number
+  status: string
+  reason: string | null
+  direction: 'up' | 'down' | null
+  direction_label: string | null
+  as_of: string | null
+  base_price: number | null
+  target_price: number | null
+  expected_return: number | null
+  uncertainty: number | null
+  probability_up: number | null
+  score: number | null
+  model_version: string
+  available_factors: number
+  total_factors: number
+  factors: QuantFactorContribution[]
+}
+
+export interface QuantPredictionsResponse {
+  model_version: string
+  as_of: string | null
+  predictions: QuantPredictionItem[]
+}
+
+export interface QuantFactorPerformance {
+  key: string
+  name: string
+  category: string
+  category_name: string
+  weight: number
+  sign: number
+  samples: number
+  hit_rate: number | null
+  ic: number | null
+  rank_ic: number | null
+}
+
+export interface QuantAccuracyRow {
+  horizon_days: number
+  evaluated_at: string | null
+  window_start: string | null
+  window_end: string | null
+  sample_size: number
+  accuracy: number | null
+  baseline_up_accuracy: number | null
+  baseline_momentum_accuracy: number | null
+  brier_score: number | null
+  metrics: Record<string, unknown>
+  factors: QuantFactorPerformance[]
+  reason: string | null
+}
+
+export interface QuantAccuracyResponse {
+  model_version: string
+  latest: QuantAccuracyRow[]
+  history: QuantAccuracyRow[]
+}
+
+export interface QuantRefreshResponse {
+  success: boolean
+  message: string
+  sources: QuantSourceStatus[]
+  factor_status: Record<string, unknown>
+  predictions: QuantPredictionItem[]
+  evaluations: QuantAccuracyRow[]
+}
+
+export const quantApi = {
+  getFactors: async (category?: string): Promise<QuantFactorsResponse> => {
+    const url = category
+      ? `/api/gold/quant/factors?category=${encodeURIComponent(category)}`
+      : '/api/gold/quant/factors'
+    const response = await api.get<QuantFactorsResponse>(url)
+    return response.data
+  },
+
+  getPredictions: async (horizonDays?: number): Promise<QuantPredictionsResponse> => {
+    const url = horizonDays
+      ? `/api/gold/quant/predictions?horizon_days=${horizonDays}`
+      : '/api/gold/quant/predictions'
+    const response = await api.get<QuantPredictionsResponse>(url)
+    return response.data
+  },
+
+  getAccuracy: async (): Promise<QuantAccuracyResponse> => {
+    const response = await api.get<QuantAccuracyResponse>('/api/gold/quant/accuracy')
+    return response.data
+  },
+
+  // 抓取全部数据源 + 重算 + 回测，后端限流同付费档，超时给足
+  refresh: async (): Promise<QuantRefreshResponse> => {
+    const response = await api.post<QuantRefreshResponse>('/api/gold/quant/refresh', null, {
+      timeout: 180000,
+    })
+    return response.data
+  },
+}
+
 export default api;
