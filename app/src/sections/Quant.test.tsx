@@ -289,6 +289,7 @@ const ACCURACY_ROW: QuantAccuracyRow = {
   metrics: {
     interval_nominal_80: 0.8,
     interval_coverage_80: 0.764,
+    score_direction_accuracy: 0.512,
     regimes: {
       split_date: '2022-01-01',
       note: '2022 年起央行购金与地缘冲突改变了定价结构',
@@ -487,6 +488,42 @@ describe('Quant', () => {
     expect(within(block).queryByText(/\$/)).not.toBeInTheDocument()
   })
 
+  it('方向取校准后的漂移，未校准的因子偏向单列一行作对照', async () => {
+    mockApi()
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    const panel = screen.getByTestId('quant-prediction-5')
+    expect(within(panel).getByText(/校准后的漂移/)).toBeInTheDocument()
+    // 1 周这一档：得分为负、方向也是负 —— 两行各说各的，不是同一份结论
+    expect(within(panel).getByText('因子偏向（未校准）')).toBeInTheDocument()
+    expect(within(panel).getByText('偏空 -0.31')).toBeInTheDocument()
+  })
+
+  it('期望收益恰为 0 时方向写持平，因子偏向为 0 时写中性', async () => {
+    mockApi()
+    mocked.getPredictions.mockResolvedValue({
+      ...PREDICTION_RESPONSE,
+      predictions: [
+        prediction({
+          horizon_days: 5,
+          direction: 'flat',
+          direction_label: '持平',
+          expected_return: 0,
+          probability_up: 0.5,
+          score: 0,
+          target_price: 4200,
+        }),
+      ],
+    })
+
+    render(<Quant />)
+
+    expect(await screen.findByText('＝ 持平')).toBeInTheDocument()
+    expect(screen.getByText('中性 0.00')).toBeInTheDocument()
+  })
+
   it('三情景给出区间、触发与失效条件', async () => {
     mockApi()
 
@@ -585,12 +622,41 @@ describe('Quant', () => {
     expect(screen.getByText('50.0%')).toBeInTheDocument()
     expect(screen.getByText(/样本 780 个交易日/)).toBeInTheDocument()
 
+    // 未校准的因子偏向在这段历史里的成绩，单列一行
+    const accuracy = screen.getByTestId('quant-accuracy-5')
+    expect(within(accuracy).getByText('因子偏向（未校准）')).toBeInTheDocument()
+    expect(within(accuracy).getByText('51.2%')).toBeInTheDocument()
+
     expect(screen.getByText(/实际覆盖率 76.4%/)).toBeInTheDocument()
     expect(screen.getByText('2022-01-01 之前')).toBeInTheDocument()
     expect(screen.getByText('2022-01-01 起')).toBeInTheDocument()
     expect(screen.getByText('65.8%')).toBeInTheDocument()
     // 58.0% 也出现在逐因子命中率表里，用 all 断言存在即可
     expect(screen.getAllByText('58.0%').length).toBeGreaterThan(1)
+  })
+
+  it('回测没有因子偏向成绩时不摆这一行，也不拿别的数字顶替', async () => {
+    mockApi()
+    mocked.getAccuracy.mockResolvedValue({
+      ...ACCURACY_RESPONSE,
+      latest: [
+        {
+          ...ACCURACY_ROW,
+          metrics: {
+            interval_nominal_80: ACCURACY_ROW.metrics.interval_nominal_80,
+            interval_coverage_80: ACCURACY_ROW.metrics.interval_coverage_80,
+            regimes: ACCURACY_ROW.metrics.regimes,
+          },
+        },
+      ],
+    })
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    const accuracy = screen.getByTestId('quant-accuracy-5')
+    expect(within(accuracy).queryByText('因子偏向（未校准）')).not.toBeInTheDocument()
+    expect(within(accuracy).getAllByText('本模型').length).toBeGreaterThan(0)
   })
 
   it('监测仪表盘给出值、数据截至与信号，不可用的行说明原因', async () => {

@@ -477,7 +477,8 @@ export interface QuantPredictionItem {
   scale_description: string | null
   status: string
   reason: string | null
-  direction: 'up' | 'down' | null
+  // 'flat' = 校准后的期望收益恰为 0（样本不足时不写方向，这里不会混进得分的符号）
+  direction: 'up' | 'down' | 'flat' | null
   direction_label: string | null
   as_of: string | null
   base_price: number | null
@@ -545,6 +546,8 @@ export interface QuantRegimeBlock {
 export interface QuantAccuracyMetrics {
   interval_nominal_80?: number
   interval_coverage_80?: number | null
+  // 未校准的因子偏向（合成得分符号）在同一段历史里的成绩，与本模型并排对照
+  score_direction_accuracy?: number | null
   regimes?: {
     split_date?: string
     note?: string

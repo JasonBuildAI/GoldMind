@@ -44,10 +44,22 @@ function horizonLabel(days: number): string {
 }
 
 /** 涨跌方向：符号 + 文字一起给，颜色只是加强。 */
-function Direction({ direction }: { direction: 'up' | 'down' | null }) {
+function Direction({ direction }: { direction: 'up' | 'down' | 'flat' | null }) {
   if (direction === 'up') return <span className="is-up">▲ 看涨</span>
   if (direction === 'down') return <span className="is-down">▼ 看跌</span>
+  if (direction === 'flat') return <span>＝ 持平</span>
   return <span>—</span>
+}
+
+/** 未校准的因子偏向：合成得分的符号 + 数值，只作对照，不代表模型结论。 */
+function FactorTilt({ score }: { score: number | null }) {
+  if (score === null) return <span>—</span>
+  const label = score > 0 ? '偏多' : score < 0 ? '偏空' : '中性'
+  return (
+    <span>
+      {label} {score.toFixed(2)}
+    </span>
+  )
 }
 
 function statusTag(status: string) {
@@ -325,7 +337,14 @@ function PredictionPanel({ prediction }: { prediction: QuantPredictionItem }) {
           <dt>方向</dt>
           <dd>
             <Direction direction={prediction.direction} />
-            <span className="metrics__note">（{horizonLabel(prediction.horizon_days)}）</span>
+            <span className="metrics__note">（{horizonLabel(prediction.horizon_days)} · 校准后的漂移）</span>
+          </dd>
+        </div>
+        <div>
+          <dt>因子偏向（未校准）</dt>
+          <dd>
+            <FactorTilt score={prediction.score} />
+            <span className="metrics__note">（只作对照，不参与上面的方向）</span>
           </dd>
         </div>
         <div>
@@ -406,8 +425,9 @@ function PredictionPanel({ prediction }: { prediction: QuantPredictionItem }) {
       </div>
 
       <p className="provenance">
-        方向由这 {prediction.available_factors} 个因子的加权得分决定，不是单一指标；概率是得分在历史分布中的位置，
-        不是「保证」。数据源不可用时该因子不参与，并在下面的因子表里标注原因。
+        方向 = 校准后的期望收益（漂移）符号，与目标价、上行概率、区间、情景出自同一个分布；
+        因子偏向（未校准）是这 {prediction.available_factors} 个因子加权后的原始倾向，只列出来作对照，
+        不顶替方向。数据源不可用时该因子不参与，并在下面的因子表里标注原因。
       </p>
     </div>
   )
@@ -426,8 +446,13 @@ function AccuracyPanel({ row }: { row: QuantAccuracyRow }) {
     )
   }
 
+  const tilt =
+    typeof row.metrics.score_direction_accuracy === 'number'
+      ? row.metrics.score_direction_accuracy
+      : null
   const summary = [
     { label: '本模型', value: row.accuracy },
+    ...(tilt === null ? [] : [{ label: '因子偏向（未校准）', value: tilt }]),
     { label: '永远看多', value: row.baseline_up_accuracy },
     { label: '动量（60 日）', value: row.baseline_momentum_accuracy },
     { label: '抛硬币', value: 0.5 },
@@ -440,7 +465,7 @@ function AccuracyPanel({ row }: { row: QuantAccuracyRow }) {
   )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid={`quant-accuracy-${row.horizon_days}`}>
       <div className="table-scroll">
         <table className="data-table">
           <thead>
@@ -519,8 +544,9 @@ function AccuracyPanel({ row }: { row: QuantAccuracyRow }) {
       <p className="provenance">
         走查式回测：{row.window_start ?? '—'} ~ {row.window_end ?? '—'}，样本 {row.sample_size} 个交易日，
         {row.brier_score === null ? '' : ` Brier 分数 ${row.brier_score.toFixed(3)}，`}
-        评估时间 {displayStamp(row.evaluated_at) ?? '—'}。命中率不看永远看多这一档 —— 牛市里它天然很高，
-        不并排给出三个基准，「60%」就没有意义。
+        评估时间 {displayStamp(row.evaluated_at) ?? '—'}。「本模型」= 校准后的期望收益方向，
+        「因子偏向（未校准）」= 合成得分的符号，两份成绩分开列。命中率不看永远看多这一档 ——
+        牛市里它天然很高，不并排给出几个基准，「60%」就没有意义。
       </p>
 
       {row.factors.length > 0 ? (
@@ -806,7 +832,7 @@ export default function Quant() {
     <Section
       id="quant"
       title="量化预测"
-      intro="按 1 日 / 1 周 / 1 月 / 1 季 / 1 年五个尺度，用「货币政策与利率 / 避险与信用 / 供需结构 / 市场与技术面」四类因素合成方向、目标价与三情景；另给公允价分解、周更监测仪表盘，以及走查式回测的命中率与基准对照。"
+      intro="按 1 日 / 1 周 / 1 月 / 1 季 / 1 年五个尺度，用「货币政策与利率 / 避险与信用 / 供需结构 / 市场与技术面」四类因素合成校准后的方向、目标价与三情景，并列出未校准的因子偏向作对照；另给公允价分解、周更监测仪表盘，以及走查式回测的命中率与基准对照。"
       actions={refreshButton}
     >
       {body}
