@@ -14,7 +14,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.models.analysis import ModelEvaluation, Prediction
-from app.services.quant import backtest, decompose, engine, storage, sync
+from app.services.quant import backtest, decompose, engine, scenarios, storage, sync
 from app.services.quant.definitions import (
     BENCHMARK_KEY,
     CATEGORY_NAMES,
@@ -64,12 +64,15 @@ def live_predictions(
         "model_version": MODEL_VERSION,
         "as_of": snapshots[0].as_of if snapshots else None,
         "fair_value": decomposition.to_dict(),
-        "predictions": [_prediction_payload(snapshot) for snapshot in snapshots],
+        "predictions": [
+            _prediction_payload(snapshot, close) for snapshot in snapshots
+        ],
     }
 
 
-def _prediction_payload(snapshot: engine.SignalSnapshot) -> dict:
+def _prediction_payload(snapshot: engine.SignalSnapshot, close: pd.Series) -> dict:
     spec = horizon_spec.get(snapshot.horizon_days)
+    scenario_set = scenarios.build_scenarios(snapshot, close)
     return {
         "horizon_days": snapshot.horizon_days,
         "scale_label": spec.label if spec else None,
@@ -85,6 +88,10 @@ def _prediction_payload(snapshot: engine.SignalSnapshot) -> dict:
         "expected_return": snapshot.expected_return,
         "uncertainty": snapshot.uncertainty,
         "probability_up": snapshot.probability_up,
+        "range_low": scenario_set.range_low,
+        "range_high": scenario_set.range_high,
+        "scenarios": [scenario.to_dict() for scenario in scenario_set.scenarios],
+        "scenario_reason": scenario_set.reason,
         "score": snapshot.score,
         "model_version": MODEL_VERSION,
         "available_factors": snapshot.available_factors,
@@ -293,7 +300,7 @@ def refresh_predictions(
     predictions = []
     for horizon in horizons:
         snapshot = engine.build_snapshot(factors, close, horizon=horizon)
-        payload = _prediction_payload(snapshot)
+        payload = _prediction_payload(snapshot, close)
         if snapshot.status == engine.STATUS_OK:
             _store_prediction(db, snapshot)
         predictions.append(payload)

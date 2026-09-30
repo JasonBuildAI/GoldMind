@@ -82,6 +82,16 @@ class FactorContribution(BaseModel):
     reason: Optional[str] = None
 
 
+class Scenario(BaseModel):
+    key: str
+    label: str
+    probability: float
+    price_low: Optional[float] = None
+    price_high: Optional[float] = None
+    trigger: str
+    invalidation: str
+
+
 class QuantPredictionItem(BaseModel):
     horizon_days: int
     scale_label: Optional[str] = None
@@ -97,6 +107,10 @@ class QuantPredictionItem(BaseModel):
     expected_return: Optional[float] = None
     uncertainty: Optional[float] = None
     probability_up: Optional[float] = None
+    range_low: Optional[float] = None
+    range_high: Optional[float] = None
+    scenarios: List[Scenario] = []
+    scenario_reason: Optional[str] = None
     score: Optional[float] = None
     model_version: str
     available_factors: int

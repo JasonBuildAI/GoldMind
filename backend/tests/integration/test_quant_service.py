@@ -115,6 +115,16 @@ def test_live_predictions_reflect_the_stored_panel(db_session, seed_quant_panel)
     assert fair["deviation_pct"] == pytest.approx(
         fair["market_price"] / fair["fair_value"] - 1.0, rel=1e-9
     )
+    for item in payload["predictions"]:
+        assert item["scenario_reason"] is None
+        assert len(item["scenarios"]) == 3
+        by_key = {scenario["key"]: scenario for scenario in item["scenarios"]}
+        assert by_key["base"]["price_low"] == pytest.approx(item["range_low"], rel=1e-9)
+        assert by_key["base"]["price_high"] == pytest.approx(item["range_high"], rel=1e-9)
+        assert item["range_low"] < item["range_high"]
+        assert by_key["bull"]["price_high"] is None
+        assert by_key["bear"]["price_low"] is None
+        assert by_key["bull"]["trigger"] and by_key["bear"]["invalidation"]
     etf = next(f for f in payload["predictions"][0]["factors"] if f["key"] == "etf_shares")
     # 只有一天快照的因子不可能算出 z：它必须被标出来，而不是当成 0 参与
     assert etf["contribution"] is None

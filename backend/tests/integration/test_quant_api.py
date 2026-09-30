@@ -108,6 +108,8 @@ def test_every_quant_endpoint_degrades_honestly_on_an_empty_database(client):
     assert predictions["fair_value"]["status"] == "unavailable"
     assert predictions["fair_value"]["reason"]
     assert predictions["fair_value"]["blocks"] == []
+    assert all(item["scenario_reason"] for item in predictions["predictions"])
+    assert all(item["scenarios"] == [] for item in predictions["predictions"])
 
     factors = client.get("/api/gold/quant/factors").json()
     assert factors["available_factors"] == 0
