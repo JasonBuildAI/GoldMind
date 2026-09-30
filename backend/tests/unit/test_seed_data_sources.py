@@ -201,3 +201,117 @@ def test_gold_history_raises_when_every_source_fails(monkeypatch):
 def test_dollar_history_no_longer_uses_the_dead_sina_source():
     """新浪那条路已移除：它对该符号固定返回 null。"""
     assert not hasattr(seed_data, "fetch_dollar_from_sina")
+
+
+# --------------------------------------------------------------------------- #
+# 落库（初始化路径的最后一步）
+# --------------------------------------------------------------------------- #
+class _FakeCursor:
+    """记录执行过的 SQL；SELECT 按给定的已存在日期返回命中。"""
+
+    def __init__(self, existing_dates: set | None = None) -> None:
+        self.executed: list[tuple[str, tuple]] = []
+        self._existing = existing_dates or set()
+        self._last_select: object = None
+
+    def execute(self, sql: str, params=None) -> None:
+        self.executed.append((sql, params))
+        if sql.strip().upper().startswith("SELECT"):
+            self._last_select = params[0] if params else None
+
+    def fetchone(self):
+        return (1,) if self._last_select in self._existing else None
+
+    def close(self) -> None:
+        pass
+
+    @property
+    def inserts(self) -> list[tuple[str, tuple]]:
+        return [(s, p) for s, p in self.executed if s.strip().upper().startswith("INSERT")]
+
+
+class _FakeConn:
+    def __init__(self, cursor: _FakeCursor) -> None:
+        self._cursor = cursor
+        self.commits = 0
+
+    def cursor(self) -> _FakeCursor:
+        return self._cursor
+
+    def commit(self) -> None:
+        self.commits += 1
+
+
+GOLD_ROWS = [
+    {"date": date(2025, 1, 2), "open_price": 2600.0, "high_price": 2610.0,
+     "low_price": 2590.0, "close_price": 2605.0, "volume": 100},
+    {"date": date(2025, 1, 3), "open_price": 2605.0, "high_price": 2620.0,
+     "low_price": 2600.0, "close_price": 2615.0, "volume": 120},
+]
+
+
+@pytest.mark.unit
+def test_save_gold_prices_columns_match_placeholders():
+    """列数与占位符数量必须一致，否则 MySQL 会直接报错。"""
+    cursor = _FakeCursor()
+    seed_data.save_gold_prices(_FakeConn(cursor), GOLD_ROWS)
+
+    assert len(cursor.inserts) == 2
+    for sql, params in cursor.inserts:
+        columns = sql.split("(", 1)[1].split(")", 1)[0]
+        column_count = len([c for c in columns.split(",") if c.strip()])
+        values_clause = sql.split("VALUES", 1)[1]
+        placeholder_count = values_clause.count("%s")
+        assert column_count == placeholder_count == len(params), (
+            f"列 {column_count} 个、占位符 {placeholder_count} 个、参数 {len(params)} 个"
+        )
+
+
+@pytest.mark.unit
+def test_save_gold_prices_computes_change_percent():
+    cursor = _FakeCursor()
+    seed_data.save_gold_prices(_FakeConn(cursor), GOLD_ROWS[:1])
+
+    _, params = cursor.inserts[0]
+    # (2605 - 2600) / 2600 * 100
+    assert params[-1] == pytest.approx(0.19, abs=0.01)
+
+
+@pytest.mark.unit
+def test_save_gold_prices_skips_existing_dates():
+    cursor = _FakeCursor(existing_dates={date(2025, 1, 2)})
+    conn = _FakeConn(cursor)
+
+    inserted = seed_data.save_gold_prices(conn, GOLD_ROWS)
+
+    assert inserted == 1, "已存在的日期应当跳过"
+    assert len(cursor.inserts) == 1
+    assert conn.commits == 1
+
+
+@pytest.mark.unit
+def test_save_gold_prices_survives_a_bad_row():
+    """单行失败不能中断整批。"""
+    cursor = _FakeCursor()
+    bad = [{"date": date(2025, 1, 2)}, GOLD_ROWS[1]]  # 第一行缺字段
+
+    inserted = seed_data.save_gold_prices(_FakeConn(cursor), bad)
+
+    assert inserted == 1
+
+
+@pytest.mark.unit
+def test_save_dollar_index_columns_match_placeholders():
+    cursor = _FakeCursor()
+    rows = [
+        {"date": date(2025, 1, 2), "open_price": 108.0, "high_price": 108.5,
+         "low_price": 107.5, "close_price": 108.2}
+    ]
+
+    seed_data.save_dollar_index(_FakeConn(cursor), rows)
+
+    assert len(cursor.inserts) == 1
+    sql, params = cursor.inserts[0]
+    columns = sql.split("(", 1)[1].split(")", 1)[0]
+    column_count = len([c for c in columns.split(",") if c.strip()])
+    assert column_count == sql.split("VALUES", 1)[1].count("%s") == len(params) == 5
