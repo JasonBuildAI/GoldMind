@@ -583,8 +583,7 @@ This project is licensed under the [MIT License](./LICENSE).
 
 If you have any questions, suggestions, or collaboration inquiries, please feel free to contact us:
 
-- 📮 **Gmail**: noreply@example.com
-- 📮 **QQ Mail**: noreply@example.com
+- 🐛 **Questions & suggestions**: please open a [GitHub Issue](https://github.com/JasonBuildAI/GoldMind/issues)
 
 ---
 

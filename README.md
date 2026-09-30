@@ -35,26 +35,47 @@
 
 ## ⚡ 项目概述
 
-**GoldMind** 是一个基于 **LangChain Multi-Agent 架构** 的黄金市场智能分析平台，融合 **ReAct 推理框架**、**RAG（检索增强生成）** 与 **多模型协作** 技术，为投资者提供深度市场洞察。
+**GoldMind** 是一个黄金市场分析看板：自动采集金价与美元指数，用大语言模型基于最近的新闻生成多空因子、机构观点、投资建议与市场总结，最后以单页看板呈现。
 
-系统基于 **GLM-4-Plus**（智谱AI）与 **DeepSeek-V3** 双引擎驱动，通过专用 Agent 分工协作：**Market Analysis Agent** 负责技术面量化分析，**News Intelligence Agent** 基于实时搜索进行舆情解析，**Institution Research Agent** 追踪主流机构观点，**Investment Advisory Agent** 融合多源信息生成策略建议。各 Agent 通过结构化输出实现结果融合，形成对黄金市场的全景认知。
+当前由**小米 MiMo**（`mimo-v2.6-flash`）单模型驱动，所有 LLM 客户端统一经 `backend/app/services/llm_provider.py` 构造。
 
-> 你只需：关注黄金市场动态，系统自动采集数据并分析  
-> GoldMind 将返回：融合价格走势、市场情绪、机构观点的综合分析报告
+> 你只需：打开页面  
+> GoldMind 将返回：当天金价、美元指数，以及基于最近 24 小时新闻生成的多空分析与策略建议
 
-### 🎯 核心技术架构
+> 📌 产品边界与已知限制见 [`docs/00-产品方向.md`](docs/00-产品方向.md)。**该文档中标记为「目标」的能力尚未实现，请勿当作已有功能。**
 
-**🚀 LangChain Multi-Agent 框架**  
-基于 LangChain 构建的模块化 Agent 系统，每个 Agent 封装独立的分析逻辑与工具链。通过 `BaseAgent` 抽象基类统一 LLM 调用接口，支持 DeepSeek 与智谱AI 双模型后端灵活切换。Agent 间通过结构化数据传递实现协作，避免单点失效，提升系统鲁棒性。
+### 🎯 实现说明（请以代码为准）
 
-**🌐 GLM-4-Plus 实时搜索增强**  
-集成智谱AI **GLM-4-Plus** 模型的 **Web Search** 能力，实现对机构研报、财经新闻、市场动态的实时检索与理解。相比传统静态数据源，系统能够捕捉最新市场变化，为分析提供时效性信息支撑。
+以下四点是对早期文档中技术描述的更正 —— 早期描述与实际实现不符：
 
-**🧠 DeepSeek 深度推理与多 Agent 融合**  
-采用 **DeepSeek-V3** 作为核心推理引擎，结合其强大的长文本理解与逻辑推理能力，对多 Agent 输出进行融合分析。通过设计特定的融合 Prompt，将技术面、基本面、情绪面、机构观点四维信息整合，生成具备逻辑一致性的投资判断。
+**关于「多智能体」**  
+分析由 4 个**独立的单轮 LLM 调用**完成，不是 Agent 协作：每个分析服务把上下文拼进 prompt，调用一次 `llm.invoke(prompt)`，再解析返回的 JSON。没有工具调用循环、没有 Agent 间通信。`backend/app/agents/` 包目前**没有任何地方实例化**。
 
-**📊 ReAct 推理 + RAG 检索增强**  
-在 Agent 内部实现 **ReAct（Reasoning + Acting）** 推理模式：Thought（分析当前状态）→ Action（调用工具获取数据）→ Observation（整合观察结果）→ Final Answer（输出结论）。结合 RAG 技术从本地数据库检索历史价格、新闻舆情等上下文信息，增强 LLM 的事实性与准确性。
+**关于「实时搜索」**  
+设计上通过 MiMo 的 `web_search` 工具检索机构研报与新闻。但当前使用的 Token Plan `tp-` key 调用该工具一律返回 `HTTP 400`（实测，见 `backend/scripts/smoke_mimo.py`），因此搜索不可用时回退到数据库与 RSS 新闻，并且**不会**编造机构目标价。
+
+**关于「RAG」**  
+没有向量库、没有 embedding、没有检索步骤。历史价格与新闻是直接拼进 prompt 的上下文。
+
+**关于「ReAct」**  
+未实现，没有 Thought / Action / Observation 循环。
+
+### 🧩 实际的分析链路
+
+```
+行情采集 ──► MySQL ──┐
+RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke() ──► 解析 JSON ──► 缓存 ──► 前端看板
+                     │
+                     └──► （可选）MiMo web_search，不可用时跳过
+```
+
+| 分析服务 | 输入 | 输出 |
+|---|---|---|
+| 看涨因子 | 最近 24h 新闻 + 金价 | 5 个看涨因子 |
+| 看跌因子 | 最近 24h 新闻 + 金价 | 5 个看跌因子 |
+| 机构观点 | 最近 24h 新闻 +（搜索） | 四大机构目标价与理由 |
+| 投资建议 | 市场状态 + 多空因子 + 机构观点 | 保守/均衡/机会三档策略 |
+| 市场总结 | 上述全部 | 核心逻辑、风险、综合判断 |
 
 ---
 
@@ -351,75 +372,123 @@ docker exec -it goldmind_mysql mysql -uroot -p
 
 ---
 
+## 🧪 常用命令
+
+**闸门命令的唯一真源。** 改完代码必须全部跑绿（规矩见 [`AGENTS.md`](AGENTS.md)）。
+
+### 后端
+
+```bash
+cd backend
+
+# 安装依赖（首次）
+pip install -r requirements.txt -r requirements-dev.txt
+
+# 测试 —— 全档闸门
+python -m pytest
+
+# 只跑某一层
+python -m pytest tests/unit
+python -m pytest tests/integration
+
+# 静态检查：全量语法
+python -m compileall -q app
+```
+
+### 前端
+
+```bash
+cd app
+
+# 安装依赖
+npm ci
+
+# 构建 + 类型检查 —— 全档闸门
+npm run build
+
+# 静态检查
+npm run lint
+
+# 本地开发
+npm run dev
+```
+
+### 端到端冒烟（真实调用 LLM）
+
+```bash
+cd backend
+python scripts/smoke_mimo.py
+```
+
+> ⚠️ 需要 `backend/.env` 已配置 `MIMO_API_KEY`，且会真实消耗额度。
+
+### 排障
+
+- **httpx 报 `Invalid port: ':1]'` 或 `Missing dependencies for SOCKS support`**
+  —— 本机设置了系统代理（`ALL_PROXY` / `HTTP_PROXY` 等），或 `NO_PROXY` 里含
+  `[::1]`，httpx 无法解析这些值。跑测试前先清掉：
+
+  ```powershell
+  $env:ALL_PROXY=''; $env:HTTP_PROXY=''; $env:HTTPS_PROXY=''; $env:NO_PROXY=''
+  ```
+
+- **测试报 `no such table`** —— 测试用的是内存 SQLite，正常不该出现；
+  若出现，检查是否绕过了 `backend/tests/conftest.py` 的夹具。
+
+---
+
+## 🗺️ 文档地图
+
+「改什么 → 读哪份」的唯一映射表。
+
+| 文档 | 讲什么 | 什么时候读 |
+|---|---|---|
+| [`AGENTS.md`](AGENTS.md) | 怎么干活：规矩、闸门、流程 | 动手前必读 |
+| [`docs/00-产品方向.md`](docs/00-产品方向.md) | 产品要做什么；**现状 vs 目标** | 改需求、加功能前 |
+| [`README.md`](README.md) | 目录、命令、配置（本文件） | 找命令 / 配置时 |
+| [`docs/10-密钥与隐私.md`](docs/10-密钥与隐私.md) | 密钥规则与历史泄漏处理 | 动配置 / 密钥前 |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 架构设计 | 动系统结构前 |
+| [`docs/API.md`](docs/API.md) | 接口规范 | 改接口前 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 贡献流程 | 提 PR 前 |
+
+> ⚠️ `docs/ARCHITECTURE.md` 与 `docs/API.md` 是早期版本，**尚未与当前实现对齐**
+> （例如它们仍描述 Redis、认证中间件、`/api/analysis/*` 前缀等不存在的内容）。
+> 以代码与 `docs/00-产品方向.md` 为准；这两份文档待后续校正。
+
+---
+
 ## 🔄 工作流程
 
-1. **数据采集层**：实时金价API抓取 & 新闻舆情Web搜索 & 机构研报智能检索
-2. **多Agent并行分析**：Market Analysis Agent技术面量化 & News Intelligence Agent情绪解析 & Institution Research Agent观点追踪
-3. **ReAct推理决策**：各Agent基于RAG检索历史数据 → Thought分析 → Action工具调用 → Observation整合 → Final Answer输出
-4. **结果融合引擎**：DeepSeek-V3接收四维结构化数据 → 多源信息交叉验证 → 逻辑一致性校验 → 生成综合投资判断
-5. **智能报告生成**：Investment Advisory Agent整合所有分析结果 → 生成策略建议与风险提示 → 结构化JSON响应前端可视化
+1. **数据采集**：腾讯财经实时金价、新浪财经 ICE 美元指数；历史数据回填支持新浪 / 东方财富 / Yahoo 三源；新闻经 RSS 抓取
+2. **持久化**：金价、美元指数、新闻写入 MySQL
+3. **分析**：5 个分析服务各自拼装 prompt → 调用一次 MiMo → 解析 JSON
+4. **缓存**：结果写入内存 + JSON 文件两级缓存（TTL 2 小时），供重启与多进程共享
+5. **展示**：前端每 10 秒轮询行情接口，分析结果按需拉取
 
 ---
 
-## 🤖 Agent原理
+## 🤖 分析服务说明
 
-### 📈 市场分析 Agent
+早期文档把这 5 个服务描述为「LangChain Agent」，与实际实现不符。它们是**独立的单轮
+LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库间接关联。所有客户端统一经
+`backend/app/services/llm_provider.py` 构造。
 
-| 属性 | 详情 |
-|------|------|
-| **技术栈** | LangChain + 智谱AI GLM-4-Plus |
-| **大模型** | 智谱AI GLM-4-Plus (支持实时搜索) |
-| **架构** | ReAct推理架构 + 实时搜索插件 |
-| **功能逻辑** | 基于24小时新闻与市场数据，智能提取看涨/看空因子 |
-| **数据来源** | 智谱AI实时搜索 + 腾讯财经API + MySQL历史数据 |
+| 服务 | 代码位置 | 输入 | 输出 |
+|---|---|---|---|
+| 看涨因子 | `app/services/bullish_factor_service.py` | 最近 24h 新闻 + 金价 | 5 个看涨因子 + 总结 |
+| 看跌因子 | `app/services/bearish_factor_service.py` | 最近 24h 新闻 + 金价 | 5 个看跌因子 + 总结 |
+| 机构观点 | `app/services/institution_prediction_service.py` | 最近 24h 新闻 + 联网搜索 | 四大机构目标价与理由 |
+| 投资建议 | `app/services/investment_advice_service.py` | 市场状态 + 多空因子 + 机构观点 | 三档策略 + 风险提示 |
+| 市场总结 | `app/services/market_summary_service.py` | 上述全部 | 核心逻辑 + 风险 + 综合判断 |
 
----
+**模型**：`mimo-v2.6-flash`，可用 `MIMO_MODEL` 覆盖。
 
-### 🏛️ 机构预测 Agent
+**降级行为**：任一服务在数据源或联网搜索不可用时，返回明确的「不可用」状态并回退到
+数据库 / RSS 内容，**不会**编造数据。前端在拿不到真实分析时会显示提示，而不是把
+示例数据当成分析结果。
 
-| 属性 | 详情 |
-|------|------|
-| **技术栈** | LangChain + 智谱AI GLM-4-Plus |
-| **大模型** | 智谱AI GLM-4-Plus (支持实时搜索) |
-| **架构** | 专用Agent架构 + Web Search实时检索插件 |
-| **功能逻辑** | 实时抓取高盛、瑞银、摩根士丹利、花旗等主流机构最新黄金预测观点，提取目标价位与逻辑依据 |
-| **数据来源** | 智谱AI实时搜索 + 机构官方研报 + 权威财经新闻 |
-
----
-
-### � 新闻分析 Agent
-
-| 属性 | 详情 |
-|------|------|
-| **技术栈** | LangChain + 智谱AI GLM-4-Plus |
-| **大模型** | 智谱AI GLM-4-Plus (支持实时搜索) |
-| **架构** | 实时搜索 + 情感分析 + 多空因子提取 |
-| **功能逻辑** | 24小时滚动抓取黄金市场相关新闻，分析情感倾向，智能提取看涨/看空因子及其市场影响权重 |
-| **数据来源** | 智谱AI实时搜索 + 新浪财经 + 腾讯财经 + 金十数据 |
-
----
-
-### 💡 投资建议 Agent
-
-| 属性 | 详情 |
-|------|------|
-| **技术栈** | LangChain + DeepSeek-V3 + RAG |
-| **大模型** | DeepSeek-V3 (671B参数) |
-| **架构** | RAG检索增强生成 + 多源分析结果融合 |
-| **功能逻辑** | 综合分析市场分析Agent、机构预测Agent、新闻分析Agent的输出结果，生成个性化投资策略与风险提示 |
-| **数据来源** | 市场分析Agent结构化输出 + 机构预测Agent观点汇总 + 新闻分析Agent情绪数据 |
-
----
-
-### 🧠 综合分析 Agent
-
-| 属性 | 详情 |
-|------|------|
-| **技术栈** | LangChain + DeepSeek-V3 + 多Agent协作 |
-| **大模型** | DeepSeek-V3 (671B参数) |
-| **架构** | 多Agent结果融合 + 深度推理生成 + 结构化输出 |
-| **功能逻辑** | 整合所有Agent分析结果，进行交叉验证与逻辑一致性校验，生成全面市场认知与投资判断，输出包含技术面、基本面、情绪面、机构观点的四维综合分析报告 |
-| **数据来源** | 市场分析Agent + 机构预测Agent + 新闻分析Agent + 投资建议Agent |
+**历史遗留**：`backend/app/agents/` 下的 `BaseAgent` / `MarketAnalyzerAgent` /
+`NewsAnalyzerAgent` 目前没有任何地方实例化。
 
 ---
 
@@ -454,8 +523,7 @@ docker exec -it goldmind_mysql mysql -uroot -p
 
 如果您有任何问题、建议或合作意向，欢迎通过以下方式联系我们：
 
-- 📮 **谷歌邮箱**：noreply@example.com
-- 📮 **QQ邮箱**：noreply@example.com
+- 🐛 **问题与建议**：请在 [GitHub Issues](https://github.com/JasonBuildAI/GoldMind/issues) 提出
 
 ---
 
