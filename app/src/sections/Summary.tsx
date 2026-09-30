@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { modelLabel, useAiConfig } from '@/hooks/useAiConfig';
 import PlaceholderNotice from '@/components/PlaceholderNotice';
 import { isPlaceholder } from '@/lib/placeholder';
 import { 
@@ -25,6 +26,8 @@ interface SummaryPoint {
 
 // 默认数据
 export default function Summary() {
+  // 模型名从 /health 读，不写死 —— 它由后端 MIMO_MODEL 决定
+  const aiConfig = useAiConfig();
   const [summary, setSummary] = useState<MarketSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -197,7 +200,7 @@ export default function Summary() {
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">大模型:</span>
-                    <span className="text-gray-300">MiMo mimo-v2.6-flash</span>
+                    <span className="text-gray-300">{modelLabel(aiConfig)}</span>
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">架构:</span>
@@ -209,7 +212,7 @@ export default function Summary() {
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">数据来源:</span>
-                    <span className="text-gray-300">市场分析Agent + 机构预测Agent + 新闻分析Agent + 投资建议Agent</span>
+                    <span className="text-gray-300">看涨因子 + 看跌因子 + 机构观点 + 投资建议</span>
                   </div>
                 </div>
                 {/* Arrow */}

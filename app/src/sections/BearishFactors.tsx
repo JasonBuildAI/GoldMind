@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { modelLabel, useAiConfig } from '@/hooks/useAiConfig';
 import PlaceholderNotice from '@/components/PlaceholderNotice';
 import { isPlaceholder } from '@/lib/placeholder';
 import {
@@ -28,6 +29,8 @@ const iconMap: Record<string, React.ElementType> = {
 
 // 默认看空因子（当API不可用时使用）
 export default function BearishFactors() {
+  // 模型名从 /health 读，不写死 —— 它由后端 MIMO_MODEL 决定
+  const aiConfig = useAiConfig();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
   // 初始为空：没有真实数据时宁可什么都不显示，也不摆一组编造的因子。
@@ -218,7 +221,7 @@ export default function BearishFactors() {
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">大模型:</span>
-                    <span className="text-gray-300">MiMo mimo-v2.6-flash</span>
+                    <span className="text-gray-300">{modelLabel(aiConfig)}</span>
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">架构:</span>
@@ -230,7 +233,7 @@ export default function BearishFactors() {
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">数据来源:</span>
-                    <span className="text-gray-300">MiMo 联网搜索 + 腾讯财经API + MySQL历史数据</span>
+                    <span className="text-gray-300">最近24小时新闻（RSS + 数据库）+ 腾讯/新浪实时金价 + MySQL历史数据</span>
                   </div>
                 </div>
                 {/* Arrow */}

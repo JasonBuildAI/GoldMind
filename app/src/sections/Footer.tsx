@@ -6,7 +6,9 @@ export default function Footer() {
   const dataSources = [
     '实时金价数据 - 腾讯财经API（纽约黄金期货GC）',
     '实时美元指数 - 新浪财经API（ICE美元指数DXY）',
-    'MiMo 联网搜索 - 实时新闻检索与分析',
+    // 联网搜索用的是 MiMo 的 web_search 工具；当前 tp- key 调用它一律返回
+    // HTTP 400（见 docs/00-产品方向.md 第四节），所以这里如实写成「不可用时回退 RSS」。
+    '新闻数据 - RSS 源（联网搜索不可用时回退）',
     'MiMo LLM - 市场综合分析与投资建议',
     '高盛 (Goldman Sachs) - 机构预测',
     '瑞银 (UBS) - 机构预测',

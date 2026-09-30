@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
+import { modelLabel, useAiConfig } from '@/hooks/useAiConfig';
 import { TrendingUp, DollarSign, Loader2, Brain, Sparkles, Bot, Zap, Target, Layers } from 'lucide-react';
 import { useGoldData } from '@/contexts/GoldDataContext';
 import type { GoldStats } from '@/services/api';
 
 export default function Hero() {
+  // 模型名从 /health 读，不写死 —— 它由后端 MIMO_MODEL 决定
+  const aiConfig = useAiConfig();
   const { stats: contextStats, statsLoading, statsError } = useGoldData();
   // null = 还没有拿到真实数据。绝不用一个编造的默认值顶着 ——
   // 那会让页面显示一个根本不存在的金价。
@@ -97,10 +100,9 @@ export default function Hero() {
                 border: 'border-purple-500/30',
                 details: {
                   techStack: 'MiMo 单轮结构化推理',
-                  model: 'MiMo mimo-v2.6-flash',
                   architecture: 'ReAct推理架构 + 实时搜索插件',
                   logic: '基于24小时新闻与市场数据，智能提取看涨/看空因子',
-                  dataSource: 'MiMo 联网搜索 + 腾讯财经API + MySQL历史数据'
+                  dataSource: '最近24小时新闻（RSS + 数据库）+ 腾讯/新浪实时金价 + MySQL历史数据',
                 }
               },
               {
@@ -111,10 +113,9 @@ export default function Hero() {
                 border: 'border-blue-500/30',
                 details: {
                   techStack: 'MiMo 单轮结构化推理',
-                  model: 'MiMo mimo-v2.6-flash',
                   architecture: '专用Agent架构 + 定向实时搜索',
                   logic: '实时抓取高盛、瑞银、摩根士丹利、花旗最新预测',
-                  dataSource: 'MiMo 联网搜索 + 机构官方报告 + 财经新闻'
+                  dataSource: '最近24小时新闻（RSS + 数据库）+ 库内机构观点',
                 }
               },
               {
@@ -125,10 +126,9 @@ export default function Hero() {
                 border: 'border-amber-500/30',
                 details: {
                   techStack: 'MiMo 单轮结构化推理',
-                  model: 'MiMo mimo-v2.6-flash',
                   architecture: '实时搜索 + 情感分析 + 实体识别',
                   logic: '24小时滚动抓取新闻，分析情感倾向与市场影响',
-                  dataSource: 'MiMo 联网搜索 + 新浪财经 + 腾讯财经'
+                  dataSource: '最近24小时新闻（RSS + 数据库）+ 新浪/腾讯实时金价',
                 }
               },
               {
@@ -139,10 +139,9 @@ export default function Hero() {
                 border: 'border-green-500/30',
                 details: {
                   techStack: 'MiMo 单轮结构化推理',
-                  model: 'MiMo mimo-v2.6-flash',
                   architecture: 'RAG检索增强生成，融合多源分析结果',
                   logic: '综合分析所有Agent输出，生成个性化投资策略',
-                  dataSource: '市场分析Agent + 机构预测Agent + 新闻分析Agent'
+                  dataSource: '市场状态 + 看涨因子 + 看跌因子 + 机构观点',
                 }
               },
               {
@@ -153,10 +152,9 @@ export default function Hero() {
                 border: 'border-pink-500/30',
                 details: {
                   techStack: 'MiMo 单轮结构化推理',
-                  model: 'MiMo mimo-v2.6-flash',
                   architecture: '多Agent结果融合 + 深度推理生成',
                   logic: '整合所有Agent分析结果，生成全面市场认知与投资判断',
-                  dataSource: '市场分析Agent + 机构预测Agent + 新闻分析Agent + 投资建议Agent'
+                  dataSource: '看涨因子 + 看跌因子 + 机构观点 + 投资建议',
                 }
               },
             ].map((agent, index) => (
@@ -181,7 +179,7 @@ export default function Hero() {
                       </div>
                       <div className="flex gap-2">
                         <span className="text-gray-500 shrink-0">大模型:</span>
-                        <span className="text-gray-300">{agent.details.model}</span>
+                        <span className="text-gray-300">{modelLabel(aiConfig)}</span>
                       </div>
                       <div className="flex gap-2">
                         <span className="text-gray-500 shrink-0">架构:</span>
