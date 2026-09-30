@@ -99,4 +99,32 @@ describe('BullishFactors', () => {
 
     expect(await screen.findByText('美联储降息周期')).toBeInTheDocument()
   })
+
+  // ------------------------------------------------------------------ #
+  // 占位内容
+  // ------------------------------------------------------------------ #
+  it('接口返回占位内容时明确标注，而不是当成分析结论', async () => {
+    // 缓存未命中时后端会立刻返回一份内置内容（metadata.status = 'analyzing'），
+    // 结构与真实分析完全一样。不看 metadata 就会把内置常量当结论展示。
+    mocked.getBullishFactors.mockResolvedValue({
+      ...API_RESPONSE,
+      metadata: { cached: false, status: 'analyzing', message: 'AI分析进行中' },
+    })
+
+    render(<BullishFactors />)
+
+    expect(await screen.findByTestId('bullish-placeholder')).toBeInTheDocument()
+  })
+
+  it('真实分析结果不显示占位提示', async () => {
+    mocked.getBullishFactors.mockResolvedValue({
+      ...API_RESPONSE,
+      metadata: { cached: true, cache_source: 'file' },
+    })
+
+    render(<BullishFactors />)
+
+    await screen.findByText('接口返回的看涨因子')
+    expect(screen.queryByTestId('bullish-placeholder')).not.toBeInTheDocument()
+  })
 })

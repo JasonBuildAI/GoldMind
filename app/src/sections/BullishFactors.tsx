@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import PlaceholderNotice from '@/components/PlaceholderNotice';
+import { isPlaceholder } from '@/lib/placeholder';
 import { 
   Landmark, 
   Globe, 
@@ -108,6 +110,7 @@ export default function BullishFactors() {
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [summary, setSummary] = useState<string>(FALLBACK_SUMMARY);
   const [error, setError] = useState<string | null>(null);
+  const [isPlaceholderData, setIsPlaceholderData] = useState(false);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // 获取看涨因子数据
@@ -124,6 +127,7 @@ export default function BullishFactors() {
 
       if (response.bullish_factors && response.bullish_factors.length > 0) {
         setFactors(response.bullish_factors);
+        setIsPlaceholderData(isPlaceholder(response.metadata));
         setSummary(response.analysis_summary || FALLBACK_SUMMARY);
         setLastUpdated(response.last_updated);
       }
@@ -268,6 +272,9 @@ export default function BullishFactors() {
           
           {/* 刷新按钮和更新时间 */}
           <div className="flex items-center justify-center gap-4">
+            {/* 缓存未命中时后端会先返回一份内置占位内容，必须明确标注， */}
+            {/* 否则用户会把内置常量当成分析结论。 */}
+            <PlaceholderNotice show={isPlaceholderData} testId="bullish-placeholder" />
             {error && (
               <span className="text-amber-400 text-sm">{error}</span>
             )}

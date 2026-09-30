@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+import type { ApiMetadata } from '@/lib/placeholder';
+
 // 默认走相对路径：
 //   - 开发期由 vite 的 server.proxy 把 /api 转发到后端
 //   - 生产期（Docker）由 nginx 的 location /api/ 反代到 backend:8000
@@ -150,6 +152,8 @@ export interface BullishFactorsResponse {
   bullish_factors: BullishFactor[];
   analysis_summary: string;
   last_updated: string;
+  /** 后端用它说明这份内容是真实分析还是占位内容（status === 'analyzing'） */
+  metadata?: ApiMetadata;
 }
 
 export interface BearishFactor {
@@ -165,6 +169,7 @@ export interface BearishFactorsResponse {
   bearish_factors: BearishFactor[];
   analysis_summary: string;
   last_updated: string;
+  metadata?: ApiMetadata;
 }
 
 export const analysisApi = {
@@ -215,6 +220,7 @@ export interface InstitutionPredictionsResponse {
   institutions: InstitutionPrediction[];
   analysis_summary: string;
   last_updated: string;
+  metadata?: ApiMetadata;
 }
 
 export const institutionApi = {
@@ -281,11 +287,7 @@ export interface InvestmentAdviceResponse {
   core_principles: CorePrinciple[];
   risk_warning: string;
   disclaimer: string;
-  metadata?: {
-    generated_at: string;
-    data_sources: string[];
-    analysis_method: string;
-  };
+  metadata?: ApiMetadata;
 }
 
 export const investmentAdviceApi = {
@@ -327,11 +329,7 @@ export interface MarketSummaryResponse {
   investment_recommendation: string;
   confidence_level: string;
   time_horizon: string;
-  metadata?: {
-    cached: boolean;
-    cache_source: string;
-    generated_at: string;
-  };
+  metadata?: ApiMetadata;
 }
 
 export const marketSummaryApi = {

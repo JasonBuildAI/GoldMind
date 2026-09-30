@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import PlaceholderNotice from '@/components/PlaceholderNotice';
+import { isPlaceholder } from '@/lib/placeholder';
 import { 
   CheckCircle2, 
   XCircle, 
@@ -77,6 +79,7 @@ export default function Summary() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPlaceholderData, setIsPlaceholderData] = useState(false);
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   
@@ -118,6 +121,7 @@ export default function Summary() {
 
       const response = await marketSummaryApi.getMarketSummary(forceRefresh);
       setSummary(response);
+      setIsPlaceholderData(isPlaceholder(response.metadata));
     } catch (err: any) {
       console.error('获取市场综合分析失败:', err);
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
@@ -285,6 +289,9 @@ export default function Summary() {
           </div>
 
           {/* Error Message */}
+          {/* 缓存未命中时后端会先返回一份内置占位内容，必须明确标注， */}
+          {/* 否则用户会把内置常量当成分析结论。 */}
+          <PlaceholderNotice show={isPlaceholderData} testId="summary-placeholder" />
           {error && (
             <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300">
               <AlertTriangle className="w-4 h-4" />

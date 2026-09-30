@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import PlaceholderNotice from '@/components/PlaceholderNotice';
+import { isPlaceholder } from '@/lib/placeholder';
 import { TrendingUp, TrendingDown, Minus, Target, Calendar, Brain, Sparkles, Bot } from 'lucide-react';
 import { institutionApi, type InstitutionPrediction } from '../services/api';
 
@@ -69,6 +71,7 @@ export default function InstitutionalViews() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [isPlaceholderData, setIsPlaceholderData] = useState(false);
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   // 获取机构预测数据
@@ -85,6 +88,7 @@ export default function InstitutionalViews() {
 
       if (response.institutions && response.institutions.length > 0) {
         setInstitutions(response.institutions);
+        setIsPlaceholderData(isPlaceholder(response.metadata));
         setLastUpdated(response.last_updated);
       }
     } catch (err: any) {
@@ -249,6 +253,9 @@ export default function InstitutionalViews() {
 
           {/* 刷新按钮和更新时间 */}
           <div className="flex items-center justify-center gap-4">
+            {/* 缓存未命中时后端会先返回一份内置占位内容，必须明确标注， */}
+            {/* 否则用户会把内置常量当成分析结论。 */}
+            <PlaceholderNotice show={isPlaceholderData} testId="institutions-placeholder" />
             {error && (
               <span className="text-amber-400 text-sm">{error}</span>
             )}

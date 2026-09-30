@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import PlaceholderNotice from '@/components/PlaceholderNotice';
+import { isPlaceholder } from '@/lib/placeholder';
 import {
   TrendingDown,
   AlertTriangle,
@@ -101,6 +103,7 @@ export default function BearishFactors() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [isPlaceholderData, setIsPlaceholderData] = useState(false);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // 获取看空因子数据
@@ -117,6 +120,7 @@ export default function BearishFactors() {
 
       if (response.bearish_factors && response.bearish_factors.length > 0) {
         setFactors(response.bearish_factors);
+        setIsPlaceholderData(isPlaceholder(response.metadata));
         setLastUpdated(response.last_updated);
       }
     } catch (err: any) {
@@ -259,6 +263,9 @@ export default function BearishFactors() {
 
           {/* 刷新按钮和更新时间 */}
           <div className="flex items-center justify-center gap-4">
+            {/* 缓存未命中时后端会先返回一份内置占位内容，必须明确标注， */}
+            {/* 否则用户会把内置常量当成分析结论。 */}
+            <PlaceholderNotice show={isPlaceholderData} testId="bearish-placeholder" />
             {error && (
               <span className="text-amber-400 text-sm">{error}</span>
             )}
