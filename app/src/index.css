@@ -501,6 +501,104 @@
     color: var(--ink-muted);
   }
 
+  /* 三档策略对照：字段同名同序，便于横向比较 */
+  .strategy__title {
+    margin: 0 0 4px;
+    font-size: var(--text-lg);
+  }
+
+  .strategy__lead {
+    margin: 0 0 12px;
+    font-size: var(--text-sm);
+    color: var(--ink-muted);
+  }
+
+  .strategy__facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0 12px;
+    margin: 0 0 12px;
+  }
+
+  .strategy__facts dt {
+    font-size: var(--text-xs);
+    color: var(--ink-muted);
+  }
+
+  .strategy__facts dd {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .strategy__block {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .strategy__block h4 {
+    margin: 0 0 6px;
+    font-size: var(--text-sm);
+  }
+
+  .strategy__rows {
+    margin: 0;
+  }
+
+  .strategy__rows > div {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 0 10px;
+    padding: 2px 0;
+  }
+
+  .strategy__rows dt {
+    font-size: var(--text-xs);
+    color: var(--ink-muted);
+  }
+
+  .strategy__rows dd {
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+
+  .strategy__label {
+    margin: 0 0 2px;
+    font-size: var(--text-xs);
+    color: var(--ink-muted);
+  }
+
+  .strategy__list {
+    margin: 0 0 8px;
+    padding-left: 18px;
+    font-size: var(--text-sm);
+    color: var(--ink-muted);
+  }
+
+  .strategy__list:last-child {
+    margin-bottom: 0;
+  }
+
+  /* 执行原则：标题 + 一句话 */
+  .principles {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+  }
+
+  .principles dt {
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .principles dd {
+    margin: 0;
+    max-width: 68ch;
+    font-size: var(--text-sm);
+    color: var(--ink-muted);
+  }
+
   /* 图表提示卡与最后一个数据点 */
   .chart-tip {
     background: var(--surface);
