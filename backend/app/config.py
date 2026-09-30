@@ -98,6 +98,17 @@ class Settings(BaseSettings):
     # Agent更新配置 - 偶数整点更新
     UPDATE_NEWS_CRON: str = "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *"    # 偶数整点更新新闻
     UPDATE_AI_ANALYSIS_CRON: str = "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *"  # 偶数整点更新AI分析（看涨/看跌/机构/建议）
+
+    # ------------------------------------------------------------------
+    # 量化预测引擎（app/services/quant）
+    # ------------------------------------------------------------------
+    # 总开关：关闭后不注册因子同步与预测任务（已落库的数据仍可读）。
+    QUANT_ENABLED: bool = True
+    # 因子同步：每 2 小时的第 15 分钟。各源还会按自己的最小间隔跳过未到期的抓取
+    # （见 services/quant/sync.py 的 SOURCE_MIN_INTERVALS）。
+    UPDATE_FACTORS_CRON: str = "15 */2 * * *"
+    # 首次回填的年数（之后都是增量抓取）。
+    QUANT_HISTORY_YEARS: int = 10
     
     class Config:
         env_file = ".env"

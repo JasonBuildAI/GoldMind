@@ -89,6 +89,19 @@ def init_scheduler():
             replace_existing=True
         )
         logger.info(f"[调度器] 已添加任务: update_ai_analysis ({settings.UPDATE_AI_ANALYSIS_CRON})")
+
+        # 量化因子同步（见 app/services/quant/）
+        if settings.QUANT_ENABLED:
+            scheduler.add_job(
+                update_factors_job,
+                CronTrigger.from_crontab(settings.UPDATE_FACTORS_CRON),
+                id='update_factors',
+                name='同步量化因子数据',
+                replace_existing=True
+            )
+            logger.info(f"[调度器] 已添加任务: update_factors ({settings.UPDATE_FACTORS_CRON})")
+        else:
+            logger.info("[调度器] QUANT_ENABLED=false，跳过量化任务")
         
         scheduler.start()
         logger.info(f"[调度器] 定时任务调度器已启动，当前时间: {timeutil.now()}")
@@ -393,6 +406,32 @@ def _run_ai_analysis_sync():
         logger.error(f"[AI分析线程] 执行失败: {e}")
         import traceback
         logger.error(traceback.format_exc())
+
+
+async def update_factors_job():
+    """量化因子同步：抓取 → 派生 → 落库。
+
+    同步阻塞的抓取放进线程池，避免卡住事件循环（与 AI 分析任务同一模式）。
+    """
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, _run_factors_sync)
+    except Exception as e:
+        logger.error(f"[量化] 因子同步任务失败: {e}")
+
+
+def _run_factors_sync():
+    from app.config import settings as current_settings
+    from app.database import SessionLocal
+    from app.services.quant.sync import run_sync
+
+    db = SessionLocal()
+    try:
+        run_sync(db, history_years=current_settings.QUANT_HISTORY_YEARS)
+    finally:
+        db.close()
 
 
 async def update_dollar_index_job():
