@@ -151,6 +151,28 @@ def _clean_tables(_prepare_database):
 
 
 @pytest.fixture(autouse=True)
+def _reset_rate_limiters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """每个用例都换一套全新的限流器。
+
+    限流器是模块级单例。若不重置，用例之间会共享计数：整套测试累计的请求数
+    足以让靠后的用例意外收到 429，限流相关的断言也会不可靠。
+    """
+    import app.main as main
+    from app.utils.rate_limit import SlidingWindowRateLimiter
+
+    monkeypatch.setattr(
+        main,
+        "_general_limiter",
+        SlidingWindowRateLimiter(main.settings.RATE_LIMIT_PER_MINUTE),
+    )
+    monkeypatch.setattr(
+        main,
+        "_ai_limiter",
+        SlidingWindowRateLimiter(main.settings.RATE_LIMIT_AI_PER_MINUTE),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _disable_background_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
     """禁止各分析服务在测试中触发后台线程分析。
 

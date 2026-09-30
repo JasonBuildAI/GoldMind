@@ -5,12 +5,14 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.config import settings
 from app.database import engine, Base
 from app.routers import gold_prices, analysis, news, predictions
 from app.scheduler import init_scheduler, shutdown_scheduler
+from app.utils.rate_limit import SlidingWindowRateLimiter
 
 
 async def warmup_cache():
@@ -86,56 +88,67 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 添加请求限流中间件（保护服务不被过载）
+# --------------------------------------------------------------------------- #
+# 限流
+# --------------------------------------------------------------------------- #
+# 普通接口与「会触发付费 LLM 调用」的接口分别限流：后者一次调用就要花钱，
+# 用同一个上限等于给了刷额度的空间。
+_general_limiter = SlidingWindowRateLimiter(settings.RATE_LIMIT_PER_MINUTE)
+_ai_limiter = SlidingWindowRateLimiter(settings.RATE_LIMIT_AI_PER_MINUTE)
+
+# 健康检查不参与限流：它是给探针用的，被限流会被误判成服务不可用
+_RATE_LIMIT_EXEMPT_PATHS = frozenset({"/health"})
+
+# 这些后缀的路径会真实调用 LLM（消耗额度），使用更严的上限
+_AI_PATH_SUFFIXES = ("/refresh",)
+
+
+def _is_ai_path(path: str) -> bool:
+    return path.endswith(_AI_PATH_SUFFIXES)
+
+
 @app.middleware("http")
 async def rate_limit_middleware(request, call_next):
-    """简单的请求限流中间件 - 防止单个IP请求过多"""
-    from starlette.requests import Request
-    
-    # 获取客户端IP
-    client_ip = request.client.host if request.client else "unknown"
-    
-    # 简单的内存限流（生产环境建议使用Redis）
-    current_time = datetime.now().timestamp()
-    
-    # 使用全局字典存储请求记录（实际生产建议使用Redis）
-    if not hasattr(rate_limit_middleware, "request_records"):
-        rate_limit_middleware.request_records = {}
-    
-    records = rate_limit_middleware.request_records
-    
-    # 清理过期记录（60秒前的）
-    if client_ip in records:
-        records[client_ip] = [
-            t for t in records[client_ip] 
-            if current_time - t < 60
-        ]
-    else:
-        records[client_ip] = []
-    
-    # 检查限流（每分钟最多60个请求）
-    if len(records.get(client_ip, [])) >= 60:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=429,
-            content={
-                "error": "请求过于频繁，请稍后再试",
-                "retry_after": 60
-            }
-        )
-    
-    # 记录本次请求
-    records[client_ip].append(current_time)
-    
-    # 继续处理请求
-    response = await call_next(request)
-    return response
+    """按客户端 IP 限流。
+
+    与原实现的区别：
+
+    - 状态不再挂在中间件函数对象上，且过期键会被清理，内存不会无界增长；
+    - 健康检查不限流；
+    - 会触发付费 LLM 调用的接口使用更严的上限。
+    """
+    path = request.url.path
+
+    if path not in _RATE_LIMIT_EXEMPT_PATHS:
+        client_ip = request.client.host if request.client else "unknown"
+        limiter = _ai_limiter if _is_ai_path(path) else _general_limiter
+
+        allowed, retry_after = limiter.allow(client_ip)
+        if not allowed:
+            logger.warning(f"[限流] {client_ip} 触发 {path} 的请求上限")
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "请求过于频繁，请稍后再试",
+                    "retry_after": retry_after,
+                },
+            )
+
+    return await call_next(request)
+
+
+# --------------------------------------------------------------------------- #
+# CORS
+# --------------------------------------------------------------------------- #
+_cors_origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=_cors_origins,
+    # 通配来源 + 允许凭证 = 任何站点都能带着用户凭证调用本 API。
+    # 这里做兜底：来源里出现 "*" 时强制关闭凭证。
+    allow_credentials="*" not in _cors_origins,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
