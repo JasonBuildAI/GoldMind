@@ -1,0 +1,154 @@
+"""文档里引用的路径与命令必须真实存在。
+
+`AGENTS.md` 硬性要求第 3 条写着「文档里的路径、命令、名字必须真实存在，先验证再写」。
+这条规矩此前只能靠人肉遵守 —— 实际也确实漏过：`AGENTS.md` 曾引用
+`docs/0X-*.md` 这个并不存在的命名约定，以及一个不存在的 `.env.example` 位置。
+
+这里把它变成可执行的检查。检查范围刻意只覆盖**仓库内**的引用：
+外部 URL 会随网络与第三方变化，纳入检查只会带来不稳定。
+"""
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# 形如仓库内路径的反引号片段（`docs/xxx`、`backend/xxx`、`.env`…）
+INLINE_PATH = re.compile(
+    r"`((?:docs/|backend/|app/|\.env|README|AGENTS)[^`\s]*)`"
+)
+
+# 刻意豁免：这两项都**不是**路径声明，文中也说明了它们是什么。
+PATH_EXEMPTIONS = {
+    # 约定名（「密钥只进 .env」），真实文件是 backend/.env
+    ".env",
+    # 文中已明确写「本项目还没有 docs/specs/ 目录」
+    "docs/specs/",
+}
+
+# markdown 链接目标里指向仓库内的相对路径
+MD_LINK = re.compile(r"\[[^\]]*\]\(([^)#\s]+)\)")
+
+
+def _read(rel: str) -> str:
+    return (REPO_ROOT / rel).read_text(encoding="utf-8")
+
+
+def _inline_paths(text: str) -> set[str]:
+    return {
+        token
+        for token in INLINE_PATH.findall(text)
+        if token not in PATH_EXEMPTIONS
+    }
+
+
+def _repo_links(text: str) -> set[str]:
+    """只取相对路径的链接目标；http(s)、mailto、锚点都不算。"""
+    targets = set()
+    for target in MD_LINK.findall(text):
+        if target.startswith(("http://", "https://", "mailto:", "#", "//")):
+            continue
+        targets.add(target)
+    return targets
+
+
+# --------------------------------------------------------------------------- #
+# AGENTS.md
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_agents_md_inline_paths_exist():
+    """AGENTS.md 里反引号引用的仓库内路径都必须真实存在。"""
+    missing = [
+        token
+        for token in sorted(_inline_paths(_read("AGENTS.md")))
+        if not (REPO_ROOT / token).exists()
+    ]
+
+    assert not missing, (
+        "AGENTS.md 引用了不存在的路径。改文档时请先验证路径真的存在。\n"
+        + "\n".join(f"  {m}" for m in missing)
+    )
+
+
+@pytest.mark.unit
+def test_agents_md_names_only_real_skills():
+    """AGENTS.md 的流程表里点名的 skill 必须真的存在。
+
+    通用模板里写的是 `superpowers:brainstorming` / `grill-me` 这类名字，
+    在本环境里并不存在。改写时换成了真实名字，这个测试防止再写回不存在的。
+    """
+    text = _read("AGENTS.md")
+
+    # 流程表「默认方法」列里出现的反引号名字
+    table_rows = [line for line in text.splitlines() if line.startswith("| ") and "`" in line]
+    named = set()
+    for row in table_rows:
+        cells = row.split("|")
+        if len(cells) >= 5:
+            named.update(re.findall(r"`([a-z][a-z0-9-]+)`", cells[4]))
+
+    # 这些是流程本身的名字，不是 skill
+    not_skills = {"plan", "spec"}
+
+    known = {
+        "grilling",
+        "brainstorming",
+        "writing-plans",
+        "test-driven-development",
+        "systematic-debugging",
+        "subagent-driven-development",
+        "executing-plans",
+        "verification-before-completion",
+        "requesting-code-review",
+        "using-superpowers",
+    }
+
+    unknown = named - known - not_skills
+    assert not unknown, f"AGENTS.md 点名了不存在的 skill：{sorted(unknown)}"
+    assert named & known, "流程表里一个真实 skill 都没提到，解析大概失效了"
+
+
+# --------------------------------------------------------------------------- #
+# README.md
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_readme_relative_links_exist():
+    """README 里的仓库内链接不能是死链。"""
+    missing = []
+    for rel in ("README.md", "README_EN.md"):
+        for target in sorted(_repo_links(_read(rel))):
+            if not (REPO_ROOT / target).exists():
+                missing.append(f"{rel} -> {target}")
+
+    assert not missing, "文档里有死链：\n" + "\n".join(f"  {m}" for m in missing)
+
+
+@pytest.mark.unit
+def test_readme_gate_commands_match_package_scripts():
+    """README「常用命令」里写的 npm 命令，必须真的在 package.json 里。"""
+    scripts = json.loads((REPO_ROOT / "app" / "package.json").read_text(encoding="utf-8"))["scripts"]
+
+    readme = _read("README.md")
+    referenced = set(re.findall(r"npm run ([a-zA-Z0-9:_-]+)", readme))
+    referenced |= set(re.findall(r"npm (test|ci)\b", readme)) - {"ci"}
+
+    missing = sorted(name for name in referenced if name not in scripts)
+
+    assert not missing, (
+        "README 里写了不存在的 npm 命令：\n"
+        + "\n".join(f"  npm run {m}" for m in missing)
+    )
+    assert referenced, "没从 README 里解析出任何 npm 命令，解析大概失效了"
+
+
+@pytest.mark.unit
+def test_readme_gate_section_exists_and_points_at_agents_md():
+    """AGENTS.md 说「命令的唯一真源在 README 的常用命令章节」—— 那一节必须真的在。"""
+    readme = _read("README.md")
+
+    assert "常用命令" in readme, "README 里找不到「常用命令」章节"
+    assert "AGENTS.md" in readme, "README 没有指回 AGENTS.md"
