@@ -62,10 +62,9 @@ export interface DailyPrice {
   date: string;
   price: number;
   volume: number;
-  open_price?: number;
-  high_price?: number;
-  low_price?: number;
-  change_percent?: number;
+  // 这里原本还声明了 open_price? / high_price? / low_price? / change_percent?，
+  // 但 /api/gold/prices/daily 从不返回它们，前端也从不读它们 ——
+  // 留着只会让人以为接口提供了 OHLC。真需要的话先让后端发出来。
 }
 
 export interface CorrelationData {
