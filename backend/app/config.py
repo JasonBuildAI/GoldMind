@@ -1,5 +1,6 @@
 """配置管理"""
 import os
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -12,7 +13,9 @@ class Settings(BaseSettings):
     # （AGENTS.md 的红线 2）。带一个弱默认密码的后果是「没配也能连上」——
     # 那会掩盖配置缺失，也让弱口令看起来是正常用法。
     # 没配 .env 时这里会认证失败，是期望的行为。
-    DATABASE_URL: str = "mysql+pymysql://root@localhost:3306/gold_analysis"
+    # 同样用 SecretStr：连接串里带数据库密码，
+    # repr/日志里不该出现。取用时用 `.get_secret_value()`。
+    DATABASE_URL: SecretStr = SecretStr("mysql+pymysql://root@localhost:3306/gold_analysis")
     
     # LLM 供应商（当前仅支持 mimo）
     LLM_PROVIDER: str = "mimo"
@@ -20,7 +23,10 @@ class Settings(BaseSettings):
     # 小米 MiMo 配置
     # 推理与联网搜索共用同一个端点与密钥；所有调用点统一走
     # app/services/llm_provider.py 的工厂，不要在此之外直接构造客户端。
-    MIMO_API_KEY: str = ""  # 从.env文件读取
+    # `SecretStr` 而不是 `str`：pydantic 的 repr / str / model_dump
+    # 都会把它显示成 `**********`。明文 str 的话，任何一句
+    # `logger.info(settings)` 或包含 settings 的异常回溯都会把 key 打进日志。
+    MIMO_API_KEY: SecretStr = SecretStr("")  # 从.env文件读取
     # Token Plan 端点。按量付费的普通 API 为 https://api.xiaomimimo.com/v1
     MIMO_BASE_URL: str = "https://token-plan-cn.xiaomimimo.com/v1"
     # 推理模型（mimo-v2.6-flash / mimo-v2.6-pro / mimo-v2.6-pro-ultraspeed）

@@ -362,7 +362,7 @@ def test_llm_client_is_constructed_from_config_not_hardcoded(
     assert smart_llm.last_kwargs, "没有捕获到 LLM 构造参数"
     assert smart_llm.last_kwargs["base_url"] == settings.MIMO_BASE_URL
     assert smart_llm.last_kwargs["model"] == settings.MIMO_MODEL
-    assert smart_llm.last_kwargs["api_key"] == settings.MIMO_API_KEY
+    assert smart_llm.last_kwargs["api_key"] == settings.MIMO_API_KEY.get_secret_value()
     assert smart_llm.last_kwargs["max_tokens"] == 4096
     for stale in ("deepseek.com", "bigmodel.cn"):
         assert stale not in smart_llm.last_kwargs["base_url"]

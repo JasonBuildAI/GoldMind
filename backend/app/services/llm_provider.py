@@ -126,7 +126,7 @@ def get_chat_llm(*, temperature: float = 0.7, max_tokens: int = 4096) -> Any:
     """
     return _chat_openai_class()(
         model=get_model_name(),
-        api_key=settings.MIMO_API_KEY,
+        api_key=settings.MIMO_API_KEY.get_secret_value(),
         base_url=settings.MIMO_BASE_URL,
         temperature=temperature,
         max_tokens=max_tokens,
@@ -138,7 +138,7 @@ def get_chat_llm(*, temperature: float = 0.7, max_tokens: int = 4096) -> Any:
 def get_search_client() -> Any:
     """返回用于联网搜索的原生 OpenAI 客户端。"""
     return _openai_class()(
-        api_key=settings.MIMO_API_KEY,
+        api_key=settings.MIMO_API_KEY.get_secret_value(),
         base_url=settings.MIMO_BASE_URL,
         http_client=get_http_client(),
     )
@@ -165,7 +165,8 @@ def build_web_search_tool() -> dict[str, Any]:
 
 def is_configured() -> bool:
     """是否已配置密钥。"""
-    return bool(settings.MIMO_API_KEY)
+    # SecretStr 对象本身恒为真，必须看里面的值
+    return bool(settings.MIMO_API_KEY.get_secret_value())
 
 
 def describe() -> dict[str, Any]:

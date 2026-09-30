@@ -18,7 +18,7 @@ def _build_engine():
 
     支持 SQLite 是为了让测试可以完全脱离 MySQL 运行。
     """
-    url = settings.DATABASE_URL
+    url = settings.DATABASE_URL.get_secret_value()
     kwargs: dict = {"echo": False}
 
     if url.startswith("sqlite"):
@@ -104,7 +104,7 @@ def mysql_connection_params(include_database: bool = True) -> dict:
         include_database: 是否需要库名。`init_db.py` 要先连上去建库，
             此时库还不存在，必须传 False。
     """
-    url = settings.DATABASE_URL or ""
+    url = settings.DATABASE_URL.get_secret_value() if settings.DATABASE_URL else ""
 
     if url.startswith("mysql"):
         from urllib.parse import unquote, urlparse
