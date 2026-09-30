@@ -66,7 +66,10 @@ def _git(*args: str) -> str:
 
 @pytest.fixture(scope="module")
 def tracked_files() -> list[Path]:
-    names = [n for n in _git("ls-files").splitlines() if n.strip()]
+    # `-z` 是必须的：默认输出会把非 ASCII 路径按 `core.quotepath` 转义成
+    # `"docs/10-\345\257\206..."`（带引号），拼出来的路径不存在、`is_file()`
+    # 为假，于是**所有中文名的文档被静默跳过** —— 守卫看着在守，实际漏了一大片。
+    names = [n for n in _git("ls-files", "-z").split("\0") if n.strip()]
     assert names, "git ls-files 返回空 —— 这个仓库状态不对"
     return [REPO_ROOT / n for n in names]
 

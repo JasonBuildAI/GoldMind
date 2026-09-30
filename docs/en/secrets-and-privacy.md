@@ -81,7 +81,7 @@ git log --all --format='%ae %ce' | sort -u
       | QQ number / QQ email | 0 |
       | Personal email in file content | 0 |
       | Commit count | 71 (all preserved) |
-      | Author/committer email | Still `jasonbuildai@gmail.com` (kept by your choice) |
+      | Author/committer email | Still `JasonB…@gmail.com` (kept by your choice; masked here exactly as on line 50 of the source doc) |
 
 - [x] **Revoked that DeepSeek key** (2026-09-30, done by the repository owner in the DeepSeek console).
       This is the **only step that truly removes the risk**: rewriting history only keeps it out of the repository,
@@ -97,7 +97,7 @@ git log --all --format='%ae %ce' | sort -u
       | QQ number / QQ email | 0 |
       | Personal email in file content | 0 |
       | Commit count | All preserved |
-      | Author/committer email | Still `jasonbuildai@gmail.com` (kept by the owner's choice) |
+      | Author/committer email | Still `JasonB…@gmail.com` (kept by the owner's choice; same mask as line 50) |
 
 ### At This Point, This Leak Has Been Fully Handled
 
