@@ -75,20 +75,20 @@ test.describe('GoldMind 看板端到端', () => {
 
     // 初始没有缓存时，后端返回**空内容 + status=analyzing**，页面显示「正在分析中」。
     // 它不会先摆一份内置因子：编造的结论与真实分析长得一样，用户分不出来。
-    await expect(section.getByText('看涨因子正在分析中')).toBeVisible()
+    await expect(section.getByText('看涨因素正在分析中')).toBeVisible()
 
     // 触发一次真实分析：前端 → 后端 → 假 LLM → 解析 → 缓存 → 渲染
-    await section.getByRole('button', { name: /调用Agent重新分析/ }).click()
+    await section.getByRole('button', { name: '重新分析' }).click()
 
     await expect(section.getByText('端到端看涨因子').first()).toBeVisible({ timeout: 30_000 })
     // 「正在分析中」应当已被真实结果替换
-    await expect(section.getByText('看涨因子正在分析中')).toHaveCount(0)
+    await expect(section.getByText('看涨因素正在分析中')).toHaveCount(0)
   })
 
   test('刷新后重新加载页面，命中缓存而不是回退默认值', async ({ page }) => {
     await page.goto('/')
 
-    await bullishSection(page).getByRole('button', { name: /调用Agent重新分析/ }).click()
+    await bullishSection(page).getByRole('button', { name: '重新分析' }).click()
     await expect(bullishSection(page).getByText('端到端看涨因子').first()).toBeVisible({
       timeout: 30_000,
     })
