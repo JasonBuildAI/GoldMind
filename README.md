@@ -10,9 +10,10 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/version-v2.0.0-brightgreen?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/released-2026--10--01-success?style=flat-square" alt="Release date">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/Docker-部署就绪-2496ED?style=flat-square&logo=docker" alt="Docker">
-  <img src="https://img.shields.io/badge/version-v1.0.0-brightgreen?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React">
 </p>
@@ -21,50 +22,78 @@
   <a href="./README_EN.md">English</a> | <strong>中文文档</strong>
 </p>
 
+---
+
+<!-- ⬇️⬇️⬇️ 2.0 发布横幅：以下三行是本次发布的「大字」部分，改版本时一起改 ⬇️⬇️⬇️ -->
+
+<h1 align="center">🎉 GoldMind 2.0 正式发布</h1>
+
+<h2 align="center">GoldMind 2.0 is here</h2>
+
 <p align="center">
-  <a href="#-快速开始">快速开始</a> •
+  <img src="https://img.shields.io/badge/release-v2.0.0-FFD700?style=for-the-badge" alt="v2.0.0">
+  <img src="https://img.shields.io/badge/released-2026--10--01-2EA043?style=for-the-badge" alt="2026-10-01">
+</p>
+
+<p align="center">
+  <strong>每一个数字都出自同一份经过校准的概率分布。</strong><br>
+  <em>Every number on the page now comes from one calibrated distribution.</em><br><br>
+  📋 <a href="./CHANGELOG.md">更新日志 CHANGELOG</a> ·
+  🌍 <a href="./CHANGELOG_EN.md">Changelog (EN)</a> ·
+  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.0">GitHub Release v2.0.0</a>
+</p>
+
+<!-- ⬆️⬆️⬆️ 2.0 发布横幅结束 ⬆️⬆️⬆️ -->
+
+---
+
+## 🆕 2.0 带来了什么
+
+2.0 不是一次换皮 —— 它修掉了一条会**悄悄吞掉真实数据**的旧规则，并把「预测」从一组各说各话的
+数字，收敛成一份可回测、可核对、能自我说明局限的分布。
+
+| 变化 | 之前 | 2.0 |
+|---|---|---|
+| 机构观点 | 只认「24 小时内发布」的新闻；当天没有新研报，四家机构就一起变成「暂无」 | 每机构给出**最近一次可核实的预测**（附预测日期与来源），扫描窗口 30 天可配；空结果**绝不覆盖**已有真实记录 |
+| 预测口径 | 方向、概率、目标价、区间各自算各自的 | 方向 = sign(μ)、概率 = Φ(μ/σ)、目标价 = 基准价×(1+μ)、区间 = μ±1.2816σ、三情景 = N(μ, σ²) 分位数 —— **全部派生自同一份分布** |
+| 区间宽度 | 正态分位，长尺度系统性偏窄 | 按**走查预测误差的经验分位**校准；覆盖率与「永远看多 / 动量 / 抛硬币」并排展示 |
+| 文档 | 中文为主，API 文档是手写的、且已与实现脱节 | 中英**双版**；`docs/API.md` 与 `docs/en/api.md` 由同一个路由表生成，漂移直接让闸门变红 |
+| 可核实性 | 数据没有「截至日」 | 每个因子带来源与数据截至日，每行预测带预测日期与滞后天数，取不到就明说「不可用 + 原因」 |
+
+---
+
+<p align="center">
   <a href="#-项目概述">项目概述</a> •
-  <a href="#-实际的分析链路">分析链路</a> •
-  <a href="#-系统展示">系统展示</a> •
-  <a href="#-工作流程">工作流程</a> •
-  <a href="#-贡献">贡献</a> •
-  <a href="#-联系作者">联系作者</a>
+  <a href="#-量化策略">量化策略</a> •
+  <a href="#-快速开始">快速开始</a> •
+  <a href="#-常用命令">常用命令</a> •
+  <a href="#-目录结构">目录结构</a> •
+  <a href="#-文档地图">文档地图</a> •
+  <a href="#-诚实声明实现边界">诚实声明</a> •
+  <a href="#-贡献">贡献</a>
 </p>
 
 ---
 
 ## ⚡ 项目概述
 
-**GoldMind** 是一个黄金市场分析看板：自动采集金价与美元指数，用大语言模型基于最近的新闻生成多空对照、机构观点、投资策略与市场总结，并以量化引擎基于四类影响因素（货币政策与利率 / 避险与信用 / 供需结构 / 市场与技术面）预测 1 / 5 / 20 / 60 / 250 个交易日（日内～一周、1～3 个月、6～18 个月）的方向、目标价与情景（全部出自同一份校准分布，未校准的因子偏向单列一行），以一张单页的**浅色研究简报**呈现 —— 六节（行情 / 多空对照 / 机构观点 / 投资策略 / 量化预测 / 总结）全部左对齐，无渐变、无阴影、无卡片套件；数字表格化，红涨绿跌，且方向同时给符号与文字。
+**GoldMind** 是一个黄金市场分析看板：自动采集金价与美元指数，用大语言模型基于最近的新闻生成
+多空对照、机构观点、投资策略与市场总结，并以量化引擎基于四类影响因素（货币政策与利率 /
+避险与信用 / 供需结构 / 市场与技术面）预测 1 / 5 / 20 / 60 / 250 个交易日（日内～一周、
+1～3 个月、6～18 个月）的方向、目标价与情景（全部出自同一份校准分布，未校准的因子偏向单列
+一行），以一张单页的**浅色研究简报**呈现 —— 六节（行情 / 多空对照 / 机构观点 / 投资策略 /
+量化预测 / 总结）全部左对齐，无渐变、无阴影、无卡片套件；数字表格化，红涨绿跌，且方向同时给
+符号与文字。
 
-当前由**小米 MiMo**（`mimo-v2.6-flash`）单模型驱动，所有 LLM 客户端统一经 `backend/app/services/llm_provider.py` 构造。
+当前由**小米 MiMo**（`mimo-v2.6-flash`）单模型驱动，所有 LLM 客户端统一经
+`backend/app/services/llm_provider.py` 构造。
 
-> 你只需：打开页面  
-> GoldMind 将返回：当天金价、美元指数，以及基于最近 24 小时新闻生成的多空分析与策略建议
+> 你只需：打开页面
+> GoldMind 将返回：当天金价、美元指数，以及基于最近新闻生成的多空分析与策略建议，
+> 外加一份可回测的量化预测。
 
-> 📌 产品边界与已知限制见 [`docs/00-产品方向.md`](docs/00-产品方向.md)。**该文档中标记为「目标」的能力尚未实现，请勿当作已有功能。**
-
-### 🎯 实现说明（请以代码为准）
-
-以下四点是对早期文档中技术描述的更正 —— 早期描述与实际实现不符：
-
-**关于「多智能体」**  
-分析由 4 个**独立的单轮 LLM 调用**完成，不是 Agent 协作：每个分析服务把上下文拼进 prompt，调用一次 `llm.invoke(prompt)`，再解析返回的 JSON。没有工具调用循环、没有 Agent 间通信。早期文档提到的 `backend/app/agents/` 包**从未被实例化，已删除**。
-
-**关于「实时搜索」**  
-设计上通过 MiMo 的 `web_search` 工具检索机构研报与新闻。但当前使用的 Token Plan `tp-` key 调用该工具一律返回 `HTTP 400`（实测，见 `backend/scripts/smoke_mimo.py`），因此搜索不可用时回退到数据库与 RSS 新闻，并且**不会**编造机构目标价。
-
-**关于「RAG」**  
-没有向量库、没有 embedding、没有检索步骤。历史价格与新闻是直接拼进 prompt 的上下文。
-
-**关于「ReAct」**  
-未实现，没有 Thought / Action / Observation 循环。
-
-**关于「某一节显示暂不可用」**
-分析模型是推理模型，`max_tokens=4096` 同时覆盖思考与正文。投资策略要求三档策略的完整
-JSON，输出逼近上限时会被截断、解析失败，于是按红线返回空内容 —— 页面如实显示
-「投资策略暂不可用」，而不是摆一份编造的策略。看涨 / 看跌因子偶发为空时同理，点
-「重新分析」重试即可。
+> 📌 产品边界与已知限制见 [`docs/00-产品方向.md`](docs/00-产品方向.md)。
+> **该文档中标记为「目标」的能力尚未实现，请勿当作已有功能。**
 
 ### 🧩 实际的分析链路
 
@@ -73,6 +102,10 @@ JSON，输出逼近上限时会被截断、解析失败，于是按红线返回�
 RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke() ──► 解析 JSON ──► 缓存 ──► 前端看板
                      │
                      └──► （可选）MiMo web_search，不可用时跳过
+
+公开数据源 ──► 因子库 ──► 滚动 z 分数 ──► 分尺度权重合成 ──► 一份校准分布 ──► 量化预测
+（财政部 / 纽联储 / CFTC /                                        │
+  Yahoo / RSS，全部免密钥）                                        └──► 走查式回测 + 覆盖率
 ```
 
 | 分析服务 | 输入 | 输出 |
@@ -90,6 +123,7 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
 **GoldMind** 致力于通过社区共同努力，打造一个**真实可用的 AI Agent 国际黄金市场数据分析与价格预测平台**。
 
 我们希望通过技术创新：
+
 - 📉 **减少信息差** - 让每位投资者都能获取专业级的市场分析
 - 🛡️ **增强风险抵抗能力** - 提供多维度的风险评估和预警
 - 💡 **切实可行的投资建议** - 基于数据和逻辑，给出可操作的投资策略
@@ -124,8 +158,9 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
 </p>
 
 > 本机部署的 MiMo key 未开通联网搜索（调用返回 `HTTP 400`）；此时回退到新闻窗口，
-> 提取每家机构**最近一次可核实**的预测并标注预测日期。一条都找不到才显示「暂无」，
-> 而且空目标价不会覆盖库里已有的真实记录。
+> 提取每家机构**最近一次可核实**的预测，并在「预测日期」列出该预测最近一次被核实的日期，
+> 超过 30 天标注「已滞后 N 天」。一条都找不到才显示「暂无」，
+> 而且**空目标价不会覆盖库里已有的真实记录**。
 
 ### 投资策略
 <p align="center">
@@ -139,6 +174,186 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
 <p align="center">
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/market-summary.jpeg" alt="市场总结" width="800">
 </p>
+
+---
+
+## 📐 量化策略
+
+本节讲清**「影响国际金价的四类因素」是怎么变成页面上那几个数字的**，以及这些数字**在哪里会错**。
+因子清单、权重、方向先验与新鲜度上限只在 `backend/app/services/quant/definitions.py` 定义一处，
+本节不另抄一份口径 —— 数字若与代码不符，以代码为准。
+
+### 一、四层驱动与 14 个因子
+
+框架是「影响国际金价的主要因素」的四层分类：
+
+| 层 | 对应现实 | 因子数 | 这一层回答的问题 |
+|---|---|---|---|
+| 货币政策与利率 | 实际利率、政策路径、美元 | 4 | 持有黄金的机会成本在升还是在降？ |
+| 避险与信用 | 波动率、信用压力、地缘冲突 | 3 | 市场在怕什么？钱在往哪里躲？ |
+| 供需结构 | 央行购金、投机仓位、ETF 申赎 | 3 | 谁在真实地买，买多少？ |
+| 市场与技术面 | 动量、季节性、替代品、风险偏好 | 4 | 价格自己的惯性怎么说？ |
+
+14 个因子的完整定义（方向先验 `+1` = 该因子上升利多黄金，`-1` = 上升利空）：
+
+| 因子 | 层 | 单位 | 来源 | 先验 | 权重 1日/1周/1月/1季/1年 | 新鲜度上限 |
+|---|---|---|---|---|---|---|
+| 美债 10 年期实际利率 | 货币政策与利率 | % | 美国财政部（TIPS 实际收益率曲线） | −1 | 0.25 / 0.5 / 1.0 / 1.0 / 0.8 | 7 天 |
+| 市场隐含政策预期 | 货币政策与利率 | % | 美国财政部（2 年期）− 纽约联储（EFFR） | −1 | 0.2 / 0.4 / 1.0 / 0.8 / 0.6 | 7 天 |
+| 10 年期通胀预期 | 货币政策与利率 | % | 美国财政部（名义 − 实际收益率） | +1 | 0.1 / 0.2 / 0.5 / 0.5 / 0.4 | 7 天 |
+| 美元指数 | 货币政策与利率 | 点 | Yahoo Finance（DX-Y.NYB） | −1 | 0.3 / 0.5 / 0.9 / 0.7 / 0.5 | 7 天 |
+| VIX 波动率指数 | 避险与信用 | 点 | Yahoo Finance（^VIX） | +1 | 0.6 / 0.5 / 0.4 / 0.3 / 0.2 | 7 天 |
+| 信用市场风险偏好 | 避险与信用 | %（20 日） | Yahoo Finance（HYG/IEF 比值） | −1 | 0.5 / 0.4 / 0.3 / 0.2 / 0.2 | 7 天 |
+| 地缘风险强度 | 避险与信用 | %（新闻占比） | 本系统 RSS 语料（关键词强度代理指标） | +1 | 0.5 / 0.5 / 0.4 / 0.3 / 0.3 | 3 天 |
+| 央行购金（中国官方储备） | 供需结构 | 万盎司 | 新浪财经宏观数据（中国人民银行官方储备资产） | +1 | 0.2 / 0.4 / 0.7 / 1.0 / 1.0 | 62 天 |
+| COMEX 投机净多头 | 供需结构 | 张 | CFTC 持仓报告（合约代码 088691） | +1 | 0.8 / 0.7 / 0.4 / 0.3 / 0.2 | 14 天 |
+| 黄金 ETF 份额（GLD） | 供需结构 | 份 | Yahoo Finance（自采集日起积累） | +1 | 0.3 / 0.4 / 0.5 / 0.7 / 0.8 | 7 天 |
+| 黄金趋势动量 | 市场与技术面 | %（60 日） | Yahoo Finance（GC=F 收盘） | +1 | 1.0 / 1.0 / 0.4 / 0.3 / 0.2 | 7 天 |
+| 季节性（当月历史平均） | 市场与技术面 | %（历史均值） | 自有价格序列（只用往年同月） | +1 | 0.2 / 0.3 / 0.2 / 0.2 / 0.2 | 7 天 |
+| 比特币（数字黄金叙事） | 市场与技术面 | 点 | Yahoo Finance（BTC-USD） | −1 | 0.2 / 0.2 / 0.2 / 0.2 / 0.3 | 7 天 |
+| 股市风险偏好 | 市场与技术面 | 点 | Yahoo Finance（SPY） | −1 | 0.5 / 0.4 / 0.3 / 0.2 / 0.2 | 7 天 |
+
+方向先验来自经济机理，**不保证成立** —— 回测逐因子报告单独命中率与 IC，方向与实际相反时页面
+照样如实展示。
+
+### 二、五个尺度与各自的「主导层」
+
+方法论的第一步是**先选时间尺度，再选变量** —— 同一份因子在不同周期上的权重并不相同：
+
+| 尺度 | 标签 | 对应现实周期 | 主导层 | 说明 |
+|---|---|---|---|---|
+| 1 个交易日 | 1 日 | 日内～一周 | 市场与技术面 → 供需结构 | 资金流、技术面、仓位拥挤度主导，宏观基本面权重最低 |
+| 5 个交易日 | 1 周 | 日内～一周 | 市场与技术面 → 避险与信用 | 一周资金流与事件脉冲主导，宏观仍居次席 |
+| 20 个交易日 | 1 月 | 1～3 个月 | 货币政策与利率 → 供需结构 | 政策预期、经济数据、美元指数主导 |
+| 60 个交易日 | 1 季 | 1～3 个月 | 货币政策与利率 → 供需结构 | 政策路径与需求结构并重 |
+| 250 个交易日 | 1 年 | 6～18 个月 | 供需结构 → 货币政策与利率 | 实际利率周期、降息路径、央行购金趋势主导 |
+
+这也是为什么 14 个因子各带一组五维权重，而不是一个全局权重 —— 拿「央行购金」去解释明天
+的金价，和拿「VIX」去解释明年的金价，都是把尺度搞反了。
+
+### 三、一份校准分布，所有出口都由它派生
+
+因子合成的得分 `score` 是**未校准**的输入 —— 它只在因子表与「因子偏向（未校准）」一行展示。
+页面上所有结论都出自同一个 `engine.build_prediction_frame` 出口：
+
+```
+μ    = α + β · score              扩展窗口 OLS，样本对满足 s + h ≤ t
+σ    = std(r_s − μ_s | s+h ≤ t) × q80( |r_s − μ_s| / (1.2816 · σ_s) )
+                                  走查预测误差的标准差，再按误差的经验分位校准宽度
+p_up = Φ(μ / σ)                    上行概率
+目标价 = 基准价 × (1 + μ)           基准价 = COMEX 主力期货日收盘（gold_close）
+80% 区间 = μ ± 1.2816σ
+三情景  = N(μ, σ²) 的分位数          Base [q25, q75] / Bull 上 25% / Bear 下 25%
+方向    = sign(μ)                   恰为 0 记「持平」
+```
+
+模型版本 **`quant-v4`**。四条硬口径：
+
+1. **无前视**。滚动统计与回归样本全部 `shift` 到 t 之前；在黄金收盘之后才发布的数据源
+   （财政部收益率曲线、纽约联储 EFFR、CFTC 持仓）整体右移一个工作日。
+   守卫：`backend/tests/unit/quant/test_no_lookahead.py` —— 把 t 之后的数据改成垃圾值，
+   t 时刻的信号必须逐位不变。
+2. **不退回「预期不变」**。回归样本不足 60 组时该尺度整体「不可用 + 原因」，
+   不拿得分符号顶替方向，也不假装 μ = 0。已实现误差不足 60 组时，σ 退回
+   「已实现 h 日收益的扩展标准差」，仍然只用过去的数据。
+3. **缺失因子按剩余权重归一**，不会被当成 0；可用因子少于 3 个直接「预测不可用」。
+4. **时间只走一个时区**（`app.utils.timeutil`，默认 `Asia/Shanghai`）。
+
+### 四、公允价的四层分解
+
+`decompose.py` 用走查式扩展窗口 OLS：
+
+```
+log 金价 ~ 实际利率 + log 美元指数 + log 央行储备 + VIX
+```
+
+把金价拆成 **宏观锚 ＋ 需求溢价 ＋ 风险溢价 ＋ 情绪残差**。展示口径只写在 `decompose.py`
+一处：需求与风险溢价按链式相乘（风险溢价以「中枢＋需求溢价」为基数），使
+「中枢＋需求溢价＋风险溢价 = 公允价」与「三块＋情绪残差 = 市场价」都按构造成立。
+t 时刻的回归系数只用 `s ≤ t−1` 的已实现样本；样本不足 120 组或缺任一回归量时返回
+「不可用 + 原因」。偏离度 = 市场价 / 公允价 − 1。
+
+> 有了它，「现在贵不贵」就不是一句感觉 —— 而是「市场价比模型算出的公允价高/低几个百分点，
+> 其中多少来自需求、多少来自风险、多少是情绪」。
+
+### 五、情景的触发与失效条件
+
+三个情景不是拍脑袋写的：Base 取分布中间的 50%（q25～q75），Bull 与 Bear 各取上下 25%，
+因此三者的概率之和恒为 100%。每个情景另外给出**触发条件**与**失效条件** ——
+由该尺度**最重因子**与 **200 日均线**生成，是可以在页面上逐条核对的句子，而不是形容词。
+σ 非正、基准价缺失或没有可用因子时返回「不可用 + 原因」，不阻塞预测主输出。
+
+### 六、回测口径与三个基准
+
+回测（`backtest.py`）是**走查式**的：每个历史时点只用当时可得的数据，评的是**校准后的方向**
+（`sign(μ)`），并且永远与三个基准并排展示：
+
+| 基准 | 含义 |
+|---|---|
+| 永远看多 | 无视一切信号，每天都猜涨 |
+| 动量 | 沿最近一段的趋势外推 |
+| 抛硬币 | 50% |
+
+另外单列三项：**未校准得分方向**的成绩（`metrics.score_direction_accuracy`，用来回答
+「校准到底有没有加分」）、**80% 名义区间的实际覆盖率**（`metrics.interval_coverage_80`）、
+以及以 2022-01-01 为界的**分段成绩**（`metrics.regimes`）；逐因子命中率与 IC 也逐条列出，
+某段样本不足时只给样本数与原因，不凑数字。
+
+**实测覆盖率（2026-10-01 跑出，页面同源）：**
+
+| 尺度 | 1 日 | 1 周 | 1 月 | 1 季 | 1 年 |
+|---|---|---|---|---|---|
+| 全样本（校准后） | 78.1% | 77.3% | 75.8% | 76.7% | 61.0% |
+| 最近 500 个可评估样本 | 70.2% | 66.0% | 64.4% | 55.0% | 27.6% |
+| 全样本（校准前） | 78.4% | 76.4% | 71.7% | 68.4% | 51.8% |
+| 最近 500 个（校准前） | 70.0% | 64.0% | 58.8% | 47.6% | 18.4% |
+
+名义值 80%。60 日方向命中率 64.5%。**校准确实把长尺度拉近了名义值，但 1 年尺度近两年仍然
+明显偏低** —— 见第九节「已知限制」，我们把它写在页面上，而不是藏起来。
+
+### 七、监测仪表盘：16 行水位表
+
+`monitor.py` 覆盖 **16 行**指标，每行给出频率、来源、当前值、信号（看涨 / 看跌 / 中性 / 信息）
+与数据截至日。信号规则是确定性阈值，集中在 `_rule` 一处；汇率、人民币金价与未平仓合约是
+**信息型**指标（`signal = null`），不硬套多空；取不到数据或历史不足的行如实返回
+「不可用 + 原因」。
+
+每行的更新频率跟随它自己的数据源（日 / 周 / 月），不是统一刷新：
+
+| 频率 | 指标 |
+|---|---|
+| 日 | 美债 10 年期实际利率、盈亏平衡通胀、美元指数（DXY）、市场隐含政策预期、GLD 份额、上海金溢价、VIX、信用偏好（HYG/IEF）、金价 vs 200 日均线、USDCNY、人民币金价参考、美国财政部 TGA 余额、纽约联储 RRP |
+| 周 | CFTC 净多头（拥挤度）、COMEX 黄金未平仓合约 |
+| 月 | 央行黄金储备 |
+
+> 仪表盘是「给你看的水位」，不是打分项 —— 其中 `usdcny` / `cny_gold` / `tga` / `rrp` /
+> `cftc_oi` 五条序列与因子同表存储，但**不参与**信号合成。
+
+### 八、数据源与新鲜度
+
+- **全部免费、无需密钥**：美国财政部收益率曲线与 Fiscal Data（TGA）、纽约联储 RRP 与 EFFR、
+  CFTC 持仓报告、Yahoo Finance（DXY / GC=F / GLD / SPY / BTC-USD / ^VIX / HYG / IEF / CNY=X）、
+  新浪财经（央行官方储备）、本系统自己的 RSS 语料。
+- **按源节流**：同步器给每个源单独设 6h～24h 的节流窗口，增量抓取；某个源失败不影响其它源，
+  失败原因写进同步报告并显示在页面上。
+- **按因子设新鲜度上限**（上表最后一列）：日频 7 天覆盖长假，月度 62 天覆盖发布推迟。
+  超过上限的因子标「**陈旧**」并被排除出合成，而不是继续拿旧值充数。
+- **首次回填 10 年**，之后只抓增量；`factor_observations` 对 `(factor_key, obs_date)` 建唯一
+  约束，重复抓取是幂等的。
+
+### 九、已知限制（我们不加修饰地写在这里）
+
+1. **1 年尺度的漂移项系统性偏低**。2023-10 至 2025-10 的走查误差平均 **+33.0%**，即模型低估了
+   2024–2025 年的上涨。这是 μ 的偏差，**加宽区间补不回来**：试过再按误差的扩展均值校正 μ
+   （250 日近 500 样本覆盖 27.6% → 41.6%），但 1–60 日命中率一律下降（如 60 日
+   64.5% → 60.5%），因此**未采用**。页面把覆盖率与「永远看多 / 动量」并排展示，让你自己判断。
+2. **上海金溢价不可用**。上海黄金交易所 AU9999 没有公开免密钥接口，实测取不到数，
+   该行如实显示「不可用 + 原因」，不编数字。
+3. **联网搜索当前不可用**。Token Plan 的 `tp-` key 调用 MiMo 的 `web_search` 一律返回
+   `HTTP 400 Param Incorrect`，机构观点因此回退到 RSS 新闻窗口。
+4. **地缘风险强度是语料代理指标**（最近新闻中相关报道占比），不是 GPR 官方指数。
+5. **无鉴权、无多租户**。所有接口公开可访问，包括会触发付费 LLM 调用的 `POST .../refresh`。
+6. **不是交易系统**。不下单、不接券商、不托管资金；所有产出都带免责声明。
 
 ---
 
@@ -189,6 +404,19 @@ MIMO_API_KEY=your_mimo_api_key_here
 MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
 MIMO_MODEL=mimo-v2.6-flash
 ```
+
+**可选的环境变量**（完整清单见 [`backend/.env.example`](backend/.env.example)）：
+
+| 变量 | 默认值 | 作用 |
+|---|---|---|
+| `INSTITUTION_NEWS_LOOKBACK_DAYS` | `30` | 机构观点扫描新闻的窗口（天）。窗口内取每家机构**最近一次可核实**的预测，可以是较早发布的那条 |
+| `DEBUG` | `false` | 只影响 uvicorn 的 `--reload`；docker-compose 会强制覆盖为 `false` |
+| `LOG_LEVEL` | `INFO` | 日志级别 |
+| `CACHE_DIR` | `backend/cache` | 两级缓存里文件缓存的落盘目录 |
+| `NEWS_RSS_SOURCES` | 内置默认源 | 形如 `名称\|URL,名称\|URL` |
+| `MIMO_TRUST_ENV` | `false` | 是否让 httpx 读宿主的代理环境变量；走代理访问 MiMo 时设为 `true` |
+| `GOLDMIND_TEST_DATABASE_URL` | 未设置 | 只在跑测试时用：指定 MySQL 测试库，避免「SQLite 全绿 ≠ MySQL 全绿」 |
+| `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | **全项目唯一的时区口径**，定时任务与「今天」都按它算 |
 
 #### 2. 安装依赖
 
@@ -259,6 +487,22 @@ SKIP_SEED=1 python init_db.py
 ```bash
 # 如果初始化时跳过数据填充，或需要更新数据
 python seed_data.py
+```
+
+**老库升级**（已经建过库、现在要升到 2.0 的）：
+
+```bash
+cd backend
+
+# 机构观点：加 as_of_date / source 两列，并把旧别名行里的真实预测复制到规范行（只加不删）
+python scripts/migrate_institution_views.py --dry-run   # 默认就是 dry-run，先看会做什么
+python scripts/migrate_institution_views.py --apply
+# 回滚（删除这两列，既有数据行不动）
+python scripts/migrate_institution_views.py --drop-columns --yes
+
+# 量化因子引擎：升级到带 factor_observations / model_evaluations 的结构（幂等，只加不删）
+python scripts/migrate_quant.py --dry-run
+python scripts/migrate_quant.py
 ```
 
 #### 4. 启动服务
@@ -434,6 +678,10 @@ GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test
 # 静态检查：全量语法
 python -m compileall -q app
 
+# 接口文档（中英两份）是否与路由表一致
+python scripts/gen_api_doc.py --check     # 不一致时退出码 1
+python scripts/gen_api_doc.py             # 重新生成 docs/API.md 与 docs/en/api.md
+
 # 数据库初始化（建库 + 建表 + 灌历史数据）
 python init_db.py
 SKIP_SEED=1 python init_db.py        # 只建库建表，不灌数据
@@ -441,6 +689,12 @@ SKIP_SEED=1 python init_db.py        # 只建库建表，不灌数据
 # 修正旧库里的枚举列取值（幂等；只影响 schema.sql 早期版本建出来的库）
 python scripts/fix_enum_columns.py --dry-run
 python scripts/fix_enum_columns.py
+
+# 机构观点：加 as_of_date / source 并把真实预测复制到规范行（幂等；**不删除任何行**）
+python scripts/migrate_institution_views.py --dry-run
+python scripts/migrate_institution_views.py --apply
+# 回滚（删除两列；已有的数据行不动）
+python scripts/migrate_institution_views.py --drop-columns --yes
 
 # 量化因子引擎：老库升级到带 factor_observations / model_evaluations 的结构（幂等，只加不删）
 python scripts/migrate_quant.py --dry-run    # 先看会做什么
@@ -519,37 +773,71 @@ python scripts/smoke_mimo.py
 - **测试报 `no such table`** —— 测试用的是内存 SQLite，正常不该出现；
   若出现，检查是否绕过了 `backend/tests/conftest.py` 的夹具。
 
-- **`git push` 报 `schannel: failed to receive handshake, SSL/TLS connection failed`**
-  —— Windows 上 git 默认用系统的 schannel 做 TLS，某些网络环境（尤其是走了本地
-  代理时）握手会失败，而 `curl` 访问同一地址却是通的。换成 OpenSSL 后端即可：
+---
 
-  ```bash
-  git -c http.sslBackend=openssl push origin main
-  # 想长期生效：git config --global http.sslBackend openssl
-  ```
+## 🗂️ 目录结构
+
+```
+GoldMind/
+├── app/                          # 前端（React 19 + TypeScript + Tailwind）
+│   ├── src/
+│   │   ├── sections/            # 六个页面区块 + 各自的测试
+│   │   ├── components/          # 可复用组件（含机构观点的预测日期列）
+│   │   ├── layout/              # 报头 / 页脚
+│   │   ├── services/            # API 客户端与类型定义（api.ts）
+│   │   └── test/                # 测试夹具
+│   └── package.json
+├── backend/                      # 后端（FastAPI + SQLAlchemy + MySQL）
+│   ├── app/
+│   │   ├── services/            # 业务逻辑
+│   │   │   ├── llm_provider.py                     # **LLM 调用的唯一入口**
+│   │   │   ├── institution_prediction_service.py   # 机构观点（含机构注册表）
+│   │   │   └── quant/                              # 量化引擎：sources / derive / storage /
+│   │   │                                           #   sync / engine / decompose / scenarios /
+│   │   │                                           #   backtest / monitor / service
+│   │   ├── routers/             # API 路由
+│   │   ├── models/ schemas/     # 数据模型与响应契约
+│   │   ├── tasks/ scheduler.py  # 定时任务（含唯一时区口径）
+│   │   └── utils/timeutil.py    # **「现在」与「今天」的唯一来源**
+│   ├── scripts/                 # 迁移脚本、文档生成器、冒烟与开发工具
+│   ├── tests/                   # unit / integration / e2e
+│   ├── schema.sql               # 建表脚本（Docker 首次启动时执行）
+│   └── requirements*.txt
+├── docs/                         # 中文文档
+│   ├── en/                      # 英文镜像（与中文版一一对应）
+│   ├── specs/                   # 各轮改动的 spec 与 plan（过程记录）
+│   ├── 00-产品方向.md · 10-密钥与隐私.md · 20-前端设计规范.md
+│   ├── ARCHITECTURE.md · API.md
+│   └── images/screenshots/
+├── AGENTS.md                     # 怎么干活：规矩、闸门、流程
+├── CHANGELOG.md / CHANGELOG_EN.md
+├── CONTRIBUTING.md / CONTRIBUTING_EN.md
+├── README.md / README_EN.md
+└── docker-compose.yml
+```
 
 ---
 
 ## 🗺️ 文档地图
 
-「改什么 → 读哪份」的唯一映射表。
+「改什么 → 读哪份」的唯一映射表。中英两份互为镜像：中文是权威版本，英文是同一份内容。
 
-| 文档 | 讲什么 | 什么时候读 |
-|---|---|---|
-| [`AGENTS.md`](AGENTS.md) | 怎么干活：规矩、闸门、流程 | 动手前必读 |
-| [`docs/00-产品方向.md`](docs/00-产品方向.md) | 产品要做什么；**现状 vs 目标** | 改需求、加功能前 |
-| [`README.md`](README.md) | 目录、命令、配置（本文件） | 找命令 / 配置时 |
-| [`docs/10-密钥与隐私.md`](docs/10-密钥与隐私.md) | 密钥规则与历史泄漏处理 | 动配置 / 密钥前 |
-| [`docs/20-前端设计规范.md`](docs/20-前端设计规范.md) | 前端视觉语言：令牌、排版、组件、界面文案规则 | 改前端界面前 |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 架构设计 | 动系统结构前 |
-| [`docs/API.md`](docs/API.md) | 接口规范 | 改接口前 |
-| [`docs/specs/`](docs/specs/) | 各轮改动的 spec 与 plan（过程记录，不是第二权威） | 追溯某轮决定时 |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 贡献流程 | 提 PR 前 |
+| 文档 | English | 讲什么 | 什么时候读 |
+|---|---|---|---|
+| [`AGENTS.md`](AGENTS.md) | —（保持中文） | 怎么干活：规矩、闸门、流程 | 动手前必读 |
+| [`docs/00-产品方向.md`](docs/00-产品方向.md) | [`docs/en/product-direction.md`](docs/en/product-direction.md) | 产品要做什么；**现状 vs 目标** | 改需求、加功能前 |
+| [`README.md`](README.md) | [`README_EN.md`](README_EN.md) | 目录、命令、配置（本文件） | 找命令 / 配置时 |
+| [`docs/10-密钥与隐私.md`](docs/10-密钥与隐私.md) | [`docs/en/secrets-and-privacy.md`](docs/en/secrets-and-privacy.md) | 密钥规则与历史泄漏处理 | 动配置 / 密钥前 |
+| [`docs/20-前端设计规范.md`](docs/20-前端设计规范.md) | [`docs/en/frontend-design.md`](docs/en/frontend-design.md) | 前端视觉语言：令牌、排版、组件、界面文案规则 | 改前端界面前 |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | [`docs/en/architecture.md`](docs/en/architecture.md) | 架构设计（第十一节是量化引擎） | 动系统结构前 |
+| [`docs/API.md`](docs/API.md) | [`docs/en/api.md`](docs/en/api.md) | 接口规范（**两份都由路由表生成**） | 改接口前 |
+| [`CHANGELOG.md`](CHANGELOG.md) | [`CHANGELOG_EN.md`](CHANGELOG_EN.md) | 每个版本改了什么 | 升级前 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | [`CONTRIBUTING_EN.md`](CONTRIBUTING_EN.md) | 贡献流程 | 提 PR 前 |
+| [`docs/specs/`](docs/specs/) | —（保持中文） | 各轮改动的 spec 与 plan（过程记录，不是第二权威） | 追溯某轮决定时 |
 
-> ⚠️ `docs/API.md` 是早期版本，**尚未与当前实现对齐**：它仍以 `/api/analysis/*`
-> 作为前缀（实际全部挂在 `/api/gold` 下），响应示例里的字段名也与代码不符
-> （例如 `/gold/stats` 实际返回 `ytd_return` / `volatility`，文档写的是
-> `ytd_change` / `volatility_range`）。改接口前请以代码为准，该文档待校正。
+> 📌 `docs/API.md` 与 `docs/en/api.md` **不是手写的** —— 它们由
+> `backend/scripts/gen_api_doc.py` 从 FastAPI 路由表生成，`backend/tests/integration/test_api_doc.py`
+> 校验两份都与实现一致。改接口后运行 `cd backend && python scripts/gen_api_doc.py` 重新生成即可。
 
 ---
 
@@ -558,8 +846,9 @@ python scripts/smoke_mimo.py
 1. **数据采集**：腾讯财经实时金价、新浪财经 ICE 美元指数；历史数据回填支持新浪 / 东方财富 / Yahoo 三源；新闻经 RSS 抓取
 2. **持久化**：金价、美元指数、新闻写入 MySQL
 3. **分析**：5 个分析服务各自拼装 prompt → 调用一次 MiMo → 解析 JSON
-4. **缓存**：结果写入内存 + JSON 文件两级缓存（TTL 2 小时），供重启与多进程共享
-5. **展示**：前端每 10 秒轮询行情接口，分析结果按需拉取
+4. **量化**：公开数据源 → 因子库 → 滚动 z → 分尺度权重 → 一份校准分布 → 走查式回测
+5. **缓存**：结果写入内存 + JSON 文件两级缓存（TTL 2 小时），供重启与多进程共享
+6. **展示**：前端每 10 秒轮询行情接口，分析结果按需拉取
 
 ---
 
@@ -593,9 +882,36 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 
 ---
 
+## ⚠️ 诚实声明（实现边界）
+
+这一节是给「看到 README 的项目描述后产生预期」的人看的。以下能力**不存在**，
+请不要按它们去理解这个项目：
+
+| 传闻中的能力 | 实际情况 |
+|---|---|
+| 多 Agent 协作 | 4 个**独立的单轮 LLM 调用**，不是 Agent 协作：拼 prompt → `llm.invoke(prompt)` → 解析 JSON。没有工具调用循环、没有 Agent 间通信 |
+| RAG / 向量检索 | 没有向量库、没有 embedding、没有检索步骤。历史价格与新闻是直接拼进 prompt 的上下文 |
+| ReAct 推理循环 | 未实现，没有 Thought / Action / Observation 循环 |
+| 实时联网搜索 | 设计上可用（MiMo 的 `web_search`），但当前 `tp-` key 调用一律返回 `HTTP 400`，实际总是回退到 RSS 新闻窗口 |
+| 情感分析 | `sentiment` 字段恒为 `NEUTRAL`，只为接口形状稳定，页面不展示情感结论 |
+| Redis / 消息总线 / WebSocket / K8s / WAF / 认证中间件 | 都没有。缓存是内存 + JSON 文件两级 |
+| 交易执行 | 不接券商、不下单、不托管资金 |
+
+**「某一节显示暂不可用」是设计行为，不是 bug**：分析模型是推理模型，`max_tokens=4096`
+同时覆盖思考与正文。投资策略要求三档策略的完整 JSON，输出逼近上限时会被截断、解析失败，
+于是按红线返回空内容 —— 页面如实显示「投资策略暂不可用」，而不是摆一份编造的策略。
+看涨 / 看跌因子偶发为空时同理，点「重新分析」重试即可。
+
+**为什么这么啰嗦**：这个项目的核心承诺是「**不编造**」。数据源或联网搜索不可用时，
+它返回「不可用」并说明原因，而不是让模型凭印象生成机构目标价、央行购金量或金价点位。
+宁可页面显示「数据不可用」。
+
+---
+
 ## 🤝 贡献
 
-我们欢迎所有形式的贡献！请查看我们的[贡献指南](./CONTRIBUTING.md)了解如何参与项目。
+我们欢迎所有形式的贡献！请查看我们的[贡献指南](./CONTRIBUTING.md)
+（[English](./CONTRIBUTING_EN.md)）了解如何参与项目。
 
 ### 贡献者
 
@@ -616,6 +932,7 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 - [小米 MiMo](https://platform.xiaomimimo.com/) - 提供大语言模型与联网搜索能力
 - [FastAPI](https://fastapi.tiangolo.com/) - 高性能Web框架
 - [React](https://react.dev/) - 前端UI框架
+- 美国财政部、纽约联储、CFTC、Yahoo Finance、新浪财经 - 提供免密钥的公开数据源
 
 ---
 
