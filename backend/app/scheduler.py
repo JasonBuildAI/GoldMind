@@ -248,28 +248,11 @@ async def update_prices_job():
             logger.info(f"  波动区间: {stats['volatility_range']:.2f}%")
             logger.info("=" * 60)
             
-            # 保存统计信息到缓存文件，供前端使用
-            from pathlib import Path
-            import json
-            
-            cache_dir = Path(__file__).parent.parent / "cache"
-            cache_dir.mkdir(exist_ok=True)
-            stats_file = cache_dir / "period_statistics.json"
-            
-            stats_data = {
-                'period_high': stats['period_high'],
-                'period_high_date': stats['period_high_date'].isoformat() if stats['period_high_date'] else None,
-                'period_low': stats['period_low'],
-                'period_low_date': stats['period_low_date'].isoformat() if stats['period_low_date'] else None,
-                'volatility_range': stats['volatility_range'],
-                'updated_at': datetime.now().isoformat()
-            }
-            
-            with open(stats_file, 'w', encoding='utf-8') as f:
-                json.dump(stats_data, f, ensure_ascii=False, indent=2)
-            
-            logger.info(f"✅ 期间统计信息已保存到缓存: {stats_file}")
-            
+            # 这里原本还会把统计结果写进 cache/period_statistics.json，
+            # 但**没有任何代码读过它**（前端要的期间高低来自 /api/gold/stats，
+            # 那里是现算的），而且路径写死、不认 CACHE_DIR。
+            # 属于白算又白写，已移除；统计结果上面已经记进日志，运维照样能看到。
+
         finally:
             db.close()
                 
@@ -398,14 +381,25 @@ async def update_dollar_index_job():
             # 3. 提取数据
             price = dollar_data.get('price', 0)
             prev_close = dollar_data.get('previous_close', price)
-            
-            # 腾讯财经API返回的数据格式中，没有单独的OHLC，使用价格作为近似
-            # 实际应用中可能需要更专业的数据源
-            open_price = prev_close  # 使用昨收作为开盘近似
-            high_price = max(price, prev_close)  # 使用最高价近似
-            low_price = min(price, prev_close)  # 使用最低价近似
-            
+
+            # 新浪接口本身返回真实 OHLC（[5]开 [6]高 [7]低），直接用。
+            # 原实现把这三个字段丢掉后用「昨收当开盘、max/min 当高低」硬凑，
+            # 等于往数据库里写编造出来的开高低。只有在数据源确实没给的时候
+            # 才退化为近似值，并把这件事记进日志。
+            open_price = dollar_data.get('open')
+            high_price = dollar_data.get('high')
+            low_price = dollar_data.get('low')
+
+            if open_price is None or high_price is None or low_price is None:
+                logger.warning("数据源未提供完整 OHLC，开盘/最高/最低将使用近似值")
+                open_price = open_price if open_price is not None else prev_close
+                high_price = high_price if high_price is not None else max(price, prev_close)
+                low_price = low_price if low_price is not None else min(price, prev_close)
+
             logger.info(f"获取到美元指数数据:")
+            logger.info(f"  开盘: {open_price:.2f}")
+            logger.info(f"  最高: {high_price:.2f}")
+            logger.info(f"  最低: {low_price:.2f}")
             logger.info(f"  收盘: {price:.2f}")
             logger.info(f"  昨收: {prev_close:.2f}")
             

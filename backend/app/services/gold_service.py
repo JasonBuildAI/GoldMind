@@ -72,24 +72,49 @@ class GoldService:
             session.close()  # 立即关闭session
 
             if response.status_code == 200:
-                # 解析新浪返回的数据格式: var hq_str_DINIW="时间,最新价,..."
+                # 新浪返回:
+                # var hq_str_DINIW="时间,最新价,买价,卖价,成交量,开盘价,最高价,最低价,昨收,名称,日期"
                 text = response.text
                 match = re.search(r'var hq_str_DINIW="([^"]*)"', text)
                 if match and match.group(1):
                     values = match.group(1).split(',')
                     if len(values) >= 10:
-                        # 解析字段
-                        # 0:时间, 1:最新价, 2:买价, 3:卖价, 4:成交量, 5:开盘价, 6:最高价, 7:最低价, 8:昨收, 9:名称
-                        latest = float(values[1])  # 最新价
-                        prev_close = float(values[8])  # 昨收
-                        change_pct = round((latest - prev_close) / prev_close * 100, 2)  # 涨跌幅
+                        def _field(index: int, default: float = 0.0) -> float:
+                            try:
+                                return float(values[index])
+                            except (ValueError, IndexError):
+                                return default
 
+                        latest = _field(1)
+                        prev_close = _field(8)
+                        if not latest:
+                            return None
+
+                        change_pct = (
+                            round((latest - prev_close) / prev_close * 100, 2)
+                            if prev_close
+                            else 0.0
+                        )
+
+                        # 真实的 OHLC 就在响应里（[5]开 [6]高 [7]低）。
+                        # 原实现只取了最新价与昨收，把这三个字段丢掉了，
+                        # 于是定时任务只能用「昨收当开盘、max/min 当高低」
+                        # 硬凑出一组 OHLC 写进数据库 —— 那是在编数据。
                         result = {
                             "price": round(latest, 2),
                             "previous_close": round(prev_close, 2),
+                            "change": round(latest - prev_close, 2),
                             "change_percent": change_pct,
+                            "open": round(_field(5, latest), 2),
+                            "high": round(_field(6, latest), 2),
+                            "low": round(_field(7, latest), 2),
                             "updated_at": datetime.now().isoformat(),
-                            "source": "新浪财经-ICE美元指数(DXY)"
+                            "date": (
+                                values[10]
+                                if len(values) > 10 and values[10]
+                                else datetime.now().strftime("%Y-%m-%d")
+                            ),
+                            "source": "新浪财经-ICE美元指数(DXY)",
                         }
                         print(f"[GoldService] 获取实时美元指数成功: {result}")
                         return result
