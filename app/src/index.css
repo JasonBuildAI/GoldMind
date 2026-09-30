@@ -296,6 +296,25 @@
   }
 
   /* 要点列表：总结的三栏与策略列共用同一种收窄排版 */
+  .point-list,
+  .strategy__list,
+  .factor__body ul,
+  .row-details ul {
+    /* Tailwind 的 preflight 把列表标记去掉了；正文里的要点要看得见标记 */
+    list-style: disc;
+  }
+
+  ol.strategy__list {
+    list-style: decimal;
+  }
+
+  .point-list li::marker,
+  .strategy__list li::marker,
+  .factor__body li::marker,
+  .row-details li::marker {
+    color: var(--ink-muted);
+  }
+
   .point-list {
     margin: 0;
     padding-left: 18px;
@@ -499,6 +518,11 @@
 
   .table-scroll {
     overflow-x: auto;
+  }
+
+  /* 窄屏时表格保持可读的最小宽度并横向滚动，而不是把每列压成一个字一行的条 */
+  .table-scroll > .data-table {
+    min-width: 640px;
   }
 
   /* 标签与说明 */
