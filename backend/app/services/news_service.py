@@ -83,6 +83,64 @@ def format_news_for_prompt(news_list, limit: int = 15) -> str:
     return "\n".join(lines) if lines else "暂无新闻数据"
 
 
+# 只用于跟踪、不改变内容的查询参数。
+#
+# 现实里的 RSS 链接经常带这些（WSJ / MarketWatch 的 `?mod=rss_...` 尤其常见），
+# 于是**同一条新闻换个参数就成了新 URL**，按 URL 去重直接失效。
+# 实测：一条新闻的 5 种写法（带 mod、带 utm、带 fragment、带尾斜杠）入库了 5 次，
+# 下游「最近24小时新闻」就把同一件事重复喂给模型多次。
+#
+# 只剔除**已知的跟踪参数**，不动 `?id=123` 这类真正的文章标识 —— 那些去掉会串号。
+_TRACKING_PARAMS = frozenset(
+    {
+        "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+        "utm_id", "utm_name", "utm_reader", "utm_referrer",
+        "mod", "ref", "referrer", "referer", "source", "src",
+        "fbclid", "gclid", "dclid", "msclkid", "yclid",
+        "mc_cid", "mc_eid", "cmpid", "cid", "smid",
+        "ns_mchannel", "ns_campaign", "ns_source", "ns_linkname",
+        "share", "shared", "from", "spm",
+    }
+)
+
+
+def normalize_url(url: Optional[str]) -> str:
+    """把 URL 规范化成**用于去重**的形式。
+
+    处理：去掉 fragment、去掉已知跟踪参数、去掉尾斜杠、
+    scheme 与 host 转小写、剩余参数排序。
+
+    不做的事：不动路径大小写（有的站点路径大小写敏感）、
+    不动未知参数（可能是文章标识）。
+    """
+    if not url:
+        return ""
+    raw = url.strip()
+    if not raw:
+        return ""
+
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return raw
+
+    # 查询串：剔除跟踪参数后排序，让参数顺序不同也视为同一个 URL
+    kept = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if k.lower() not in _TRACKING_PARAMS
+    ]
+    query = urlencode(sorted(kept))
+
+    path = parts.path
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, query, ""))
+
+
 def parse_rss_sources(raw: str) -> List[tuple[str, str]]:
     """把 ``"名称|URL,名称|URL"`` 解析为 ``[(名称, URL)]``。
 
@@ -231,7 +289,9 @@ class NewsService:
         if not title:
             return None
 
-        url = (news_data.get("url") or "").strip()
+        # 规范化后再比较与存储：否则同一条新闻带不同跟踪参数就会被当成新记录。
+        # 存规范化后的形式，保证「存进去的」与「拿来比的」是同一个东西。
+        url = normalize_url(news_data.get("url"))
         source = news_data.get("source")
 
         if url:

@@ -156,3 +156,33 @@ def test_schema_covers_every_model_table(schema_enums):
 
     missing = model_tables - declared
     assert not missing, f"schema.sql 缺少这些表：{sorted(missing)}"
+
+# --------------------------------------------------------------------------- #
+# 索引
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_news_url_index_exists_on_both_sides():
+    """去重按 url 查，索引必须两边都有 —— 否则是一边全表扫描、一边有索引。
+
+    MySQL 下 utf8mb4 的 500 字符索引超长，所以两边都用前缀长度 191。
+    """
+    import re
+
+    from app.database import Base
+
+    # 模型侧
+    table = Base.metadata.tables["gold_news"]
+    model_indexes = {idx.name for idx in table.indexes}
+    assert "ix_gold_news_url" in model_indexes, (
+        f"模型里没有 url 索引，现有：{sorted(model_indexes)}"
+    )
+
+    # schema 侧
+    schema = (Path(__file__).resolve().parents[2] / "schema.sql").read_text(encoding="utf-8")
+    match = re.search(r"CREATE TABLE IF NOT EXISTS gold_news \((.*?)\) ENGINE", schema, re.S)
+    assert match, "schema.sql 里找不到 gold_news 的建表语句"
+    body = match.group(1)
+    assert "ix_gold_news_url" in body, "schema.sql 里没有 url 索引"
+    assert re.search(r"ix_gold_news_url\s*\(url\(191\)\)", body), (
+        "schema.sql 的 url 索引应当用前缀长度 191（utf8mb4 下 500 字符超长）"
+    )

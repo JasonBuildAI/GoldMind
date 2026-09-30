@@ -52,7 +52,10 @@ CREATE TABLE IF NOT EXISTS gold_news (
     sentiment ENUM('POSITIVE', 'NEGATIVE', 'NEUTRAL') DEFAULT 'NEUTRAL',
     keywords TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_published_at (published_at)
+    INDEX idx_published_at (published_at),
+    -- 去重按 url 查，没有索引就是全表扫描；utf8mb4 下 500 字符超长，用前缀索引。
+    -- 名字与 app/models/news.py 里的 Index 一致，两者由测试守住。
+    INDEX ix_gold_news_url (url(191))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS market_factors (
