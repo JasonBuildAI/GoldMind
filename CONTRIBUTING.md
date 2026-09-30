@@ -89,11 +89,13 @@ GoldMind/
 │   └── package.json
 ├── backend/               # 后端（FastAPI + Python）
 │   ├── app/
-│   │   ├── agents/        # AI Agent
-│   │   ├── services/      # 业务逻辑
+│   │   ├── services/      # 业务逻辑（含 llm_provider 与 single_flight）
 │   │   ├── routers/       # API 路由
-│   │   └── models/        # 数据模型
+│   │   ├── models/        # 数据模型
+│   │   └── utils/         # 限流等
+│   ├── tests/             # unit / integration / e2e
 │   └── requirements.txt
+├── docs/                  # 产品方向、架构、API、密钥与隐私
 └── README.md
 ```
 

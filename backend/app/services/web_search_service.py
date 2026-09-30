@@ -194,16 +194,6 @@ class WebSearchService:
         result.setdefault("institutions", [])
         return result
 
-    def search_gold_news(self, query: str = "黄金价格走势") -> Dict[str, Any]:
-        """搜索黄金相关新闻，返回原始文本摘要。"""
-        ok, content, reason = self._chat_with_search(
-            f"搜索关于'{query}'的最新新闻，并总结关键信息", max_tokens=2048
-        )
-        if not ok:
-            return {"available": False, "reason": reason, "content": ""}
-        return {"available": True, "content": content}
-
-
 # 单例（构造无副作用，可以安全缓存）
 _web_search_service: Optional[WebSearchService] = None
 

@@ -1,5 +1,9 @@
-# 测试与开发依赖
-# 安装：pip install -r requirements.txt -r requirements-dev.txt
+# Test and development dependencies.
+#
+# Keep this file ASCII-only: pip decodes requirements files using the locale
+# encoding on Windows, so non-ASCII comments abort installation.
+#
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 pytest-cov>=5.0.0

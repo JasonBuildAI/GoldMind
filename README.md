@@ -49,7 +49,7 @@
 以下四点是对早期文档中技术描述的更正 —— 早期描述与实际实现不符：
 
 **关于「多智能体」**  
-分析由 4 个**独立的单轮 LLM 调用**完成，不是 Agent 协作：每个分析服务把上下文拼进 prompt，调用一次 `llm.invoke(prompt)`，再解析返回的 JSON。没有工具调用循环、没有 Agent 间通信。`backend/app/agents/` 包目前**没有任何地方实例化**。
+分析由 4 个**独立的单轮 LLM 调用**完成，不是 Agent 协作：每个分析服务把上下文拼进 prompt，调用一次 `llm.invoke(prompt)`，再解析返回的 JSON。没有工具调用循环、没有 Agent 间通信。早期文档提到的 `backend/app/agents/` 包**从未被实例化，已删除**。
 
 **关于「实时搜索」**  
 设计上通过 MiMo 的 `web_search` 工具检索机构研报与新闻。但当前使用的 Token Plan `tp-` key 调用该工具一律返回 `HTTP 400`（实测，见 `backend/scripts/smoke_mimo.py`），因此搜索不可用时回退到数据库与 RSS 新闻，并且**不会**编造机构目标价。
@@ -516,8 +516,8 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 数据库 / RSS 内容，**不会**编造数据。前端在拿不到真实分析时会显示提示，而不是把
 示例数据当成分析结果。
 
-**历史遗留**：`backend/app/agents/` 下的 `BaseAgent` / `MarketAnalyzerAgent` /
-`NewsAnalyzerAgent` 目前没有任何地方实例化。
+**已删除**：早期存在的 `backend/app/agents/` 包（`BaseAgent` /
+`MarketAnalyzerAgent` / `NewsAnalyzerAgent`）从未被任何地方实例化，已移除。
 
 ---
 

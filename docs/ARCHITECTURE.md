@@ -59,8 +59,7 @@ GoldMind/
     │   ├── models/        7 张表的 ORM 定义
     │   ├── routers/       4 个路由模块
     │   ├── services/      业务逻辑（见下）
-    │   ├── agents/        历史遗留，无任何地方实例化
-    │   └── utils/         rate_limit 等
+        │   └── utils/         rate_limit 等
     ├── scripts/           smoke_mimo / dev_mock_llm / dev_seed_sqlite
     └── tests/             unit / integration / e2e
 ```
@@ -212,4 +211,4 @@ Redis、消息总线、WebSocket 推送、K8s / Istio、WAF、CSRF Token、
 ReAct 推理循环、多 Agent 协作、TF-IDF / NER、预测准确率追踪。
 
 `app/agents/` 包（`BaseAgent` / `MarketAnalyzerAgent` / `NewsAnalyzerAgent`）
-没有任何地方实例化，属历史遗留。
+从未被任何地方实例化，已删除。

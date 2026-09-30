@@ -4,15 +4,6 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 
-class PriceBase(BaseModel):
-    date: date
-    open_price: Optional[float] = None
-    high_price: Optional[float] = None
-    low_price: Optional[float] = None
-    close_price: float
-    volume: Optional[int] = None
-
-
 class DailyPriceResponse(BaseModel):
     date: str
     price: float
@@ -39,8 +30,3 @@ class GoldStatsResponse(BaseModel):
     updated_at: str
 
 
-class RealtimePriceResponse(BaseModel):
-    price: float
-    previous_close: float
-    change_percent: float
-    updated_at: str

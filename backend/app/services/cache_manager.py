@@ -107,37 +107,9 @@ class CacheManager:
             except:
                 pass
     
-    def delete(self) -> None:
-        """删除缓存"""
-        # 删除内存缓存
-        with _memory_cache_lock:
-            if self.cache_key in _memory_cache:
-                del _memory_cache[self.cache_key]
-        
-        # 删除文件缓存
-        try:
-            if self.file_path.exists():
-                self.file_path.unlink()
-        except Exception as e:
-            print(f"[CacheManager] 删除文件缓存失败: {e}")
-    
     def exists(self) -> bool:
         """检查缓存是否存在且有效"""
         return self.get() is not None
-
-
-def clear_all_cache():
-    """清除所有缓存"""
-    global _memory_cache
-    with _memory_cache_lock:
-        _memory_cache.clear()
-    
-    # 清除文件缓存
-    try:
-        for f in CACHE_DIR.glob("*.json"):
-            f.unlink()
-    except Exception as e:
-        print(f"[CacheManager] 清除文件缓存失败: {e}")
 
 
 def get_cache_status():

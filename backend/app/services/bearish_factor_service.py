@@ -473,39 +473,6 @@ class BearishFactorService:
         with _cache_lock:
             _cache[self._cache_key] = (data, datetime.now().timestamp())
 
-    def _get_from_database_cache(self) -> Optional[Dict[str, Any]]:
-        """从数据库缓存获取数据"""
-        two_hours_ago = datetime.now() - timedelta(hours=2)
-        recent_factors = self.db.query(MarketFactor).filter(
-            and_(
-                MarketFactor.type == FactorType.BEARISH,
-                MarketFactor.updated_at >= two_hours_ago
-            )
-        ).all()
-
-        if len(recent_factors) >= 5:
-            return {
-                "bearish_factors": [
-                    {
-                        "id": self._get_factor_id(f.title),
-                        "title": f.title,
-                        "subtitle": f.subtitle,
-                        "description": f.description,
-                        "details": f.details or [],
-                        "impact": f.impact.value if hasattr(f.impact, 'value') else str(f.impact)
-                    }
-                    for f in recent_factors[:5]
-                ],
-                "analysis_summary": "基于最新市场数据的分析",
-                "last_updated": recent_factors[0].updated_at.strftime("%Y-%m-%d %H:%M:%S") if recent_factors else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "metadata": {
-                    "cached": True,
-                    "cache_source": "database",
-                    "generated_at": recent_factors[0].updated_at.isoformat() if recent_factors else datetime.now().isoformat()
-                }
-            }
-        return None
-
     def get_bearish_factors(self, use_cache: bool = True) -> Dict[str, Any]:
         """
         获取看空因子 - 快速响应版本（<50ms）

@@ -52,7 +52,7 @@ client is constructed through `backend/app/services/llm_provider.py`.
 These four points correct technical claims made by earlier versions of this document:
 
 **"Multi-agent"**
-Analysis is performed by four **independent single-turn LLM calls**, not agent collaboration: each service assembles a prompt, calls `llm.invoke(prompt)` once, and parses the JSON it returns. There is no tool-calling loop and no inter-agent communication. Nothing instantiates the `backend/app/agents/` package.
+Analysis is performed by four **independent single-turn LLM calls**, not agent collaboration: each service assembles a prompt, calls `llm.invoke(prompt)` once, and parses the JSON it returns. There is no tool-calling loop and no inter-agent communication. The `backend/app/agents/` package that earlier docs described has been removed; nothing ever instantiated it.
 
 **"Real-time search"**
 The design uses MiMo's `web_search` tool to retrieve institutional research and news. The Token Plan `tp-` key currently returns `HTTP 400` for that tool (measured; see `backend/scripts/smoke_mimo.py`). When search is unavailable the system falls back to database and RSS news and does **not** invent institutional price targets.

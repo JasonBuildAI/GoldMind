@@ -168,7 +168,6 @@ async def root():
 async def health_check():
     """增强健康检查 - 检查所有关键依赖服务"""
     from sqlalchemy import text
-    from pathlib import Path
     
     health_status = {
         "status": "healthy",
@@ -214,12 +213,17 @@ async def health_check():
     
     # 3. 检查缓存状态
     try:
-        cache_dir = Path(__file__).parent.parent / "cache"
-        cache_files = list(cache_dir.glob("*.json"))
+        # 用 cache_manager 自己的状态查询，而不是在这里重新拼路径。
+        # 原实现写死 `Path(__file__).parent.parent / "cache"`，在 CACHE_DIR
+        # 被配置成其他目录时会报告一个根本没在用的目录。
+        from app.services.cache_manager import get_cache_status
+
+        cache_status = get_cache_status()
         health_status["services"]["cache"] = {
             "status": "ok",
-            "files_count": len(cache_files),
-            "cache_dir": str(cache_dir)
+            "files_count": len(cache_status["file_cache_keys"]),
+            "memory_keys": cache_status["memory_cache_keys"],
+            "cache_dir": cache_status["cache_dir"],
         }
     except Exception as e:
         health_status["services"]["cache"] = {
