@@ -6,7 +6,7 @@
  * 前端如果不看 `metadata` 就分辨不出来，于是页面会把内置常量当成分析结论展示。
  *
  * 两种标记都实际出现过：
- *   - 看涨/看跌因子、机构预测、投资建议：`status === 'analyzing'`
+ *   - 看涨/看跌因素、机构观点、投资策略：`status === 'analyzing'`
  *   - 市场总结：`cache_source === 'default'`
  */
 export interface ApiMetadata {

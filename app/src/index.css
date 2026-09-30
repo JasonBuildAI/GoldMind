@@ -273,22 +273,49 @@
   }
 
   /* 栏底总结 */
-  .column__summary {
+  /* 栏底小结与文档内的小节：同一种「细线 + 小标题 + 一段话」 */
+  .column__summary,
+  .doc-block {
     margin-top: 14px;
     padding-top: 12px;
     border-top: 1px solid var(--rule);
   }
 
-  .column__summary h4 {
+  .column__summary h4,
+  .doc-block h4 {
     margin: 0 0 4px;
     font-size: var(--text-sm);
   }
 
-  .column__summary p {
+  .column__summary p,
+  .doc-block p {
     margin: 0;
     max-width: 68ch;
     font-size: var(--text-sm);
     color: var(--ink-muted);
+  }
+
+  /* 要点列表：总结的三栏与策略列共用同一种收窄排版 */
+  .point-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: var(--text-sm);
+    color: var(--ink-muted);
+  }
+
+  .point-list li {
+    margin-bottom: 4px;
+  }
+
+  .point-list li:last-child {
+    margin-bottom: 0;
+  }
+
+  .lead {
+    margin: 0 0 12px;
+    max-width: 68ch;
+    font-family: var(--font-serif);
+    font-size: var(--text-lg);
   }
 
   /* 三态：加载 / 正在分析 / 不可用 */
@@ -659,38 +686,3 @@
   }
 }
 
-/* --------------------------------------------------------------------------
- * 迁移期临时样式：多空 / 机构 / 策略 / 总结四个旧区块尚未重建，仍在用深色
- * 主题的工具类。最后一个区块迁移完必须整块删除（见
- * docs/specs/2026-09-30-前端表现层重构-plan.md）。
- * -------------------------------------------------------------------------- */
-@layer utilities {
-  .legacy-dark {
-    background: #0d0b08;
-    color: #f5f5f0;
-  }
-
-  .card-glass {
-    background: rgba(26, 22, 18, 0.8);
-    border: 1px solid rgba(212, 175, 55, 0.15);
-  }
-
-  .gold-text {
-    background: linear-gradient(135deg, #d4af37 0%, #f4e4bc 50%, #b8860b 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .gold-border {
-    border: 1px solid rgba(212, 175, 55, 0.4);
-  }
-
-  .gradient-bullish {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(34, 197, 94, 0.05));
-  }
-
-  .gradient-bearish {
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
-  }
-}
