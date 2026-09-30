@@ -1,8 +1,8 @@
 """导入健康度测试。
 
 `app/` 下每个模块都必须能被导入。这条测试专门防「死代码同时是坏代码」——
-例如 app/models/update_log.py 曾经缺少 `Float` 导入而无法导入，却因为
-没有任何地方 import 它而长期没被发现。
+历史上就发生过：一个模型模块缺少 `Float` 导入因而根本无法导入，
+却因为没有任何地方 import 它而长期没被发现。
 """
 import importlib
 import pkgutil

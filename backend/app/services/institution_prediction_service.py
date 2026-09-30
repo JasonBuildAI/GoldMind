@@ -19,6 +19,36 @@ from loguru import logger
 # 全局线程池
 _executor = ThreadPoolExecutor(max_workers=2)
 
+# 数据库那一列是 ENUM('bullish','bearish','neutral')，前端也只认这三种。
+# 但模型里它只是 String —— 也就是说**约束只在数据库层**，见 normalize_rating。
+VALID_RATINGS = ("bullish", "bearish", "neutral")
+
+# 认得出的近义写法（LLM 不总是照提示词给英文小写）
+_RATING_ALIASES = {
+    "bullish": "bullish", "bull": "bullish", "buy": "bullish",
+    "positive": "bullish", "看涨": "bullish", "看多": "bullish", "乐观": "bullish",
+    "bearish": "bearish", "bear": "bearish", "sell": "bearish",
+    "negative": "bearish", "看跌": "bearish", "看空": "bearish", "悲观": "bearish",
+    "neutral": "neutral", "hold": "neutral", "中性": "neutral", "观望": "neutral",
+}
+
+
+def normalize_rating(value: Any) -> str:
+    """把 LLM 给出的评级归一化到三种取值之一。
+
+    为什么需要：`institution_views.rating` 在模型里是 `String`，约束却只在数据库
+    （`ENUM('bullish','bearish','neutral')`）。提示词里写了「rating只能是：
+    bullish, bearish, neutral」，但模型并不总听话 —— 一旦返回「看涨」之类的值，
+    插入会直接报错，**整批机构观点都存不进去**（一次 commit 全废）。
+
+    这里兜住：认不出的按 neutral 处理并记一条警告，保证写入不会因为一个字段失败。
+    """
+    text = str(value if value is not None else "").strip().lower()
+    if text in _RATING_ALIASES:
+        return _RATING_ALIASES[text]
+    logger.warning(f"[InstitutionPrediction] 认不出的评级 {value!r}，按 neutral 处理")
+    return "neutral"
+
 
 class InstitutionPredictionAnalyzer:
     """使用MiMo 联网搜索抓取四大机构最新预测"""
@@ -311,6 +341,8 @@ class InstitutionPredictionAnalyzer:
         institutions = analysis_result.get("institutions", [])
 
         for inst_data in institutions:
+            rating = normalize_rating(inst_data.get("rating"))
+
             # 检查是否已存在相同机构的预测
             existing = db.query(InstitutionView).filter(
                 InstitutionView.institution_name == inst_data["name"]
@@ -318,7 +350,7 @@ class InstitutionPredictionAnalyzer:
 
             if existing:
                 # 更新现有记录
-                existing.rating = inst_data.get("rating", "neutral")
+                existing.rating = rating
                 existing.target_price = inst_data.get("target_price", 0)
                 existing.timeframe = inst_data.get("timeframe", "")
                 existing.reasoning = inst_data.get("reasoning", "")
@@ -329,7 +361,7 @@ class InstitutionPredictionAnalyzer:
                 new_view = InstitutionView(
                     institution_name=inst_data["name"],
                     logo=inst_data.get("logo", ""),
-                    rating=inst_data.get("rating", "neutral"),
+                    rating=rating,
                     target_price=inst_data.get("target_price", 0),
                     timeframe=inst_data.get("timeframe", ""),
                     reasoning=inst_data.get("reasoning", ""),

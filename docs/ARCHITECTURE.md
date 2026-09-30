@@ -136,11 +136,19 @@ TTL 默认 2 小时。`CACHE_DIR` 可配置（默认 `backend/cache`），测试
 | `gold_news` | 新闻；`published_at` 有索引 |
 | `market_factors` | 多空因子（`type` 区分） |
 | `institution_views` | 机构观点 |
-| `predictions` | **当前没有任何代码写入**，接口恒返回空 |
-| `update_logs` | **当前没有任何代码写入** |
+| `predictions` | **当前没有任何代码写入**，接口恒返回空（产品方向里列为「目标」，不是现状） |
+
+> `update_logs` 已删除：没有任何写入方、读取方或接口，产品方向里也没把它列为目标，
+> 属于纯死表。同理，`schema.sql` 与模型的一致性由
+> `tests/unit/test_schema_matches_models.py` 守住 —— 这两份 schema 曾经对枚举列的
+> 取值约定不一致，而 MySQL 的 ENUM 比较不区分大小写，导致「写得进去、读不出来」。
 
 引擎同时支持 MySQL 与 SQLite：SQLite 需要 `check_same_thread=False`，
 内存库还需 `StaticPool`，否则每个连接看到的是各自独立的空库。
+
+> 测试默认跑内存 SQLite，但生产用 MySQL。两者在枚举存储、JSON 列与字符串比较
+> 大小写上都有差异，所以 `conftest.py` 留了 `GOLDMIND_TEST_DATABASE_URL` 开关，
+> 可以拿同一套用例去跑 MySQL（指向独立的测试库，用例会清空所有表）。
 
 ---
 
