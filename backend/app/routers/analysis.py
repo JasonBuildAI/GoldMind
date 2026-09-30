@@ -14,6 +14,7 @@ async def get_market_factors(
     limit: int = 10,
     db: Session = Depends(get_db)
 ):
+    """获取已入库的市场因子，可按类型过滤。"""
     from app.models.analysis import MarketFactor
     
     query = db.query(MarketFactor)
@@ -41,6 +42,7 @@ async def get_market_factors(
 
 @router.get("/factors/bullish", response_model=List[FactorResponse])
 async def get_bullish_factors(limit: int = 10, db: Session = Depends(get_db)):
+    """获取看涨因子（直接读数据库，不做 AI 分析）。"""
     from app.models.analysis import MarketFactor
     
     factors = db.query(MarketFactor).filter(
@@ -65,6 +67,7 @@ async def get_bullish_factors(limit: int = 10, db: Session = Depends(get_db)):
 
 @router.get("/factors/bearish", response_model=List[FactorResponse])
 async def get_bearish_factors(limit: int = 10, db: Session = Depends(get_db)):
+    """获取看跌因子（直接读数据库，不做 AI 分析）。"""
     from app.models.analysis import MarketFactor
     
     factors = db.query(MarketFactor).filter(
@@ -89,6 +92,7 @@ async def get_bearish_factors(limit: int = 10, db: Session = Depends(get_db)):
 
 @router.get("/institutions", response_model=List[InstitutionResponse])
 async def get_institution_views(limit: int = 10, db: Session = Depends(get_db)):
+    """获取已入库的机构观点。"""
     from app.models.analysis import InstitutionView
     
     views = db.query(InstitutionView).order_by(

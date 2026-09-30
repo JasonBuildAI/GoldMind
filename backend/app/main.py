@@ -160,6 +160,7 @@ app.include_router(predictions.router, prefix="/api/gold", tags=["价格预测"]
 
 @app.get("/")
 async def root():
+    """服务信息与文档入口。"""
     return {"message": "黄金市场分析系统 API", "version": "1.0.0", "docs": "/docs"}
 
 

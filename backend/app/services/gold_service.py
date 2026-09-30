@@ -277,6 +277,7 @@ class GoldService:
         return result
     
     def get_latest_price(self) -> Optional[GoldPrice]:
+        """获取数据库里最新一条金价。"""
         return self.db.query(GoldPrice).order_by(
             GoldPrice.date.desc()
         ).first()

@@ -16,6 +16,7 @@ async def get_news(
     sentiment: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
+    """获取新闻列表，可按来源与情感过滤（无分页，只取前 limit 条）。"""
     service = NewsService(db)
     news = service.get_news(limit, source, sentiment)
     
@@ -37,6 +38,7 @@ async def get_news(
 
 @router.get("/news/{news_id}")
 async def get_news_detail(news_id: int, db: Session = Depends(get_db)):
+    """获取单条新闻详情。"""
     service = NewsService(db)
     news = service.get_news_by_id(news_id)
     
@@ -57,6 +59,7 @@ async def get_news_detail(news_id: int, db: Session = Depends(get_db)):
 
 @router.get("/news/sentiment/summary")
 async def get_sentiment_summary(db: Session = Depends(get_db)):
+    """获取新闻情感分布统计。"""
     service = NewsService(db)
     summary = service.get_sentiment_summary()
     

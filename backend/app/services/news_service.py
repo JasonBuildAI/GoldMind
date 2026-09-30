@@ -48,6 +48,7 @@ class NewsService:
     def get_news(
         self, limit: int = 20, source: Optional[str] = None, sentiment: Optional[str] = None
     ) -> List[GoldNews]:
+        """获取新闻列表，可按来源与情感过滤（无分页，只取前 limit 条）。"""
         query = self.db.query(GoldNews)
 
         if source:
