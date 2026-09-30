@@ -42,6 +42,26 @@ describe('BullishFactors', () => {
     expect(screen.queryByText('美联储降息周期')).not.toBeInTheDocument()
   })
 
+  it('渲染接口返回的分析总结，而不是写死的文案', async () => {
+    // 回归：原实现把总结写死在 JSX 里，接口返回的 analysis_summary
+    // 被取到后直接丢弃，无论分析结果如何页面都显示同一段文案。
+    mocked.getBullishFactors.mockResolvedValue(API_RESPONSE)
+
+    render(<BullishFactors />)
+
+    expect(await screen.findByTestId('bullish-summary')).toHaveTextContent('接口总结')
+  })
+
+  it('接口失败时总结回退到兜底文案', async () => {
+    mocked.getBullishFactors.mockRejectedValue(new Error('boom'))
+
+    render(<BullishFactors />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('bullish-summary')).toHaveTextContent(/美联储降息周期/)
+    })
+  })
+
   it('接口失败时回退到内置默认因子，并给出提示', async () => {
     mocked.getBullishFactors.mockRejectedValue(new Error('boom'))
 

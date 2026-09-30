@@ -93,6 +93,12 @@ const defaultFactors: BullishFactor[] = [
   }
 ];
 
+// 接口不可用时展示的兜底总结。真实数据到达后会被接口返回的
+// analysis_summary 替换 —— 原实现把总结写死在 JSX 里，接口返回的总结
+// 被取到后直接丢弃，导致无论分析结果是什么，页面永远显示同一段文案。
+const FALLBACK_SUMMARY =
+  '美联储降息周期、全球央行持续购金、美元信用动摇、地缘政治风险等多重因素形成共振，为黄金价格提供强劲的长期上涨动力。';
+
 export default function BullishFactors() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
@@ -100,6 +106,7 @@ export default function BullishFactors() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [summary, setSummary] = useState<string>(FALLBACK_SUMMARY);
   const [error, setError] = useState<string | null>(null);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -117,6 +124,7 @@ export default function BullishFactors() {
 
       if (response.bullish_factors && response.bullish_factors.length > 0) {
         setFactors(response.bullish_factors);
+        setSummary(response.analysis_summary || FALLBACK_SUMMARY);
         setLastUpdated(response.last_updated);
       }
     } catch (err: any) {
@@ -129,6 +137,7 @@ export default function BullishFactors() {
       }
       // 使用默认数据
       setFactors(defaultFactors);
+      setSummary(FALLBACK_SUMMARY);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -187,7 +196,7 @@ export default function BullishFactors() {
 
   if (loading) {
     return (
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
+      <section data-testid="bullish-factors" className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col items-center justify-center py-20">
             <div className="relative">
@@ -204,7 +213,7 @@ export default function BullishFactors() {
   }
 
   return (
-    <section className="py-20 px-4 sm:px-6 lg:px-8">
+    <section data-testid="bullish-factors" className="py-20 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
         {/* Section Header */}
         <div className="text-center mb-16">
@@ -369,9 +378,8 @@ export default function BullishFactors() {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div>
               <h3 className="text-2xl font-bold text-white mb-2">看涨逻辑总结</h3>
-              <p className="text-gray-400 max-w-2xl">
-                美联储降息周期、全球央行持续购金、美元信用动摇、地缘政治风险等多重因素形成共振，
-                为黄金价格提供强劲的长期上涨动力。
+              <p data-testid="bullish-summary" className="text-gray-400 max-w-2xl">
+                {summary}
               </p>
             </div>
             <div className="flex items-center gap-4">
