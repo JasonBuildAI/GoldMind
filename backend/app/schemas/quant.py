@@ -104,9 +104,36 @@ class QuantPredictionItem(BaseModel):
     factors: List[FactorContribution]
 
 
+class DecompositionDriver(BaseModel):
+    key: str
+    name: str
+    log_contribution: Optional[float] = None
+
+
+class DecompositionBlock(BaseModel):
+    key: str
+    name: str
+    usd: Optional[float] = None
+    share_pct: Optional[float] = None
+    drivers: List[DecompositionDriver] = []
+
+
+class Decomposition(BaseModel):
+    status: str
+    reason: Optional[str] = None
+    as_of: Optional[date] = None
+    market_price: Optional[float] = None
+    fair_value: Optional[float] = None
+    deviation_pct: Optional[float] = None
+    r2: Optional[float] = None
+    samples: int = 0
+    blocks: List[DecompositionBlock] = []
+
+
 class QuantPredictionsResponse(BaseModel):
     model_version: str
     as_of: Optional[date] = None
+    fair_value: Decomposition
     predictions: List[QuantPredictionItem]
 
 

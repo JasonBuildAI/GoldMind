@@ -104,6 +104,17 @@ def test_live_predictions_reflect_the_stored_panel(db_session, seed_quant_panel)
     assert payload["as_of"] == close.index[-1].date()
     assert len(payload["predictions"]) == len(HORIZONS)
     assert all(item["status"] == "ok" for item in payload["predictions"])
+    fair = payload["fair_value"]
+    assert fair["status"] == "ok"
+    assert fair["samples"] >= 120
+    blocks = {block["key"]: block for block in fair["blocks"]}
+    assert set(blocks) == {"anchor", "demand", "risk", "residual"}
+    assert sum(block["usd"] for block in blocks.values()) == pytest.approx(
+        fair["market_price"], rel=1e-9
+    )
+    assert fair["deviation_pct"] == pytest.approx(
+        fair["market_price"] / fair["fair_value"] - 1.0, rel=1e-9
+    )
     etf = next(f for f in payload["predictions"][0]["factors"] if f["key"] == "etf_shares")
     # 只有一天快照的因子不可能算出 z：它必须被标出来，而不是当成 0 参与
     assert etf["contribution"] is None

@@ -310,6 +310,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 落库 | `storage.py` | `factor_observations`，唯一约束 `(factor_key, obs_date)`，幂等 |
 | 同步 | `sync.py` | 按源节流（6h ~ 24h）、增量抓取、逐源降级并写入同步报告 |
 | 信号 | `engine.py` | 滚动 z → 方向对齐 → 按尺度取权重（`definitions.horizon_weights`）合成 → 上行概率与期望收益 |
+| 公允价 | `decompose.py` | 走查式扩展窗口 OLS（`log 金价 ~ 实际利率 + log 美元指数 + log 央行储备 + VIX`）把金价拆成 宏观锚＋需求溢价＋风险溢价＋情绪残差；偏离度 = 市场价 / 公允价 − 1 |
 | 回测 | `backtest.py` | 走查式命中率 + 三个基准 + 逐因子命中率与 IC |
 | 出口 | `service.py` | 调度任务与 `POST /api/gold/quant/refresh` 共用同一条链路 |
 
@@ -324,6 +325,12 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
    更新周期）都返回「不可用 + 原因」；缺失因子按剩余权重归一，不会被当成 0。
 3. **时间只走一个时区**。所有「现在」都用 `app.utils.timeutil`（调度器时区），
    与第七条同一口径。
+
+四层分解的展示口径固定在 `decompose.py` 一处：需求与风险溢价按链式相乘
+（风险溢价以「中枢＋需求溢价」为基数），使「中枢＋需求溢价＋风险溢价 = 公允价」
+与「三块＋情绪残差 = 市场价」都按构造成立；t 时刻的回归系数只用 `s ≤ t−1` 的
+已实现样本，已实现样本不足 120 组或缺任一回归量时返回「不可用 + 原因」。
+守卫：`backend/tests/unit/quant/test_decompose.py`。
 
 ---
 

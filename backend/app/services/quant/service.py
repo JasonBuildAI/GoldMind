@@ -2,7 +2,7 @@
 
 调度器与 ``POST /api/gold/quant/refresh`` 都走 ``full_refresh``；读接口走下面
 几个只读函数。这一层不自己算任何统计量 —— 统计量全部来自 ``engine`` /
-``backtest``，不然口径就会分成两份。
+``backtest`` / ``decompose``，不然口径就会分成两份。
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.models.analysis import ModelEvaluation, Prediction
-from app.services.quant import backtest, engine, storage, sync
+from app.services.quant import backtest, decompose, engine, storage, sync
 from app.services.quant.definitions import (
     BENCHMARK_KEY,
     CATEGORY_NAMES,
@@ -38,13 +38,6 @@ def load_panel(db: Session) -> tuple[dict[str, pd.Series], pd.Series]:
     return series, close
 
 
-def build_snapshots(
-    db: Session, *, horizons: tuple[int, ...] = HORIZONS
-) -> list[engine.SignalSnapshot]:
-    factors, close = load_panel(db)
-    return [engine.build_snapshot(factors, close, horizon=horizon) for horizon in horizons]
-
-
 # --------------------------------------------------------------------------- #
 # 读：预测
 # --------------------------------------------------------------------------- #
@@ -62,10 +55,15 @@ def live_predictions(
     """
     if horizon is not None:
         horizons = (horizon,)
-    snapshots = build_snapshots(db, horizons=horizons)
+    factors, close = load_panel(db)
+    snapshots = [
+        engine.build_snapshot(factors, close, horizon=horizon) for horizon in horizons
+    ]
+    decomposition = decompose.decompose_latest(factors, close)
     return {
         "model_version": MODEL_VERSION,
         "as_of": snapshots[0].as_of if snapshots else None,
+        "fair_value": decomposition.to_dict(),
         "predictions": [_prediction_payload(snapshot) for snapshot in snapshots],
     }
 
