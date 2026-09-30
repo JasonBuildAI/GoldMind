@@ -88,13 +88,56 @@ def test_uncertainty_is_the_walk_forward_error_not_the_fit_residual(calendar, ma
     )
     # 未校准的时段没有发布预测，它的「误差」不算数（μ 是 NaN 而不是 0）
     published = (alpha + beta * score).where(calibrated)
-    manual = ((forward - published).shift(horizon)).expanding(
+    errors = (forward - published).shift(horizon)
+    manual_std = errors.expanding(
         min_periods=engine.MIN_ERRORS_FOR_SIGMA
     ).std()
+    factor = (errors.abs() / (engine.INTERVAL_Z_80 * manual_std)).expanding(
+        min_periods=engine.MIN_ERRORS_FOR_SIGMA
+    ).quantile(engine.ERROR_QUANTILE)
+    manual = manual_std * factor
 
     assert frame["uncertainty"].iloc[-1] == pytest.approx(float(manual.iloc[-1]), rel=1e-9)
+    # 经验校准真的起作用：面板上误差不是正态，校准系数明显偏离 1
+    assert abs(float(factor.iloc[-1]) - 1.0) > 0.05
     # 误差口径必须大于残差口径，否则这条守卫对「换回残差」的变异不敏感
-    assert frame["uncertainty"].iloc[-1] > float(residual_sigma.iloc[-1]) * 1.1
+    assert manual_std.iloc[-1] > float(residual_sigma.iloc[-1]) * 1.1
+
+
+def test_uncertainty_is_calibrated_to_the_empirical_error_quantile(calendar):
+    """σ 还要按误差的实际分位校准：波动换挡时，纯正态分位的区间盖不住（spec 判据）。
+
+    构造：前 600 个交易日日收益 ±0.04%、后 300 个 ±0.16%（波动换挡）—— 扩展窗口的
+    标准差跟不上换挡，正态区间会系统性偏窄；按误差的经验 80% 分位再校准要把它推回来。
+    变异验证：删掉经验校准因子，σ 就退回纯扩展标准差，第一条断言必红（两个数相等）。
+    """
+    horizon = 1
+    rng = np.random.default_rng(2026)
+    scale = np.where(np.arange(len(calendar)) < 600, 0.0004, 0.0016)
+    returns = rng.normal(0.0, 1.0, len(calendar)) * scale
+    close = pd.Series(2000.0 * np.cumprod(1.0 + returns), index=calendar)
+    score = pd.Series(rng.normal(0.0, 1.0, len(calendar)), index=calendar)
+
+    frame = engine.build_prediction_frame(score, close, horizon)
+    forward = close.shift(-horizon) / close - 1.0
+    mu, sigma = frame["expected_return"], frame["uncertainty"]
+    sigma_std = (
+        (forward - mu).shift(horizon).expanding(min_periods=engine.MIN_ERRORS_FOR_SIGMA).std()
+    )
+    # 只在两套 σ 都有值的样本上比：否则早期「兜底 σ」的行会混进来，比较就不公平
+    valid = (mu.notna() & forward.notna() & sigma.notna() & sigma_std.notna()).values
+
+    def coverage(scale_series: pd.Series) -> float:
+        half = engine.INTERVAL_Z_80 * scale_series
+        inside = (forward >= mu - half) & (forward <= mu + half)
+        return float(inside[valid].mean())
+
+    calibrated = coverage(sigma)
+    vanilla = coverage(sigma_std)
+
+    # 校准把覆盖推近名义值（本面板约 +1.5pp；真实数据的覆盖率见 docs/ARCHITECTURE.md 第十一节）
+    assert calibrated > vanilla + 0.005
+    assert calibrated > 0.60
 
 
 def test_every_horizon_publishes_one_story(panel):

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from statistics import NormalDist
 from typing import Optional
 
 import numpy as np
@@ -34,8 +33,8 @@ MIN_EVALUATION_SAMPLES = 30
 MIN_FACTOR_SAMPLES = 60
 # 动量基准的回看长度（交易日）
 MOMENTUM_LOOKBACK = 60
-# 80% 名义区间的双侧分位点：Φ⁻¹(0.90)；区间 = 期望收益 ± z·不确定度
-INTERVAL_Z_80 = NormalDist().inv_cdf(0.90)
+# 80% 名义区间的双侧分位点：区间 = 期望收益 ± z·不确定度（口径定义在 engine 一处）
+INTERVAL_Z_80 = engine.INTERVAL_Z_80
 INTERVAL_NOMINAL_80 = 0.80
 # 「2022 年后定价函数变了」的分段口径（央行购金放量）
 REGIME_SPLIT = date(2022, 1, 1)

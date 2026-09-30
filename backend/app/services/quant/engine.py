@@ -16,6 +16,7 @@
     score_h    = Σ w_i(h) × signed_z_i / Σ w_i(h)  按尺度取权重（缺省=基础权重）
     μ_h        = α + β · score                   扩展窗口 OLS，样本对满足 s + h ≤ t
     σ_h        = std(r_s − μ_s | s + h ≤ t)      走查预测误差，样本不足退回已实现收益的扩展标准差
+                 × q80(|e| / (z80 · σ))          再按误差的经验分位校准（正态分位会偏窄）
     p_up       = Φ(μ / σ)                        与目标价、区间、情景同一个分布
 
 方向、概率、目标价、区间、情景只从这一个分布出发；``score`` 是**未校准**的因子偏向，
@@ -26,6 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from math import erf, sqrt
+from statistics import NormalDist
 from typing import Optional
 
 import numpy as np
@@ -43,6 +45,10 @@ MIN_SCORES_FOR_SIGMA = 20
 MIN_OLS_SAMPLES = 60
 # 走查预测误差的 σ 至少要有这么多个「已实现」的误差（与 OLS 同一档）
 MIN_ERRORS_FOR_SIGMA = 60
+# 80% 名义区间的双侧分位点 Φ⁻¹(0.90)；区间 = μ ± INTERVAL_Z_80 × σ
+INTERVAL_Z_80 = NormalDist().inv_cdf(0.90)
+# 经验校准分位：误差的 80% 分位对应「八成误差都落在里面」
+ERROR_QUANTILE = 0.80
 
 EPS = 1e-12
 
@@ -216,6 +222,8 @@ def build_prediction_frame(
     ``uncertainty`` 是**走查预测误差**的标准差，不是回归残差：残差只说明
     「拟合线周围的散布」，预测误差才回答「模型自己错了多少」——
     两者的差距就是区间覆盖率与名义值（80%）之间的差距。
+    再按误差的**经验分位**校准一次（``q80(|e| / (z80·σ))``）：正态分位假设
+    在误差不是正态时会系统性偏窄，实测长尺度区间只盖住一半名义范围。
     """
     forward = close.shift(-horizon) / close - 1.0
     alpha, beta, _, calibrated = expanding_ols(score.shift(horizon), forward.shift(horizon))
@@ -224,6 +232,10 @@ def build_prediction_frame(
     # t 时刻只取 (s + h ≤ t) 的误差：e_s = 已实现收益 − 当时给出的期望收益
     errors = (forward - expected).shift(horizon)
     sigma = errors.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).std()
+    # 经验分位校准：把「正态假设下的 80% 分位」换成「历史误差实际的 80% 分位」
+    ratio = errors.abs() / (INTERVAL_Z_80 * sigma)
+    factor = ratio.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).quantile(ERROR_QUANTILE)
+    sigma = sigma * factor
     # 回归样本不足时退回「已实现 h 日收益的扩展标准差」，仍然只用过去的数据
     fallback = forward.shift(horizon).expanding(min_periods=MIN_SCORES_FOR_SIGMA).std()
     sigma = sigma.fillna(fallback)

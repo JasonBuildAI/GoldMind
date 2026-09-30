@@ -42,7 +42,8 @@ CATEGORY_NAMES = {
 # 预测与回测记录都带着版本号，改口径不会污染历史评估。
 # v2：分尺度权重（同一因子在不同周期的权重不同），得分按周期取权重。
 # v3：方向 / 概率 / 区间出自同一个走查校准分布（见 docs/specs/2026-10-01-预测口径统一.md）
-MODEL_VERSION = "quant-v3"
+# v4：区间宽度再按预测误差的经验分位校准（正态分位在长尺度系统性偏窄）。
+MODEL_VERSION = "quant-v4"
 
 # 用于计算收益与目标价的基准价格序列（COMEX 主力期货日收盘）
 BENCHMARK_KEY = "gold_close"
