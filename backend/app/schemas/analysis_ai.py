@@ -57,6 +57,12 @@ class AIInstitutionItem(BaseModel):
     timeframe: Optional[str] = None
     reasoning: Optional[str] = None
     key_points: List[str] = []
+    # 「最近一次可核实预测」的溯源字段：核实日期、滞后天数（后端用 timeutil
+    # 计算）与线索来源（web_search / news_scan / legacy）。三者都可空 ——
+    # 没有真实预测的占位行不该伪造日期。
+    as_of_date: Optional[str] = None
+    stale_days: Optional[int] = None
+    source: Optional[str] = None
 
 
 class BullishFactorsAIResponse(BaseModel):

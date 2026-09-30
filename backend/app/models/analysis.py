@@ -53,6 +53,10 @@ class InstitutionView(Base):
     timeframe = Column(String(50))
     reasoning = Column(Text)
     key_points = Column(JSON)
+    # 「最近一次可核实预测」的溯源字段；老库升级走
+    # scripts/migrate_institution_views.py（只加列、不删行）。
+    as_of_date = Column(Date)
+    source = Column(String(50))
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

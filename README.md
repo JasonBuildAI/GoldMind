@@ -79,7 +79,7 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
 |---|---|---|
 | 看涨因子 | 最近 24h 新闻 + 金价 | 5 个看涨因子 |
 | 看跌因子 | 最近 24h 新闻 + 金价 | 5 个看跌因子 |
-| 机构观点 | 最近 24h 新闻 +（搜索） | 四大机构目标价与理由 |
+| 机构观点 | 最近 30 天新闻 +（搜索） | 四家机构最近一次可核实的预测（含日期与来源） |
 | 投资建议 | 市场状态 + 多空因子 + 机构观点 | 保守/均衡/机会三档策略 |
 | 市场总结 | 上述全部 | 核心逻辑、风险、综合判断 |
 
@@ -123,8 +123,9 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="机构观点" width="800">
 </p>
 
-> 本机部署的 MiMo key 未开通联网搜索（调用返回 `HTTP 400`），检索不到一手机构观点时，
-> 表格如实显示「暂无」，不给任何编造的目标价。
+> 本机部署的 MiMo key 未开通联网搜索（调用返回 `HTTP 400`）；此时回退到新闻窗口，
+> 提取每家机构**最近一次可核实**的预测并标注预测日期。一条都找不到才显示「暂无」，
+> 而且空目标价不会覆盖库里已有的真实记录。
 
 ### 投资策略
 <p align="center">
@@ -572,7 +573,7 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 |---|---|---|---|
 | 看涨因子 | `app/services/bullish_factor_service.py` | 最近 24h 新闻 + 金价 | 5 个看涨因子 + 总结 |
 | 看跌因子 | `app/services/bearish_factor_service.py` | 最近 24h 新闻 + 金价 | 5 个看跌因子 + 总结 |
-| 机构观点 | `app/services/institution_prediction_service.py` | 最近 24h 新闻 + 联网搜索 | 四大机构目标价与理由 |
+| 机构观点 | `app/services/institution_prediction_service.py` | 最近 30 天新闻 + 联网搜索 | 四家机构最近一次可核实的预测（含日期与来源） |
 | 投资建议 | `app/services/investment_advice_service.py` | 市场状态 + 多空因子 + 机构观点 | 三档策略 + 风险提示 |
 | 市场总结 | `app/services/market_summary_service.py` | 上述全部 | 核心逻辑 + 风险 + 综合判断 |
 

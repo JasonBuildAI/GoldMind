@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
     # 新闻 RSS 源，格式 "名称|URL,名称|URL"；留空则使用 news_service 内置默认源
     NEWS_RSS_SOURCES: str = ""
+    # 机构观点的新闻扫描窗口（天）。机构预测不再要求「24 小时内发布」——
+    # 在窗口内逐家提取**最近一次可核实**的预测（可以是窗口内较早发布的）；
+    # 没有新研报不等于机构撤回了旧预测，空目标价绝不覆盖已有真实记录。
+    INSTITUTION_NEWS_LOOKBACK_DAYS: int = 30
     # 文件缓存目录；留空则用默认的 backend/cache。
     # 可配置是为了让测试用独立目录，避免与开发时的缓存互相污染。
     CACHE_DIR: str = ""

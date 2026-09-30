@@ -83,6 +83,11 @@ CREATE TABLE IF NOT EXISTS institution_views (
     timeframe VARCHAR(50),
     reasoning TEXT,
     key_points JSON,
+    -- 该预测最近一次被核实/抓取入库的日期与线索来源（web_search / news_scan /
+    -- legacy）。迁移只给缺失真实目标价的规范行补数据，从不删除任何行，
+    -- 见 scripts/migrate_institution_views.py。
+    as_of_date DATE NULL,
+    source VARCHAR(50) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

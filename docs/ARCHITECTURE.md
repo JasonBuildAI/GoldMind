@@ -158,7 +158,7 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | `dollar_index` | 美元指数，`date` 唯一 |
 | `gold_news` | 新闻；`published_at` 有索引 |
 | `market_factors` | 多空因子（`type` 区分） |
-| `institution_views` | 机构观点 |
+| `institution_views` | 机构观点；`as_of_date` / `source` 记录每条预测最近一次被核实的日期与线索来源（`web_search` / `news_scan` / `legacy`），老库升级走 `scripts/migrate_institution_views.py`（只加列/补数据，不删行） |
 | `predictions` | 量化引擎（`services/quant/service.py`）每次刷新写入：方向、周期、基准价、目标价、得分、期望收益、不确定度与模型版本 |
 | `factor_observations` | 量化因子观测，`(factor_key, obs_date)` 唯一；只存成功观测，失败在同步报告里说明 |
 | `model_evaluations` | 走查式回测结果（命中率 / 基准对照 / Brier / 逐因子指标），每次评估追加一行 |

@@ -232,6 +232,12 @@ export interface InstitutionPrediction {
   timeframe: string;
   reasoning: string;
   key_points: string[];
+  /** 该预测最近一次被核实/抓取入库的日期（YYYY-MM-DD）；占位行没有日期 */
+  as_of_date?: string | null;
+  /** 距今天数（后端用项目时区计算）；没有日期时为 null */
+  stale_days?: number | null;
+  /** 线索来源：web_search / news_scan / legacy */
+  source?: string | null;
 }
 
 export interface InstitutionPredictionsResponse {

@@ -1,25 +1,131 @@
-"""机构预测分析服务"""
-from typing import List, Dict, Any
-from datetime import timedelta
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
+"""机构预测分析服务
 
-from app.services.news_service import format_news_for_prompt
-from app.utils import timeutil
-from app.models.news import GoldNews
-from app.models.analysis import InstitutionView
-from app.config import settings
-from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
-from app.services.single_flight import single_flight
-from app.services.llm_provider import get_chat_llm
-from app.services.web_search_service import get_web_search_service
+## 「最近一次可核实预测」口径（2026-10-01 起）
+
+机构观点不再要求「24 小时内发布」：没有新研报不等于机构撤回了预测，旧口径
+等于每天把真实目标价丢掉一次。现在扫描 `INSTITUTION_NEWS_LOOKBACK_DAYS`
+（默认 30 天）窗口，逐家提取**最近一次可核实**的预测，并记录两个溯源字段：
+
+- `as_of_date`：该预测最近一次被核实/抓取入库的日期。优先用 LLM 从新闻
+  时间戳提取的日期；提取不到就用窗口内最新新闻日期；再没有才用当天。
+- `source`：线索来源 —— `web_search` / `news_scan`；迁移回填的历史行是
+  `legacy`。
+
+## 一条真实故障换来的红线
+
+2026-10-01 06:01 的一次抓取没有找到新的机构研报，旧代码把四条真实目标价
+（5400 / 5000 / 6300 / 6000）全部覆盖成了「暂无」。现在的 `save_to_database`：
+
+1. 名称一律规范化到注册表的规范名，认不出的机构直接忽略；
+2. **target_price 为空的条目绝不覆盖已有真实记录**（跳过该行更新）；
+3. 只在连占位行都没有时才写一条「暂无最新预测」的空行 —— 占位行没有任何
+   数字，纯粹表示「这家机构仍在跟踪，但没有可核实的预测」。
+
+机构注册表（`INSTITUTIONS`）是机构名单的唯一真源：写入、读取、提示词与
+测试全部从它派生。
+"""
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
+import asyncio
 import json
+
 from loguru import logger
+from sqlalchemy import and_, desc
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.models.analysis import InstitutionView
+from app.models.news import GoldNews
+from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
+from app.services.llm_provider import get_chat_llm
+from app.services.news_service import format_news_for_prompt
+from app.services.single_flight import single_flight
+from app.services.web_search_service import get_web_search_service
+from app.utils import timeutil
 
 # 全局线程池
 _executor = ThreadPoolExecutor(max_workers=2)
+
+
+# --------------------------------------------------------------------------- #
+# 机构注册表：唯一真源
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class Institution:
+    """一家被追踪的机构：规范名、logo 与全部可识别写法。"""
+
+    key: str
+    name: str
+    logo: str
+    aliases: Tuple[str, ...]
+
+
+INSTITUTIONS: Tuple[Institution, ...] = (
+    Institution(
+        "goldman",
+        "高盛 (Goldman Sachs)",
+        "GS",
+        ("高盛", "高盛集团", "goldman sachs", "goldman", "gs"),
+    ),
+    Institution(
+        "ubs",
+        "瑞银 (UBS)",
+        "UBS",
+        ("瑞银", "瑞银集团", "ubs", "union bank of switzerland"),
+    ),
+    Institution(
+        "morgan_stanley",
+        "摩根士丹利 (Morgan Stanley)",
+        "MS",
+        ("摩根士丹利", "morgan stanley", "morganstanley", "ms"),
+    ),
+    Institution(
+        "citi",
+        "花旗 (Citi)",
+        "C",
+        ("花旗", "花旗集团", "花旗银行", "citi", "citigroup", "citi group"),
+    ),
+)
+
+CANONICAL_NAMES: Tuple[str, ...] = tuple(inst.name for inst in INSTITUTIONS)
+
+
+def _normalize_text(value: Any) -> str:
+    """大小写、首尾与连续空白归一 —— 只用于名称匹配。"""
+    return " ".join(str(value if value is not None else "").strip().lower().split())
+
+
+def match_institution(name: Any) -> Optional[Institution]:
+    """把任意写法匹配到注册表条目；认不出返回 None。
+
+    先做精确匹配（别名或规范名），再做包含匹配（「高盛集团」
+    「Goldman Sachs Group」这类带后缀的写法）。包含匹配只对长度 >= 3 的
+    别名生效，避免 ``gs`` / ``ms`` 这类两字母缩写出现在别的词里被误伤。
+    """
+    text = _normalize_text(name)
+    if not text:
+        return None
+
+    for inst in INSTITUTIONS:
+        for candidate in (inst.name,) + inst.aliases:
+            if text == _normalize_text(candidate):
+                return inst
+
+    for inst in INSTITUTIONS:
+        for alias in inst.aliases:
+            alias_text = _normalize_text(alias)
+            if len(alias_text) >= 3 and (alias_text in text or text in alias_text):
+                return inst
+    return None
+
+
+def canonical_name(name: Any) -> Optional[str]:
+    """任意写法 -> 规范名；认不出返回 None。"""
+    inst = match_institution(name)
+    return inst.name if inst else None
+
 
 # 数据库那一列是 ENUM('bullish','bearish','neutral')，前端也只认这三种。
 # 但模型里它只是 String —— 也就是说**约束只在数据库层**，见 normalize_rating。
@@ -33,6 +139,7 @@ _RATING_ALIASES = {
     "negative": "bearish", "看跌": "bearish", "看空": "bearish", "悲观": "bearish",
     "neutral": "neutral", "hold": "neutral", "中性": "neutral", "观望": "neutral",
 }
+
 
 def normalize_rating(value: Any) -> str:
     """把 LLM 给出的评级归一化到三种取值之一。
@@ -50,30 +157,132 @@ def normalize_rating(value: Any) -> str:
     logger.warning(f"[InstitutionPrediction] 认不出的评级 {value!r}，按 neutral 处理")
     return "neutral"
 
+
+_DATE_FORMATS = ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y年%m月%d日")
+
+
+def parse_as_of_date(value: Any, today: Optional[date] = None) -> Optional[date]:
+    """解析 as_of 日期，只认能精确到「日」的写法。
+
+    无效格式、未来日期、早于 1990 年的日期一律返回 None（由调用方走回退链）——
+    宁可标不出日期，也不能把模型编的日期当成事实（红线 1）。
+    """
+    if isinstance(value, datetime):
+        candidate: Optional[date] = value.date()
+    elif isinstance(value, date):
+        candidate = value
+    else:
+        text = str(value if value is not None else "").strip()
+        if not text:
+            return None
+        # 兼容 "2026-02-08T10:00:00" / "2026-02-08 10:00" 这类带时间的写法
+        text = text.replace("T", " ").split(" ")[0]
+        candidate = None
+        for fmt in _DATE_FORMATS:
+            try:
+                candidate = datetime.strptime(text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if candidate is None:
+            return None
+
+    reference = today or timeutil.today()
+    if candidate > reference or candidate.year < 1990:
+        return None
+    return candidate
+
+
+def _coerce_target_price(value: Any) -> Optional[float]:
+    """把 LLM 的 target_price 归一为有限正数；否则 None。
+
+    字符串 "5,400" / "$5400"、数字 5400 都能过；0、负数、"暂无"、None 一律
+    视为无目标价 —— 它们只可能是占位或解析残留，绝不能当成真实点位写进库。
+    """
+    if isinstance(value, bool):  # bool 是 int 的子类，先挡掉
+        return None
+
+    if isinstance(value, (int, float)):
+        number = float(value)
+    else:
+        text = str(value if value is not None else "").strip()
+        text = text.replace(",", "").replace("$", "").replace("美元", "").strip()
+        if not text:
+            return None
+        try:
+            number = float(text)
+        except ValueError:
+            return None
+
+    if not (number > 0) or number == float("inf"):
+        return None
+    return number
+
+
+def _source_from_result(analysis_result: Dict[str, Any]) -> Optional[str]:
+    """把分析结果的 data_source 映射到溯源的 source 取值。"""
+    raw = _normalize_text(analysis_result.get("data_source"))
+    if not raw:
+        return None
+    if "web" in raw or "联网" in raw or "搜索" in raw:
+        return "web_search"
+    return "news_scan"
+
+
+def _has_real_prices(payload: Optional[Dict[str, Any]]) -> bool:
+    """结果里是否至少有一条真实目标价。
+
+    只有占位行（target_price 全为 null）的结果不值得当缓存用：2026-10-01 06:01
+    的故障里，旧代码把四条 null 占位写进了缓存，页面于是再也不会回落到库里
+    已经被迁移恢复的真实数据。缓存与读取都以这条判据为准。
+    """
+    if not payload:
+        return False
+    for item in payload.get("institutions") or []:
+        if isinstance(item, dict) and item.get("target_price") is not None:
+            return True
+    return False
+
+
+# 命中这些关键词的「较早新闻」会被追加进预选（机构名 / 目标价语义）。
+_INSTITUTION_KEYWORDS: Tuple[str, ...] = (
+    "高盛", "瑞银", "摩根士丹利", "花旗",
+    "goldman", "ubs", "morgan", "citi",
+    "目标价", "目标价格", "上调", "下调",
+    "price target", "target price", "forecast",
+)
+
+
 class InstitutionPredictionAnalyzer:
-    """使用MiMo 联网搜索抓取四大机构最新预测"""
+    """用联网搜索（优先）或新闻窗口（回退）抓取四大机构最近一次可核实预测。"""
 
     def __init__(self):
         self._llm = None
         self.web_search_service = get_web_search_service()
-        self.prompt_template = """你是一位专业的金融市场数据分析师，专注于追踪华尔街顶级投行对黄金价格的最新预测。
+        self.prompt_template = """你是一位专业的金融市场数据分析师，专注于追踪华尔街顶级投行对黄金价格的预测。
 
-你的任务是搜索并整理以下四家主流机构对黄金的最新预测：
+你的任务是从下面的新闻材料中**提取**以下四家机构对黄金的**最近一次可核实**预测：
 1. 高盛 (Goldman Sachs)
 2. 瑞银 (UBS)
 3. 摩根士丹利 (Morgan Stanley)
 4. 花旗 (Citi)
 
-以下是从24小时内收集的黄金相关新闻资讯：
+以下是最近 {lookback_days} 天内收集的黄金相关新闻资讯（含较早的机构相关条目）：
 {news_content}
 
-请根据以上新闻，**提取**这四家机构的最新黄金预测（新闻里没有就如实说明，不要推断）。对于每家机构，请提供：
+要求：
+- 允许使用窗口内**较早发布**的新闻 —— 要的是每家机构最近一次可核实的记录，不是「今天有没有新研报」；
+- 每家的 target_price 必须来自检索到的内容，找不到就把 target_price 置为 null、
+  reasoning 写「暂无最新预测」，**不要**凭印象替它编一个目标价；
+- as_of 取该条预测的新闻时间戳（YYYY-MM-DD）；无法确定就留空字符串，不要猜一个日期。
 
+对每家机构请提供：
 1. **目标价格** - 具体的美元价格（数字）
 2. **时间框架** - 如"2026年底"、"2026年9月"、"2026年中"、"长期展望"等
 3. **评级** - bullish(看涨) / bearish(看跌) / neutral(中性)
 4. **核心理由** - 一句话总结该机构的主要观点
 5. **关键要点** - 4个支撑该预测的核心论据
+6. **as_of** - 该预测最近一次被核实/发布的日期（YYYY-MM-DD，取自新闻时间戳；无法确定留空）
 
 请严格按照以下 JSON 结构返回（下面是**结构骨架**，方括号里是字段含义；
 不要照抄任何数字，target_price 必须是你从检索到的内容里得到的真实数字）：
@@ -84,24 +293,25 @@ class InstitutionPredictionAnalyzer:
             "name": "机构全名，如 高盛 (Goldman Sachs)",
             "logo": "机构缩写，如 GS",
             "rating": "bullish 或 bearish 或 neutral",
-            "target_price": 该机构的目标价（美元，数字）,
+            "target_price": 该机构的目标价（美元，数字；没有就 null）,
             "timeframe": "该目标价对应的时间框架",
             "reasoning": "该机构核心理由（一句话）",
-            "key_points": ["要点1", "要点2", "要点3", "要点4"]
+            "key_points": ["要点1", "要点2", "要点3", "要点4"],
+            "as_of": "YYYY-MM-DD 或空字符串"
         }}
     ],
-    "analysis_summary": "四家机构预测的汇总（一句话）",
+    "analysis_summary": "四家机构预测的汇总（一句话）。必须写明：这是最近 {lookback_days} 天内各家机构最近一次可核实记录的汇总，可能是较早发布的预测。",
     "last_updated": "{current_time}"
 }}
 
 注意事项：
 1. 必须返回有效 JSON
 2. rating 只能是：bullish, bearish, neutral
-3. target_price 必须是数字（美元）
-4. **如果检索内容里没有某家机构的最新预测，就把该机构的 target_price 置为 null、
+3. target_price 必须是数字（美元）或 null
+4. **如果检索内容里没有某家机构的预测，就把该机构的 target_price 置为 null、
    reasoning 写「暂无最新预测」，不要凭印象替它编一个目标价。**
    编造的机构目标价比缺一条更糟 —— 见 docs/00-产品方向.md 第四节。
-5. key_points 数组必须包含 4 个具体要点
+5. key_points 数组应包含 4 个具体要点；确实没有预测时可给空数组。
 """
 
     @property
@@ -111,15 +321,61 @@ class InstitutionPredictionAnalyzer:
             self._llm = get_chat_llm(temperature=0.7, max_tokens=4096)
         return self._llm
 
-    def fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
-        """获取最近24小时内的新闻"""
-        since = timeutil.now_naive() - timedelta(hours=hours)
+    @property
+    def lookback_days(self) -> int:
+        """新闻扫描窗口（天）。配置了非法值时退回 30，不让一次错配置拖垮服务。"""
+        try:
+            return max(1, int(settings.INSTITUTION_NEWS_LOOKBACK_DAYS))
+        except (TypeError, ValueError):
+            return 30
+
+    def fetch_recent_news(self, db: Session, days: Optional[int] = None) -> List[GoldNews]:
+        """获取扫描窗口内的新闻（默认 INSTITUTION_NEWS_LOOKBACK_DAYS 天）。"""
+        window_days = self.lookback_days if days is None else max(1, int(days))
+        now = timeutil.now_naive()
+        since = now - timedelta(days=window_days)
         return db.query(GoldNews).filter(
             and_(
                 GoldNews.published_at >= since,
-                GoldNews.published_at <= timeutil.now_naive()
+                GoldNews.published_at <= now,
             )
-        ).order_by(GoldNews.published_at.desc()).all()
+        ).order_by(desc(GoldNews.published_at)).all()
+
+    def _select_news_for_institutions(
+        self,
+        news: List[GoldNews],
+        recent_limit: int = 15,
+        keyword_limit: int = 15,
+    ) -> List[GoldNews]:
+        """最近 15 条 + 最多 15 条命中机构名/目标价关键词的较早条目。
+
+        窗口从 24 小时放宽到 30 天后，条目可能上百条。全喂给模型既贵又容易
+        让关键研报淹没在行情快讯里；只取「最近一批 + 机构相关的一批」，
+        窗口长度由提示词显式说明。
+        """
+        if not news:
+            return []
+
+        ordered = sorted(
+            news, key=lambda item: item.published_at or datetime.min, reverse=True
+        )
+        selected: List[GoldNews] = list(ordered[:recent_limit])
+        seen = {id(item) for item in selected}
+
+        extra = 0
+        for item in ordered[recent_limit:]:
+            if extra >= keyword_limit:
+                break
+            text = f"{item.title or ''} {item.content or ''}".lower()
+            if not any(keyword in text for keyword in _INSTITUTION_KEYWORDS):
+                continue
+            if id(item) in seen:
+                continue
+            selected.append(item)
+            seen.add(id(item))
+            extra += 1
+
+        return selected
 
     def fetch_news_from_web(self) -> List[Dict[str, Any]]:
         """从网络获取最新新闻（当数据库为空时使用）"""
@@ -151,60 +407,64 @@ class InstitutionPredictionAnalyzer:
         return all_news
 
     def analyze(self, db: Session) -> Dict[str, Any]:
-        """执行分析 - 使用 MiMo 联网搜索"""
+        """执行分析 - 使用 MiMo 联网搜索（不可用时回退新闻窗口）"""
         # 使用MiMo 联网搜索获取最新机构预测
         try:
             logger.info("[InstitutionPrediction] 使用 MiMo 联网搜索机构预测...")
             search_result = self.web_search_service.search_institution_predictions()
-            
+
             # 必须同时确认搜索真的可用，否则「搜到空结果」与「搜索不可用」
             # 会被混为一谈，上层就无法决定是否该回退。
             if search_result.get("available") and search_result.get("institutions"):
                 logger.info(f"[InstitutionPrediction] 成功获取 {len(search_result['institutions'])} 家机构预测")
                 search_result["last_updated"] = timeutil.now_str()
-                search_result["data_source"] = "MiMo 联网搜索"
+                search_result["data_source"] = "web_search"
                 return search_result
             else:
                 logger.warning("[InstitutionPrediction] 搜索结果为空，使用备用方案")
-                
+
         except Exception as e:
             logger.error(f"[InstitutionPrediction] MiMo 搜索失败: {e}")
-        
+
         # 备用方案：使用传统方式分析
         return self._analyze_with_traditional_llm(db)
-    
-    def _analyze_with_traditional_llm(self, db: Session) -> Dict[str, Any]:
-        """使用传统LLM分析（备用方案）"""
-        # 1. 获取24小时内新闻
-        news = self.fetch_recent_news(db, hours=24)
 
-        # 如果数据库没有新闻，尝试从网络获取
-        if not news:
+    def _analyze_with_traditional_llm(self, db: Session) -> Dict[str, Any]:
+        """使用传统 LLM 分析（备用方案）。
+
+        窗口内的新闻先经 `_select_news_for_institutions` 预选；一条都没有时
+        **不调用 LLM**，直接返回空结构（红线 1：没有依据就不让模型凭记忆编）。
+        """
+        window_days = self.lookback_days
+        news = self.fetch_recent_news(db)
+        selected = self._select_news_for_institutions(news)
+
+        if selected:
+            news_content = format_news_for_prompt(selected, limit=30)
+        else:
+            # 数据库没有新闻，尝试从网络获取
             web_news = self.fetch_news_from_web()
             if web_news:
                 news_content = format_news_for_prompt(web_news, limit=15)
             else:
                 # 没有任何新闻可依据 —— 不调 LLM，直接返回空（红线第 1 条）
                 logger.warning(
-                    "[InstitutionPrediction] 24 小时内没有任何新闻，"
+                    f"[InstitutionPrediction] 最近 {window_days} 天内没有任何新闻，"
                     "不调用 LLM（没有依据可分析）"
                 )
                 return self.get_default_predictions()
-        else:
-            news_content = format_news_for_prompt(news, limit=15)
 
-        # 2. 构建prompt并调用LLM
-        current_time = timeutil.now_str()
+        # 构建prompt并调用LLM
         prompt = self.prompt_template.format(
             news_content=news_content,
-            current_time=current_time
+            current_time=timeutil.now_str(),
+            lookback_days=window_days,
         )
 
-        # 3. 调用LLM
         try:
             response = self.llm.invoke(prompt)
 
-            # 4. 解析JSON响应
+            # 解析JSON响应
             try:
                 result = json.loads(response.content)
             except json.JSONDecodeError:
@@ -215,11 +475,13 @@ class InstitutionPredictionAnalyzer:
                 if start != -1 and end > start:
                     try:
                         result = json.loads(content[start:end])
-                    except:
+                    except Exception:
                         result = self.get_default_predictions()
                 else:
                     result = self.get_default_predictions()
 
+            if isinstance(result, dict):
+                result["data_source"] = "news_scan"
             return result
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
@@ -244,43 +506,113 @@ class InstitutionPredictionAnalyzer:
             "last_updated": timeutil.now_str(),
         }
 
-    def save_to_database(self, db: Session, analysis_result: Dict[str, Any]) -> None:
-        """将分析结果保存到数据库"""
-        institutions = analysis_result.get("institutions", [])
+    def _latest_news_date(self, db: Session) -> Optional[date]:
+        """窗口内最新一条新闻的日期；没有新闻返回 None。"""
+        news = self.fetch_recent_news(db)
+        dates = [item.published_at.date() for item in news if item.published_at]
+        return max(dates) if dates else None
 
-        for inst_data in institutions:
-            rating = normalize_rating(inst_data.get("rating"))
+    def _resolve_as_of(self, inst_data: Dict[str, Any], fallback: Optional[date]) -> date:
+        """as_of 回退链：LLM 提取的日期 → 窗口内最新新闻日期 → 当天。"""
+        parsed = parse_as_of_date(inst_data.get("as_of") or inst_data.get("as_of_date"))
+        if parsed is not None:
+            return parsed
+        if fallback is not None:
+            return fallback
+        return timeutil.today()
 
-            # 检查是否已存在相同机构的预测
+    def save_to_database(
+        self, db: Session, analysis_result: Dict[str, Any]
+    ) -> int:
+        """把分析结果写入数据库，返回**真实目标价**的写入条数。
+
+        三条语义（缺一不可）：
+
+        1. 名称一律规范化到注册表的规范名；认不出的机构直接忽略
+           （注册表是唯一真源，不支持自定义名单）。
+        2. target_price 为空的条目**绝不覆盖**已有真实记录 ——
+           没有新研报不等于机构撤回了预测。只有在连占位行都没有时，
+           才写一条「暂无最新预测」的占位行，让页面能显示跟踪状态。
+        3. 真实条目记录 as_of_date 与 source：as_of 取 LLM 从新闻时间戳
+           提取的日期，无效则退回窗口内最新新闻日期，再没有就用当天。
+        """
+        incoming = analysis_result.get("institutions") or []
+        source = _source_from_result(analysis_result)
+        fallback_date = self._latest_news_date(db)
+        now = timeutil.now_naive()
+
+        by_key: Dict[str, Dict[str, Any]] = {}
+        for inst_data in incoming:
+            if not isinstance(inst_data, dict):
+                continue
+            inst = match_institution(inst_data.get("name"))
+            if inst is None:
+                logger.warning(
+                    f"[InstitutionPrediction] 认不出的机构 {inst_data.get('name')!r}，已忽略"
+                )
+                continue
+            by_key.setdefault(inst.key, inst_data)
+
+        written = 0
+        for inst in INSTITUTIONS:
+            inst_data = by_key.get(inst.key)
+            target_price = _coerce_target_price(
+                inst_data.get("target_price") if inst_data else None
+            )
+
             existing = db.query(InstitutionView).filter(
-                InstitutionView.institution_name == inst_data["name"]
+                InstitutionView.institution_name == inst.name
             ).first()
 
-            if existing:
-                # 更新现有记录
-                existing.rating = rating
-                existing.target_price = inst_data.get("target_price", 0)
-                existing.timeframe = inst_data.get("timeframe", "")
-                existing.reasoning = inst_data.get("reasoning", "")
-                existing.key_points = inst_data.get("key_points", [])
-                existing.updated_at = timeutil.now_naive()
-            else:
-                # 创建新记录
-                new_view = InstitutionView(
-                    institution_name=inst_data["name"],
-                    logo=inst_data.get("logo", ""),
-                    rating=rating,
-                    target_price=inst_data.get("target_price", 0),
-                    timeframe=inst_data.get("timeframe", ""),
-                    reasoning=inst_data.get("reasoning", ""),
-                    key_points=inst_data.get("key_points", [])
+            if target_price is None:
+                # 空目标价：永远不覆盖已有记录。
+                if existing is not None:
+                    continue
+                # 连占位行都没有 → 写一条没有任何数字的占位行。
+                db.add(
+                    InstitutionView(
+                        institution_name=inst.name,
+                        logo=inst.logo,
+                        rating="neutral",
+                        target_price=None,
+                        timeframe="",
+                        reasoning="暂无最新预测",
+                        key_points=[],
+                        as_of_date=None,
+                        source=source,
+                        updated_at=now,
+                    )
                 )
-                db.add(new_view)
+                continue
+
+            as_of = self._resolve_as_of(inst_data, fallback_date)
+            payload = {
+                "logo": inst.logo,
+                "rating": normalize_rating(inst_data.get("rating")),
+                "target_price": target_price,
+                "timeframe": inst_data.get("timeframe") or "",
+                "reasoning": inst_data.get("reasoning") or "",
+                "key_points": inst_data.get("key_points") or [],
+                "as_of_date": as_of,
+                "source": source,
+                "updated_at": now,
+            }
+
+            if existing is not None:
+                for field, value in payload.items():
+                    setattr(existing, field, value)
+            else:
+                db.add(InstitutionView(institution_name=inst.name, **payload))
+            written += 1
 
         db.commit()
+        return written
+
 
 class InstitutionPredictionService:
     """机构预测服务类 - 优化版（支持实时搜索和缓存）"""
+
+    _ANALYSIS_KEY = "institution_predictions"
 
     def __init__(self, db: Session):
         self.db = db
@@ -292,11 +624,14 @@ class InstitutionPredictionService:
         """
         获取机构预测 - 快速响应版本（<50ms）
 
-        优化策略：
-        1. 优先从文件缓存读取（<10ms）
-        2. 其次检查数据库缓存
-        3. 无缓存时返回默认数据并触发后台分析
-        4. use_cache=False时直接执行实时搜索
+        读取顺序：
+        1. use_cache=False → 扫描分析 + 写库（空目标价不覆盖）→ 从库重新组装；
+        2. 文件缓存里有**非空**机构列表 → 直接返回。空结果不再被当成有效缓存 ——
+           旧代码把一次「什么都没找到」的抓取也缓存下来，页面于是再也不会回落到
+           库里的真实数据；
+        3. 从数据库按四家规范行组装（不再要求「2 小时内更新」）——
+           旧数据标注 as_of_date 与滞后天数，比「暂无」诚实也有用；
+        4. 库里连行都没有 → 返回默认结构并触发后台分析。
 
         Args:
             use_cache: 是否使用缓存（默认True，立即返回缓存数据）
@@ -308,24 +643,27 @@ class InstitutionPredictionService:
         if not use_cache:
             logger.info("[InstitutionPrediction] 强制刷新，执行实时搜索...")
             try:
-                result = self.analyzer.analyze(self.db)
-                self.analyzer.save_to_database(self.db, result)
-                self.cache.set(result)
-                result["metadata"] = {
-                    "cached": False,
-                    "cache_source": "realtime_search",
-                    "generated_at": timeutil.now_iso(),
-                    "message": "基于MiMo 联网搜索的最新数据"
-                }
+                analysis = self.analyzer.analyze(self.db)
+                written = self.analyzer.save_to_database(self.db, analysis)
+                result = self._assemble_from_database(
+                    metadata={
+                        "cached": False,
+                        "cache_source": "realtime_search",
+                        "generated_at": timeutil.now_iso(),
+                        "message": "已重新扫描新闻窗口；空目标价不会覆盖已有真实预测",
+                    },
+                    llm_summary=analysis.get("analysis_summary") if written else None,
+                )
+                if _has_real_prices(result):
+                    self.cache.set(result)
                 return result
             except Exception as e:
                 logger.error(f"[InstitutionPrediction] 实时搜索失败: {e}")
-                # 如果实时搜索失败，返回缓存数据
-                pass
-        
+                # 失败时回落到缓存 / 数据库组装，而不是让页面空着
+
         # 1. 首先尝试文件缓存（最快，支持多进程共享）
         cached_data = self.cache.get()
-        if cached_data:
+        if _has_real_prices(cached_data):
             cached_data["metadata"] = {
                 "cached": True,
                 "cache_source": "file",
@@ -333,40 +671,17 @@ class InstitutionPredictionService:
             }
             return cached_data
 
-        # 2. 检查数据库中是否有最近2小时内的数据
-        two_hours_ago = timeutil.now_naive() - timedelta(hours=2)
-        recent_views = self.db.query(InstitutionView).filter(
-            InstitutionView.updated_at >= two_hours_ago
-        ).all()
-
-        if len(recent_views) >= 4:
-            # 使用数据库缓存数据
-            result = {
-                "institutions": [
-                    {
-                        "name": v.institution_name,
-                        "logo": v.logo or self._get_logo(v.institution_name),
-                        "rating": v.rating,
-                        "target_price": v.target_price,
-                        "timeframe": v.timeframe,
-                        "reasoning": v.reasoning,
-                        "key_points": v.key_points or []
-                    }
-                    for v in recent_views[:4]
-                ],
-                "analysis_summary": "基于最新市场数据的机构预测",
-                # 用项目时区的当前时间，而不是 `updated_at` ——
-                # 那一列是数据库的 `func.now()`（库服务器时间）生成的，
-                # 容器里通常是 UTC，展示给用户会差 8 小时（红线 5）。
-                "last_updated": timeutil.now_str(),
-                "metadata": {
-                    "cached": True,
-                    "cache_source": "database",
-                    "generated_at": timeutil.now_iso()
-                }
+        # 2. 从数据库组装四家规范行（不再要求「2 小时内更新」）
+        result = self._assemble_from_database(
+            metadata={
+                "cached": True,
+                "cache_source": "database",
+                "generated_at": timeutil.now_iso()
             }
-            # 更新文件缓存
-            self.cache.set(result)
+        )
+        if result["institutions"]:
+            if _has_real_prices(result):
+                self.cache.set(result)
             return result
 
         # 3. 无缓存时，返回默认数据并触发后台更新
@@ -384,7 +699,92 @@ class InstitutionPredictionService:
         self._trigger_background_analysis()
         return default_data
 
-    _ANALYSIS_KEY = "institution_predictions"
+    def _assemble_from_database(
+        self,
+        metadata: Dict[str, Any],
+        llm_summary: Optional[str] = None,
+        db: Optional[Session] = None,
+    ) -> Dict[str, Any]:
+        """按机构注册表顺序，从四家规范行组装响应。
+
+        - 只读规范行：历史遗留的别名行（`Goldman Sachs` 这类）忽略；
+        - `stale_days` 在这里用 timeutil 计算（红线 5：时间只走一个时区）；
+        - 窗口内没有新记录时，摘要由服务端确定性地生成，不让模型编「刚刚更新」。
+        """
+        session = db or self.db
+        window_days = self.analyzer.lookback_days
+        today = timeutil.today()
+
+        rows = session.query(InstitutionView).filter(
+            InstitutionView.institution_name.in_(CANONICAL_NAMES)
+        ).all()
+        by_name = {row.institution_name: row for row in rows}
+
+        institutions: List[Dict[str, Any]] = []
+        has_any_price = False
+        has_fresh = False
+
+        for inst in INSTITUTIONS:
+            row = by_name.get(inst.name)
+            if row is None:
+                continue
+
+            stale_days: Optional[int] = None
+            if row.as_of_date is not None:
+                stale_days = max(0, (today - row.as_of_date).days)
+                if row.target_price is not None:
+                    has_any_price = True
+                    if stale_days <= window_days:
+                        has_fresh = True
+
+            institutions.append(
+                {
+                    "name": inst.name,
+                    "logo": row.logo or inst.logo,
+                    "rating": row.rating or "neutral",
+                    "target_price": row.target_price,
+                    "timeframe": row.timeframe or "",
+                    "reasoning": row.reasoning or "",
+                    "key_points": row.key_points or [],
+                    "as_of_date": row.as_of_date.isoformat() if row.as_of_date else None,
+                    "stale_days": stale_days,
+                    "source": row.source,
+                }
+            )
+
+        if not institutions:
+            return {
+                "institutions": [],
+                "analysis_summary": "",
+                "last_updated": timeutil.now_str(),
+                "metadata": metadata,
+            }
+
+        if not has_any_price:
+            summary = (
+                f"最近 {window_days} 天内没有找到任何可核实的机构目标价；"
+                "本表只显示四家机构的跟踪状态，没有数字可展示。"
+            )
+        elif has_fresh:
+            summary = (llm_summary or "").strip() or (
+                f"最近 {window_days} 天内出现了新的机构目标价；"
+                "下表为各机构最近一次可核实的记录（含日期）。"
+            )
+        else:
+            summary = (
+                f"最近 {window_days} 天新闻中未出现新的机构目标价；"
+                "下表为各机构最近一次可核实的记录（含日期）。"
+            )
+
+        return {
+            "institutions": institutions,
+            "analysis_summary": summary,
+            # 用项目时区的当前时间，而不是 `updated_at` ——
+            # 那一列是数据库的 `func.now()`（库服务器时间）生成的，
+            # 容器里通常是 UTC，展示给用户会差 8 小时（红线 5）。
+            "last_updated": timeutil.now_str(),
+            "metadata": metadata,
+        }
 
     def _trigger_background_analysis(self) -> None:
         """触发后台分析（不阻塞，同一服务同时只跑一个）。"""
@@ -404,16 +804,28 @@ class InstitutionPredictionService:
             single_flight.end(self._ANALYSIS_KEY)
 
     def _background_analysis_task(self) -> None:
-        """后台分析任务"""
+        """后台分析任务：分析 → 写库 → 从库组装 → 缓存组装后的结果。"""
         try:
             from app.database import SessionLocal
             db = SessionLocal()
             try:
-                result = self.analyzer.analyze(db)
-                self.analyzer.save_to_database(db, result)
-                # 更新文件缓存
-                self.cache.set(result)
-                logger.info(f"[InstitutionPrediction] 后台分析完成，时间: {timeutil.now()}")
+                analysis = self.analyzer.analyze(db)
+                written = self.analyzer.save_to_database(db, analysis)
+                result = self._assemble_from_database(
+                    metadata={
+                        "cached": True,
+                        "cache_source": "database",
+                        "generated_at": timeutil.now_iso(),
+                    },
+                    llm_summary=analysis.get("analysis_summary") if written else None,
+                    db=db,
+                )
+                if _has_real_prices(result):
+                    self.cache.set(result)
+                logger.info(
+                    f"[InstitutionPrediction] 后台分析完成（真实目标价 {written} 条），"
+                    f"时间: {timeutil.now()}"
+                )
             finally:
                 db.close()
         except Exception as e:
@@ -429,9 +841,18 @@ class InstitutionPredictionService:
             logger.warning("[InstitutionPrediction] 已有分析在执行，跳过本次刷新")
             return self.cache.get() or {}
         try:
-            result = self.analyzer.analyze(self.db)
-            self.analyzer.save_to_database(self.db, result)
-            self.cache.set(result)
+            analysis = self.analyzer.analyze(self.db)
+            written = self.analyzer.save_to_database(self.db, analysis)
+            result = self._assemble_from_database(
+                metadata={
+                    "cached": True,
+                    "cache_source": "database",
+                    "generated_at": timeutil.now_iso(),
+                },
+                llm_summary=analysis.get("analysis_summary") if written else None,
+            )
+            if _has_real_prices(result):
+                self.cache.set(result)
             return result
         finally:
             single_flight.end(self._ANALYSIS_KEY)
@@ -442,20 +863,6 @@ class InstitutionPredictionService:
         return await loop.run_in_executor(_executor, self.refresh_analysis_sync)
 
     def _get_logo(self, name: str) -> str:
-        """根据机构名称获取logo"""
-        logo_map = {
-            "高盛": "GS",
-            "Goldman": "GS",
-            "瑞银": "UBS",
-            "UBS": "UBS",
-            "摩根士丹利": "MS",
-            "Morgan Stanley": "MS",
-            "花旗": "C",
-            "Citi": "C"
-        }
-
-        for key, value in logo_map.items():
-            if key in name:
-                return value
-
-        return "BANK"
+        """根据机构名称获取 logo（注册表派生；认不出给 BANK）。"""
+        inst = match_institution(name)
+        return inst.logo if inst else "BANK"

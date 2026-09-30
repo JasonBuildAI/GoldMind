@@ -72,24 +72,30 @@ def test_output_is_always_one_of_the_allowed_values():
 
 @pytest.mark.integration
 def test_save_to_database_survives_a_noncompliant_rating(db_session):
-    """回归：一个不合规的 rating 不能让整批机构观点都存不进去。"""
+    """回归：一个不合规的 rating 不能让整批机构观点都存不进去。
+
+    名称同时覆盖别名归一：`Goldman Sachs` 必须写进规范行
+    `高盛 (Goldman Sachs)`，而不是新开一行别名行。
+    """
     from app.models.analysis import InstitutionView
     from app.services.institution_prediction_service import InstitutionPredictionAnalyzer
 
     InstitutionPredictionAnalyzer().save_to_database(db_session, {
+        "data_source": "news_scan",
         "institutions": [
-            {"name": "合规机构", "rating": "bullish", "target_price": 3000},
-            {"name": "乱来机构", "rating": "看多黄金", "target_price": 3100},
-            {"name": "缺字段机构", "target_price": 3200},
+            {"name": "Goldman Sachs", "rating": "bullish", "target_price": 3000},
+            {"name": "瑞银 (UBS)", "rating": "看多黄金", "target_price": 3100},
+            {"name": "摩根士丹利 (Morgan Stanley)", "target_price": 3200},
         ]
     })
 
     rows = {r.institution_name: r for r in db_session.query(InstitutionView).all()}
 
-    assert set(rows) == {"合规机构", "乱来机构", "缺字段机构"}, "整批都应当写入"
-    assert rows["合规机构"].rating == "bullish"
-    assert rows["乱来机构"].rating == "neutral", "认不出的评级应退回 neutral"
-    assert rows["缺字段机构"].rating == "neutral"
+    assert "Goldman Sachs" not in rows, "别名不得新开一行 —— 必须写进规范行"
+    assert rows["高盛 (Goldman Sachs)"].rating == "bullish"
+    assert rows["高盛 (Goldman Sachs)"].target_price == 3000
+    assert rows["瑞银 (UBS)"].rating == "neutral", "认不出的评级应退回 neutral"
+    assert rows["摩根士丹利 (Morgan Stanley)"].rating == "neutral"
 
 
 @pytest.mark.integration
@@ -100,8 +106,8 @@ def test_saved_ratings_are_all_readable(db_session):
 
     InstitutionPredictionAnalyzer().save_to_database(db_session, {
         "institutions": [
-            {"name": "A", "rating": "BULLISH", "target_price": 1},
-            {"name": "B", "rating": "看跌", "target_price": 2},
+            {"name": "高盛 (Goldman Sachs)", "rating": "BULLISH", "target_price": 1},
+            {"name": "瑞银 (UBS)", "rating": "看跌", "target_price": 2},
         ]
     })
 

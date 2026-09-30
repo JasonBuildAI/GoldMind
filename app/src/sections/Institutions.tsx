@@ -140,7 +140,7 @@ export default function Institutions() {
     <Section
       id="institutions"
       title="机构观点"
-      intro="机构评级、目标价与时间框架由模型基于公开新闻整理，可能滞后或不准确；目标价是机构给出的点位，不是本页的价格预测。"
+      intro="机构观点取每家机构最近一次可核实的预测，可能滞后 —— 表内标注预测日期，超过 30 天会注明滞后天数；目标价是机构给出的点位，不是本页的价格预测。"
       actions={refreshButton}
     >
       {body}

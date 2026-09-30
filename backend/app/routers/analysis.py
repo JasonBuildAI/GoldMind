@@ -259,7 +259,8 @@ async def get_institution_predictions_analysis(
     """
     获取AI分析的机构预测
 
-    基于24小时内的新闻资讯，使用LangChain Agent抓取四大机构最新预测
+    扫描最近 INSTITUTION_NEWS_LOOKBACK_DAYS 天（默认 30 天）的新闻，
+    提取四大机构**最近一次可核实**的预测（可以是窗口内较早发布的）
 
     Args:
         refresh: 是否强制刷新（重新分析），默认使用缓存
@@ -280,7 +281,7 @@ async def refresh_institution_predictions(db: Session = Depends(get_db)):
     """
     手动刷新机构预测分析
 
-    强制重新获取24小时内新闻并使用AI抓取机构最新预测
+    强制重新扫描新闻窗口并提取机构预测；空目标价不会覆盖已有真实记录
     """
     from app.services.institution_prediction_service import InstitutionPredictionService
 

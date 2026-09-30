@@ -22,6 +22,9 @@ const RESPONSE = {
       timeframe: '2026年底',
       reasoning: '接口返回的理由',
       key_points: ['要点甲', '要点乙'],
+      as_of_date: '2026-02-08',
+      stale_days: 235,
+      source: 'legacy',
     },
   ],
   analysis_summary: '机构总结',
@@ -126,5 +129,54 @@ describe('Institutions', () => {
 
     await screen.findByTestId('institutions-table')
     expect(screen.queryByTestId('institutions-placeholder')).not.toBeInTheDocument()
+  })
+
+  it('显示预测日期，且「已滞后 N 天」只在超过 30 天时出现', async () => {
+    mocked.getInstitutionPredictions.mockResolvedValue({
+      ...RESPONSE,
+      institutions: [
+        { ...RESPONSE.institutions[0], as_of_date: '2026-02-08', stale_days: 235 },
+        { ...RESPONSE.institutions[0], name: '第二家机构', as_of_date: '2026-09-29', stale_days: 2 },
+        { ...RESPONSE.institutions[0], name: '边界机构', as_of_date: '2026-09-01', stale_days: 30 },
+      ],
+    })
+
+    render(<Institutions />)
+
+    const table = within(await screen.findByTestId('institutions-table'))
+    expect(table.getByText(/2026-02-08/)).toBeInTheDocument()
+    expect(table.getByText(/已滞后 235 天/)).toBeInTheDocument()
+    expect(table.getByText(/2026-09-29/)).toBeInTheDocument()
+    expect(table.queryByText(/已滞后 2 天/)).not.toBeInTheDocument()
+    expect(table.queryByText(/已滞后 30 天/)).not.toBeInTheDocument()
+  })
+
+  it('没有预测日期的占位行显示「—」，且不标滞后', async () => {
+    mocked.getInstitutionPredictions.mockResolvedValue({
+      ...RESPONSE,
+      institutions: [
+        {
+          ...RESPONSE.institutions[0],
+          as_of_date: null,
+          stale_days: null,
+          reasoning: '暂无最新预测',
+        },
+      ],
+    })
+
+    render(<Institutions />)
+
+    const table = within(await screen.findByTestId('institutions-table'))
+    expect(table.getByText('—')).toBeInTheDocument()
+    expect(table.queryByText(/已滞后/)).not.toBeInTheDocument()
+  })
+
+  it('文案说明机构观点是「最近一次可核实的预测，可能滞后」', async () => {
+    mocked.getInstitutionPredictions.mockResolvedValue(RESPONSE)
+
+    render(<Institutions />)
+
+    expect(await screen.findByText(/最近一次可核实的预测/)).toBeInTheDocument()
+    expect(screen.getByText(/可能滞后/)).toBeInTheDocument()
   })
 })
