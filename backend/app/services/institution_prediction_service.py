@@ -75,78 +75,33 @@ class InstitutionPredictionAnalyzer:
 4. **核心理由** - 一句话总结该机构的主要观点
 5. **关键要点** - 4个支撑该预测的核心论据
 
-请严格按照以下JSON格式返回分析结果：
+请严格按照以下 JSON 结构返回（下面是**结构骨架**，方括号里是字段含义；
+不要照抄任何数字，target_price 必须是你从检索到的内容里得到的真实数字）：
 
 {{
     "institutions": [
         {{
-            "name": "高盛 (Goldman Sachs)",
-            "logo": "GS",
-            "rating": "bullish",
-            "target_price": 5400,
-            "timeframe": "2026年底",
-            "reasoning": "坚定看涨，将目标价从4900美元上调至5400美元",
-            "key_points": [
-                "私人投资者与央行需求持续增长",
-                "结构性买盘（央行、ETF）提供坚实支撑",
-                "预计2026年央行月均购金70吨",
-                "美联储降息周期将推动金价上行"
-            ]
-        }},
-        {{
-            "name": "瑞银 (UBS)",
-            "logo": "UBS",
-            "rating": "bullish",
-            "target_price": 5000,
-            "timeframe": "2026年9月",
-            "reasoning": "预计上半年触及5000美元，长期看好",
-            "key_points": [
-                "去美元化需求支撑长期金价",
-                "地缘政治不确定性持续",
-                "上半年或触及5000美元关口",
-                "美联储降息趋缓后可能小幅回落"
-            ]
-        }},
-        {{
-            "name": "摩根士丹利 (Morgan Stanley)",
-            "logo": "MS",
-            "rating": "neutral",
-            "target_price": 4500,
-            "timeframe": "2026年中",
-            "reasoning": "预计降息推迟至年中，短期震荡",
-            "key_points": [
-                "美国强劲消费推迟降息时点",
-                "预计6月和9月降息",
-                "关税传导效应支撑通胀",
-                "上半年美元可能维持强势"
-            ]
-        }},
-        {{
-            "name": "花旗 (Citi)",
-            "logo": "C",
-            "rating": "bearish",
-            "target_price": 2700,
-            "timeframe": "长期展望",
-            "reasoning": "若美国经济回到'金发女孩'状态，金价可能回落",
-            "key_points": [
-                "2026年美国经济或回归适中成长",
-                "避险需求将随之减弱",
-                "基准预测与牛市观点相反",
-                "短期曾上调目标至4000美元"
-            ]
+            "name": "机构全名，如 高盛 (Goldman Sachs)",
+            "logo": "机构缩写，如 GS",
+            "rating": "bullish 或 bearish 或 neutral",
+            "target_price": 该机构的目标价（美元，数字）,
+            "timeframe": "该目标价对应的时间框架",
+            "reasoning": "该机构核心理由（一句话）",
+            "key_points": ["要点1", "要点2", "要点3", "要点4"]
         }}
     ],
-    "analysis_summary": "基于24小时新闻的机构预测汇总",
+    "analysis_summary": "四家机构预测的汇总（一句话）",
     "last_updated": "{current_time}"
 }}
 
 注意事项：
-1. 必须返回有效的JSON格式
-2. rating只能是：bullish, bearish, neutral
-3. target_price必须是数字（美元）
-4. 如果新闻中没有某家机构的最新预测，请基于该机构历史观点和市场常识合理推断
-5. key_points数组必须包含4个具体要点
-6. 确保四家机构都有数据
+1. 必须返回有效 JSON
+2. rating 只能是：bullish, bearish, neutral
+3. target_price 必须是数字（美元）
+4. **如果检索内容里没有某家机构的最新预测，就把该机构的 target_price 置为 null、
+   reasoning 写「暂无最新预测」，不要凭印象替它编一个目标价。**
+   编造的机构目标价比缺一条更糟 —— 见 docs/00-产品方向.md 第四节。
+5. key_points 数组必须包含 4 个具体要点
 """
 
     @property
@@ -272,68 +227,22 @@ class InstitutionPredictionAnalyzer:
             return self.get_default_predictions()
 
     def get_default_predictions(self) -> Dict[str, Any]:
-        """获取默认机构预测（当LLM调用失败时使用）"""
+        """分析不可用时返回的结构 —— **机构列表为空**。
+
+        这里以前返回高盛 5400 / 瑞银 5000 / 摩根士丹利 4500 / 花旗 2700 这组
+        写死的目标价，还配上了「将目标价从4900美元上调至5400美元」
+        「预计2026年央行月均购金70吨」之类的具体说法。
+
+        产品方向第四节第 1 条明确写着：联网搜索不可用时「只能回退到数据库与
+        RSS 新闻，**不得**凭模型印象编造机构目标价」。写死的常量同样是编造，
+        而且看起来比模型编的更像真的。
+
+        现在返回空列表 + 状态，前端据此显示「正在分析中」或「暂不可用」。
+        """
         return {
-            "institutions": [
-                {
-                    "name": "高盛 (Goldman Sachs)",
-                    "logo": "GS",
-                    "rating": "bullish",
-                    "target_price": 5400,
-                    "timeframe": "2026年底",
-                    "reasoning": "坚定看涨，将目标价从4900美元上调至5400美元",
-                    "key_points": [
-                        "私人投资者与央行需求持续增长",
-                        "结构性买盘（央行、ETF）提供坚实支撑",
-                        "预计2026年央行月均购金70吨",
-                        "美联储降息周期将推动金价上行"
-                    ]
-                },
-                {
-                    "name": "瑞银 (UBS)",
-                    "logo": "UBS",
-                    "rating": "bullish",
-                    "target_price": 5000,
-                    "timeframe": "2026年9月",
-                    "reasoning": "预计上半年触及5000美元，长期看好",
-                    "key_points": [
-                        "去美元化需求支撑长期金价",
-                        "地缘政治不确定性持续",
-                        "上半年或触及5000美元关口",
-                        "美联储降息趋缓后可能小幅回落"
-                    ]
-                },
-                {
-                    "name": "摩根士丹利 (Morgan Stanley)",
-                    "logo": "MS",
-                    "rating": "neutral",
-                    "target_price": 4500,
-                    "timeframe": "2026年中",
-                    "reasoning": "预计降息推迟至年中，短期震荡",
-                    "key_points": [
-                        "美国强劲消费推迟降息时点",
-                        "预计6月和9月降息",
-                        "关税传导效应支撑通胀",
-                        "上半年美元可能维持强势"
-                    ]
-                },
-                {
-                    "name": "花旗 (Citi)",
-                    "logo": "C",
-                    "rating": "bearish",
-                    "target_price": 2700,
-                    "timeframe": "长期展望",
-                    "reasoning": "若美国经济回到'金发女孩'状态，金价可能回落",
-                    "key_points": [
-                        "2026年美国经济或回归适中成长",
-                        "避险需求将随之减弱",
-                        "基准预测与牛市观点相反",
-                        "短期曾上调目标至4000美元"
-                    ]
-                }
-            ],
-            "analysis_summary": "基于当前市场状况的机构预测汇总",
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "institutions": [],
+            "analysis_summary": "",
+            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
     def save_to_database(self, db: Session, analysis_result: Dict[str, Any]) -> None:

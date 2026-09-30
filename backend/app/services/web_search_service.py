@@ -163,16 +163,16 @@ class WebSearchService:
 {
     "institutions": [
         {
-            "name": "高盛 (Goldman Sachs)",
-            "logo": "GS",
-            "rating": "bullish",
-            "target_price": 5400,
-            "timeframe": "2026年底",
-            "reasoning": "...",
-            "key_points": ["...", "...", "...", "..."]
+            "name": "机构全名",
+            "logo": "机构缩写",
+            "rating": "bullish 或 bearish 或 neutral",
+            "target_price": 目标价（美元，数字）,
+            "timeframe": "时间框架",
+            "reasoning": "核心理由（一句话）",
+            "key_points": ["要点1", "要点2", "要点3", "要点4"]
         }
     ],
-    "analysis_summary": "基于实时搜索的机构预测汇总"
+    "analysis_summary": "机构预测汇总（一句话）"
 }
 
 注意：

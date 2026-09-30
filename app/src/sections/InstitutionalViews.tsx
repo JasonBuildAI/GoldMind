@@ -28,9 +28,12 @@ export default function InstitutionalViews() {
 
       const response = await institutionApi.getInstitutionPredictions(forceRefresh);
 
+      // 先记占位标记：后端在「正在分析」时返回的是空列表，
+      // 放在长度判断里面就永远设不上，页面会把「正在分析」错报成「暂不可用」。
+      setIsPlaceholderData(isPlaceholder(response.metadata));
+
       if (response.institutions && response.institutions.length > 0) {
         setInstitutions(response.institutions);
-        setIsPlaceholderData(isPlaceholder(response.metadata));
         setLastUpdated(response.last_updated);
       }
     } catch (err: any) {
@@ -127,13 +130,25 @@ export default function InstitutionalViews() {
       <section className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="card-glass rounded-2xl p-12 text-center">
-            <p className="text-gray-300 font-medium mb-2">机构观点暂不可用</p>
-            <p className="text-gray-500 text-sm max-w-xl mx-auto">
-              没能取到机构观点。这里不显示任何目标价 ——
+            {isPlaceholderData ? (
+              <>
+                <p className="text-gray-300 font-medium mb-2">机构观点正在分析中</p>
+                <p className="text-gray-500 text-sm max-w-xl mx-auto">
+                  后端已开始分析，首次通常需要 1-2 分钟。这里不会先摆一份内置内容 ——
+                  编造的结论与真实分析长得一样，用户分不出来。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-300 font-medium mb-2">机构观点暂不可用</p>
+                <p className="text-gray-500 text-sm max-w-xl mx-auto">
+                  没能取到机构观点。这里不显示任何目标价 ——
               编造机构目标价比留空更糟。
-            </p>
-            {error && (
-              <p className="text-amber-400 text-sm mt-4">{error}</p>
+                </p>
+                {error && (
+                  <p className="text-amber-400 text-sm mt-4">{error}</p>
+                )}
+              </>
             )}
           </div>
         </div>

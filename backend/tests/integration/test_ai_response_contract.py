@@ -103,7 +103,12 @@ def test_institution_target_price_is_numeric(client):
     body = client.get("/api/gold/institution-predictions-ai?refresh=false").json()
 
     institutions = body["institutions"]
-    assert institutions, "机构预测不该是空的（至少要有默认内容）"
+
+    # 缓存为空时后端返回**空列表** + status=analyzing：产品方向第四节明确禁止
+    # 编造机构目标价，所以这里没有「默认内容」可断言，只校验契约本身。
+    if not institutions:
+        assert body["metadata"]["status"] == "analyzing"
+        return
 
     for item in institutions:
         price = item.get("target_price")

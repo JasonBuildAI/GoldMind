@@ -235,7 +235,10 @@ def test_full_user_journey(client, seed_gold_prices, seed_news, smart_llm):
     # 4a. 缓存为空时 GET 返回内置默认因子，且不调用 LLM
     first_view = client.get("/api/gold/bullish-factors-ai").json()
     assert first_view["metadata"]["status"] == "analyzing"
-    assert first_view["bullish_factors"][0]["id"] == "fed-policy"
+    # 缓存为空时**不返回任何内容** —— 编造的因子与真实分析结构一样，用户分不出来。
+    # 项目红线：「不为了好看而展示编造的数据 —— 宁可显示「数据不可用」」。
+    assert first_view["bullish_factors"] == []
+    assert first_view["analysis_summary"] == ""
     assert smart_llm.calls == []
 
     # 4b. 用户点「刷新」→ 真正跑一次分析
@@ -307,7 +310,7 @@ def test_cached_read_after_refresh_is_consistent(client, seed_gold_prices, smart
 
 
 @pytest.mark.e2e
-def test_get_without_cache_returns_defaults_not_analysis(client, seed_gold_prices, smart_llm):
+def test_get_without_cache_returns_no_content_and_a_status(client, seed_gold_prices, smart_llm):
     """诚实记录一个产品行为：缓存为空时，GET 返回的是**硬编码默认因子**，
     而不是真实分析结果 —— 真实分析只在 /refresh 或后台任务里发生。
 
@@ -320,8 +323,11 @@ def test_get_without_cache_returns_defaults_not_analysis(client, seed_gold_price
 
     assert smart_llm.calls == [], "缓存为空时 GET 不应触发 LLM 调用"
     assert body["metadata"]["status"] == "analyzing"
-    assert body["bullish_factors"][0]["id"] == "fed-policy"  # 内置默认因子
-    assert "正在分析" in body["analysis_summary"]
+    # 不返回内置因子，也不返回写死的总结文案
+    assert body["bullish_factors"] == []
+    assert body["analysis_summary"] == ""
+    # 前端靠 metadata.status 显示「正在分析中」
+    assert "进行中" in body["metadata"]["message"]
 
 
 @pytest.mark.e2e

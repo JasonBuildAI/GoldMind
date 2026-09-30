@@ -190,11 +190,11 @@ class BearishFactorAnalyzer:
                 "ytd_change": round(ytd_change, 2)
             }
 
-        return {
-            "current_price": 2800.00,
-            "price_change": 0.5,
-            "ytd_change": 15.0
-        }
+        # 没有行情数据时返回 None。原实现返回 2800.00 / +0.5% / +15.0%
+        # 这组写死的数字，它们会被拼进 prompt 当作「当前市场数据」，
+        # 模型很可能直接引用 —— 等于用编造的行情喂出编造的分析。
+        logger.warning(f"[{self.__class__.__name__}] 数据库里没有可用金价，prompt 中标注为暂无数据")
+        return None
 
     def analyze(self, db: Session) -> Dict[str, Any]:
         """执行分析 - 使用MiMo 联网搜索"""
@@ -298,9 +298,11 @@ class BearishFactorAnalyzer:
         # 3. 构建prompt并调用LLM
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         prompt = self.prompt_template.format(
-            current_price=gold_data["current_price"],
-            price_change=gold_data["price_change"],
-            ytd_change=gold_data["ytd_change"],
+            # gold_data 可能为 None（数据库里没有金价）—— 那时如实写「暂无数据」，
+            # 而不是解引用一个编造的默认值
+            current_price=gold_data["current_price"] if gold_data else "暂无数据",
+            price_change=gold_data["price_change"] if gold_data else "暂无数据",
+            ytd_change=gold_data["ytd_change"] if gold_data else "暂无数据",
             news_content=news_content,
             current_time=current_time
         )
@@ -539,16 +541,20 @@ class BearishFactorService:
         return default_data
 
     def _get_default_response(self) -> Dict[str, Any]:
-        """获取默认响应（用于无缓存时快速返回）"""
+        """无缓存时立刻返回的响应 —— **内容为空**。
+
+        同 BullishFactorService：这里以前返回写死的看跌因子（还带着
+        「2025年10月金价曾单日暴跌6%」这类具体历史数字），属于编造数据。
+        """
         return {
-            "bearish_factors": self.analyzer._get_default_factors()["bearish_factors"],
-            "analysis_summary": "正在分析最新数据，请稍后刷新查看AI分析结果",
+            "bearish_factors": [],
+            "analysis_summary": "",
             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "metadata": {
                 "cached": False,
                 "status": "analyzing",
-                "message": "AI分析进行中，首次加载可能需要1-2分钟"
-            }
+                "message": "AI分析进行中，首次加载可能需要1-2分钟",
+            },
         }
 
     _ANALYSIS_KEY = "bearish_factors"

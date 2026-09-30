@@ -136,6 +136,16 @@ export default function Summary() {
   const comprehensiveJudgment = summary?.comprehensive_judgment || null;
   const coreView = summary?.core_view || '';
 
+  // 有没有真内容：后端在「正在分析」时返回空列表 + status=analyzing
+  const hasSummaryContent = Boolean(
+    summary &&
+      (summaryData.some((s) => s.points.length > 0) ||
+        priceTargets.length > 0 ||
+        coreView ||
+        (comprehensiveJudgment &&
+          Object.keys(comprehensiveJudgment).length > 0)),
+  );
+
   const getTypeStyles = (type: string) => {
     switch (type) {
       case 'bullish':
@@ -255,14 +265,28 @@ export default function Summary() {
           )}
         </div>
 
-        {/* 无数据状态：不摆任何编造的结论 */}
-        {!loading && !summary && (
+        {/* 无内容状态：不摆任何编造的结论。
+            「正在分析」时后端返回的是空内容 + status=analyzing，所以这里
+            既要看响应是否存在，也要看里面有没有真东西。 */}
+        {!loading && !hasSummaryContent && (
           <div data-testid="summary-unavailable" className="card-glass rounded-2xl p-12 text-center">
-            <p className="text-gray-300 font-medium mb-2">市场总结暂不可用</p>
-            <p className="text-gray-500 text-sm max-w-xl mx-auto">
-              没能取到分析结果。这里不显示任何内置文案 ——
-              与其摆一段编造的综合判断，不如如实说明取不到。
-            </p>
+            {isPlaceholderData ? (
+              <>
+                <p className="text-gray-300 font-medium mb-2">市场总结正在分析中</p>
+                <p className="text-gray-500 text-sm max-w-xl mx-auto">
+                  后端已开始分析，首次通常需要 1-2 分钟。这里不会先摆一段内置文案 ——
+                  编造的结论与真实分析长得一样，用户分不出来。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-300 font-medium mb-2">市场总结暂不可用</p>
+                <p className="text-gray-500 text-sm max-w-xl mx-auto">
+                  没能取到分析结果。这里不显示任何内置文案 ——
+                  与其摆一段编造的综合判断，不如如实说明取不到。
+                </p>
+              </>
+            )}
           </div>
         )}
 

@@ -55,9 +55,12 @@ export default function BullishFactors() {
 
       const response = await analysisApi.getBullishFactors(forceRefresh);
 
+      // 先记占位标记：后端在「正在分析」时返回的是空列表，
+      // 放在长度判断里面就永远设不上，页面会把「正在分析」错报成「暂不可用」。
+      setIsPlaceholderData(isPlaceholder(response.metadata));
+
       if (response.bullish_factors && response.bullish_factors.length > 0) {
         setFactors(response.bullish_factors);
-        setIsPlaceholderData(isPlaceholder(response.metadata));
         setSummary(response.analysis_summary || '');
         setLastUpdated(response.last_updated);
       }
@@ -132,14 +135,45 @@ export default function BullishFactors() {
       <section data-testid="bullish-factors" className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="card-glass rounded-2xl p-12 text-center">
-            <p className="text-gray-300 font-medium mb-2">看涨因子暂不可用</p>
-            <p className="text-gray-500 text-sm max-w-xl mx-auto">
-              没能取到分析结果。这里不显示任何内置文案 ——
+            {isPlaceholderData ? (
+              <>
+                <p className="text-gray-300 font-medium mb-2">看涨因子正在分析中</p>
+                <p className="text-gray-500 text-sm max-w-xl mx-auto">
+                  后端已开始分析，首次通常需要 1-2 分钟。这里不会先摆一份内置内容 ——
+                  编造的结论与真实分析长得一样，用户分不出来。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-300 font-medium mb-2">看涨因子暂不可用</p>
+                <p className="text-gray-500 text-sm max-w-xl mx-auto">
+                  没能取到分析结果。这里不显示任何内置文案 ——
               与其摆一段编造的结论，不如如实说明取不到。
-            </p>
-            {error && (
-              <p className="text-amber-400 text-sm mt-4">{error}</p>
+                </p>
+                {error && (
+                  <p className="text-amber-400 text-sm mt-4">{error}</p>
+                )}
+              </>
             )}
+            {/* 让用户能主动触发一次分析 —— 也只有在点了之后才会真的调 LLM */}
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-sm transition-colors disabled:opacity-50"
+            >
+              {refreshing ? (
+                <>
+                  <Brain className="w-4 h-4 animate-pulse" />
+                  <span>Agent分析中...</span>
+                </>
+              ) : (
+                <>
+                  <Bot className="w-4 h-4" />
+                  <span>调用Agent重新分析</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </section>

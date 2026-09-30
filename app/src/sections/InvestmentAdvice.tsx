@@ -239,19 +239,40 @@ export default function InvestmentAdvice() {
   const corePrinciples = advice?.core_principles || [];
   const marketAssessment = advice?.market_assessment;
 
-  // 没有数据时明确说「不可用」，而不是拿内置策略冒充分析结论
-  if (!loading && !advice) {
+  // 后端在「正在分析」时会返回**空内容 + status=analyzing**（不编造策略），
+  // 所以这里判的是「有没有真内容」，而不是「响应是不是 null」。
+  const hasContent = Boolean(
+    advice &&
+      (advice.strategies?.length ||
+        advice.core_principles?.length ||
+        (advice.market_assessment && Object.keys(advice.market_assessment).length)),
+  );
+
+  // 没有内容时明确说「正在分析」或「不可用」，而不是拿内置策略冒充分析结论
+  if (!loading && !hasContent) {
     return (
       <section className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="card-glass rounded-2xl p-12 text-center">
-            <p className="text-gray-300 font-medium mb-2">投资建议暂不可用</p>
-            <p className="text-gray-500 text-sm max-w-xl mx-auto">
-              没能取到分析结果。这里不显示任何内置策略 ——
-              与其摆一套编造的建议，不如如实说明取不到。
-            </p>
-            {error && (
-              <p className="text-amber-400 text-sm mt-4">{error}</p>
+            {isPlaceholderData ? (
+              <>
+                <p className="text-gray-300 font-medium mb-2">投资建议正在分析中</p>
+                <p className="text-gray-500 text-sm max-w-xl mx-auto">
+                  后端已开始分析，首次通常需要 1-2 分钟。这里不会先摆一套内置策略 ——
+                  编造的建议与真实分析长得一样，用户分不出来。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-300 font-medium mb-2">投资建议暂不可用</p>
+                <p className="text-gray-500 text-sm max-w-xl mx-auto">
+                  没能取到分析结果。这里不显示任何内置策略 ——
+                  与其摆一套编造的建议，不如如实说明取不到。
+                </p>
+                {error && (
+                  <p className="text-amber-400 text-sm mt-4">{error}</p>
+                )}
+              </>
             )}
           </div>
         </div>

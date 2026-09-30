@@ -214,43 +214,22 @@ class MarketSummaryAnalyzer:
             return self._get_default_analysis()
 
     def _get_default_analysis(self) -> Dict[str, Any]:
-        """获取默认分析结果"""
+        """分析不可用时返回的结构 —— **内容为空**。
+
+        这里以前返回写死的机构目标价（高盛 5400 / 瑞银 5000 / 摩根士丹利 4500）、
+        一个凭空的 current_price=5067，以及一整段综合判断文案。
+        """
         return {
-            "core_bullish_logic": [
-                "美联储降息周期降低持有黄金的机会成本",
-                "全球央行持续购金，去美元化趋势加速",
-                "美元信用动摇，美债规模持续扩大",
-                "地缘政治风险支撑避险需求",
-                "供需失衡，矿产金产量增长有限"
-            ],
-            "main_risks": [
-                "美联储升息预期可能推迟降息时点",
-                "高价位积累大量获利盘，回调压力增加",
-                "地缘风险缓和可能导致避险溢价回落",
-                "美元阶段性走强压制金价",
-                "全球经济改善可能减弱避险需求"
-            ],
-            "market_consensus": [
-                "多数机构看好长期走势",
-                "短期可能因政策预期变化而震荡",
-                "结构性买盘为金价提供支撑",
-                "2026年或呈现高位震荡格局"
-            ],
-            "institution_targets": [
-                {"institution": "高盛", "target": 5400, "probability": "高", "timeframe": "2026年底"},
-                {"institution": "瑞银", "target": 5000, "probability": "高", "timeframe": "2026年9月"},
-                {"institution": "摩根士丹利", "target": 4500, "probability": "中", "timeframe": "2026年中"}
-            ],
-            "current_price": 5067,
-            "comprehensive_judgment": {
-                "bullish_summary": "从基本面来看，黄金上涨的逻辑较为坚实。美联储降息预期、全球央行购金等因素形成支撑。",
-                "bearish_summary": "短期波动风险不容忽视。政策预期变化、获利了结压力可能导致金价回调。",
-                "neutral_summary": "建议采用分批建仓策略，控制仓位在总资产15%以内，做好风险管理。"
-            },
-            "core_view": "黄金处于长期牛市通道，2026年大概率维持高位震荡偏强格局。",
-            "investment_recommendation": "建议投资者根据自身风险偏好，适度配置黄金资产。",
-            "confidence_level": "中",
-            "time_horizon": "中期"
+            "core_bullish_logic": [],
+            "main_risks": [],
+            "market_consensus": [],
+            "institution_targets": [],
+            "current_price": None,
+            "comprehensive_judgment": {},
+            "core_view": "",
+            "investment_recommendation": "",
+            "confidence_level": "",
+            "time_horizon": "",
         }
 
 
@@ -269,10 +248,12 @@ class MarketSummaryService:
             gold_service = GoldService(self.db)
             stats = gold_service.get_statistics()
             if stats:
-                return stats.get("current_price", 5067)
+                # 不要在这里兜一个写死的数字：取不到就该是 None，
+                # 否则 5067 会被当成真实金价写进 prompt 与响应。
+                return stats.get("current_price")
         except Exception as e:
             logger.error(f"[MarketSummary] 获取实时价格失败: {e}")
-        return 5067
+        return None
 
     def get_market_summary(
         self,
@@ -341,9 +322,18 @@ class MarketSummaryService:
             }
             return cached_data
 
-        # 2. 无缓存时，返回默认数据并触发后台分析
-        default_data = self._get_default_response()
-        # 用实时价格覆盖默认价格
+        # 2. 无缓存时，返回空内容 + 状态并触发后台分析。
+        #
+        # 这里以前返回一份写死的综合判断（还带着机构目标价与 current_price=5067），
+        # 而那份内容与 MarketSummaryAnalyzer._get_default_analysis() 是**同一批
+        # 数据的两份拷贝** —— 改一处忘一处就会不一致。现在只有一处定义，且为空。
+        default_data = self.analyzer._get_default_analysis()
+        default_data["metadata"] = {
+            "cached": False,
+            "status": "analyzing",
+            "message": "AI分析进行中，首次加载可能需要1-2分钟",
+        }
+        # 实时价是真实取到的，可以填进去（取不到时 realtime_price 为 None）
         default_data["current_price"] = realtime_price
 
         # 触发后台分析
@@ -357,50 +347,6 @@ class MarketSummaryService:
 
         return default_data
 
-    def _get_default_response(self) -> Dict[str, Any]:
-        """获取默认响应"""
-        return {
-            "core_bullish_logic": [
-                "美联储降息周期降低持有黄金的机会成本",
-                "全球央行持续购金，去美元化趋势加速",
-                "美元信用动摇，美债规模持续扩大",
-                "地缘政治风险支撑避险需求",
-                "供需失衡，矿产金产量增长有限"
-            ],
-            "main_risks": [
-                "美联储升息预期可能推迟降息时点",
-                "高价位积累大量获利盘，回调压力增加",
-                "地缘风险缓和可能导致避险溢价回落",
-                "美元阶段性走强压制金价",
-                "全球经济改善可能减弱避险需求"
-            ],
-            "market_consensus": [
-                "多数机构看好长期走势",
-                "短期可能因政策预期变化而震荡",
-                "结构性买盘为金价提供支撑",
-                "2026年或呈现高位震荡格局"
-            ],
-            "institution_targets": [
-                {"institution": "高盛", "target": 5400, "probability": "高", "timeframe": "2026年底"},
-                {"institution": "瑞银", "target": 5000, "probability": "高", "timeframe": "2026年9月"},
-                {"institution": "摩根士丹利", "target": 4500, "probability": "中", "timeframe": "2026年中"}
-            ],
-            "current_price": 5067,
-            "comprehensive_judgment": {
-                "bullish_summary": "从基本面来看，黄金上涨的逻辑较为坚实。美联储降息预期、全球央行购金等因素形成支撑。",
-                "bearish_summary": "短期波动风险不容忽视。政策预期变化、获利了结压力可能导致金价回调。",
-                "neutral_summary": "建议采用分批建仓策略，控制仓位在总资产15%以内，做好风险管理。"
-            },
-            "core_view": "黄金处于长期牛市通道，2026年大概率维持高位震荡偏强格局。",
-            "investment_recommendation": "建议投资者根据自身风险偏好，适度配置黄金资产。",
-            "confidence_level": "中",
-            "time_horizon": "中期",
-            "metadata": {
-                "cached": True,
-                "cache_source": "default",
-                "generated_at": datetime.now().isoformat()
-            }
-        }
 
     _ANALYSIS_KEY = "market_summary"
 
