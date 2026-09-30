@@ -1,4 +1,4 @@
-"""看涨因子分析服务 - 优化版（支持智谱AI实时搜索）"""
+"""看涨因子分析服务 - 优化版（支持MiMo 联网搜索）"""
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -20,7 +20,7 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 
 class BullishFactorAnalyzer:
-    """使用智谱AI实时搜索分析黄金市场看涨因子"""
+    """使用MiMo 联网搜索分析黄金市场看涨因子"""
     
     def __init__(self):
         self._llm = None
@@ -189,29 +189,29 @@ class BullishFactorAnalyzer:
         }
     
     def analyze(self, db: Session) -> Dict[str, Any]:
-        """执行分析 - 使用智谱AI实时搜索"""
-        # 使用智谱AI实时搜索获取最新看涨因素
+        """执行分析 - 使用MiMo 联网搜索"""
+        # 使用MiMo 联网搜索获取最新看涨因素
         try:
-            print("[BullishFactor] 使用智谱AI实时搜索看涨因素...")
+            print("[BullishFactor] 使用MiMo 联网搜索看涨因素...")
             search_result = self._search_bullish_factors()
             
             # 检查搜索结果是否有效
             if search_result.get("bullish_factors") and len(search_result["bullish_factors"]) > 0:
                 print(f"[BullishFactor] 成功获取 {len(search_result['bullish_factors'])} 个看涨因素")
                 search_result["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                search_result["data_source"] = "智谱AI实时搜索"
+                search_result["data_source"] = "MiMo 联网搜索"
                 return search_result
             else:
                 print("[BullishFactor] 搜索结果为空，使用备用方案")
                 
         except Exception as e:
-            print(f"[BullishFactor] 智谱AI搜索失败: {e}")
+            print(f"[BullishFactor] MiMo 搜索失败: {e}")
         
         # 备用方案：使用传统方式分析
         return self._analyze_with_traditional_llm(db)
     
     def _search_bullish_factors(self) -> Dict[str, Any]:
-        """使用智谱AI搜索看涨因素"""
+        """使用 MiMo 搜索看涨因素"""
         prompt = """请搜索并分析当前黄金市场的看涨因素。
 
 请搜索最新的黄金市场新闻和分析报告，识别出5个最重要的看涨因子：
@@ -466,7 +466,7 @@ class BullishFactorService:
                     "cached": False,
                     "cache_source": "realtime_search",
                     "generated_at": datetime.now().isoformat(),
-                    "message": "基于智谱AI实时搜索的最新数据"
+                    "message": "基于MiMo 联网搜索的最新数据"
                 }
                 return result
             except Exception as e:

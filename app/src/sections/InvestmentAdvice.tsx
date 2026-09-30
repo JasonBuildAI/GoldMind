@@ -333,11 +333,11 @@ export default function InvestmentAdvice() {
                 <div className="space-y-2 text-xs">
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">技术栈:</span>
-                    <span className="text-gray-300">LangChain + DeepSeek-V3 + RAG</span>
+                    <span className="text-gray-300">MiMo 单轮结构化推理</span>
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">大模型:</span>
-                    <span className="text-gray-300">DeepSeek-V3 (671B参数)</span>
+                    <span className="text-gray-300">MiMo mimo-v2.6-flash</span>
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">架构:</span>

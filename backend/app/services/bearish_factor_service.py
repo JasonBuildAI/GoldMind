@@ -1,4 +1,4 @@
-"""看空因子分析服务 - 优化版（支持智谱AI实时搜索）"""
+"""看空因子分析服务 - 优化版（支持MiMo 联网搜索）"""
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -26,7 +26,7 @@ _cache_ttl = 7200  # 2小时
 
 
 class BearishFactorAnalyzer:
-    """使用智谱AI实时搜索分析黄金市场看空因子"""
+    """使用MiMo 联网搜索分析黄金市场看空因子"""
 
     def __init__(self):
         self._llm = None
@@ -195,29 +195,29 @@ class BearishFactorAnalyzer:
         }
 
     def analyze(self, db: Session) -> Dict[str, Any]:
-        """执行分析 - 使用智谱AI实时搜索"""
-        # 使用智谱AI实时搜索获取最新看空因素
+        """执行分析 - 使用MiMo 联网搜索"""
+        # 使用MiMo 联网搜索获取最新看空因素
         try:
-            print("[BearishFactor] 使用智谱AI实时搜索看空因素...")
+            print("[BearishFactor] 使用MiMo 联网搜索看空因素...")
             search_result = self._search_bearish_factors()
             
             # 检查搜索结果是否有效
             if search_result.get("bearish_factors") and len(search_result["bearish_factors"]) > 0:
                 print(f"[BearishFactor] 成功获取 {len(search_result['bearish_factors'])} 个看空因素")
                 search_result["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                search_result["data_source"] = "智谱AI实时搜索"
+                search_result["data_source"] = "MiMo 联网搜索"
                 return search_result
             else:
                 print("[BearishFactor] 搜索结果为空，使用备用方案")
                 
         except Exception as e:
-            print(f"[BearishFactor] 智谱AI搜索失败: {e}")
+            print(f"[BearishFactor] MiMo 搜索失败: {e}")
         
         # 备用方案：使用传统方式分析
         return self._analyze_with_traditional_llm(db)
     
     def _search_bearish_factors(self) -> Dict[str, Any]:
-        """使用智谱AI搜索看空因素"""
+        """使用 MiMo 搜索看空因素"""
         prompt = """请搜索并分析当前黄金市场的看空因素。
 
 请搜索最新的黄金市场新闻和分析报告，识别出5个最重要的看空因子：
@@ -532,7 +532,7 @@ class BearishFactorService:
                     "cached": False,
                     "cache_source": "realtime_search",
                     "generated_at": datetime.now().isoformat(),
-                    "message": "基于智谱AI实时搜索的最新数据"
+                    "message": "基于MiMo 联网搜索的最新数据"
                 }
                 return result
             except Exception as e:

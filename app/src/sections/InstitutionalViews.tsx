@@ -230,7 +230,7 @@ export default function InstitutionalViews() {
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">数据来源:</span>
-                    <span className="text-gray-300">智谱AI实时搜索 + 机构官方报告 + 财经新闻</span>
+                    <span className="text-gray-300">MiMo 联网搜索 + 机构官方报告 + 财经新闻</span>
                   </div>
                 </div>
                 {/* Arrow */}

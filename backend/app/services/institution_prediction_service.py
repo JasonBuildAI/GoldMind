@@ -19,7 +19,7 @@ _executor = ThreadPoolExecutor(max_workers=2)
 
 
 class InstitutionPredictionAnalyzer:
-    """使用智谱AI实时搜索抓取四大机构最新预测"""
+    """使用MiMo 联网搜索抓取四大机构最新预测"""
 
     def __init__(self):
         self._llm = None
@@ -165,7 +165,7 @@ class InstitutionPredictionAnalyzer:
 
     def analyze(self, db: Session) -> Dict[str, Any]:
         """执行分析 - 使用 MiMo 联网搜索"""
-        # 使用智谱AI实时搜索获取最新机构预测
+        # 使用MiMo 联网搜索获取最新机构预测
         try:
             print("[InstitutionPrediction] 使用 MiMo 联网搜索机构预测...")
             search_result = self.web_search_service.search_institution_predictions()
@@ -374,7 +374,7 @@ class InstitutionPredictionService:
                     "cached": False,
                     "cache_source": "realtime_search",
                     "generated_at": datetime.now().isoformat(),
-                    "message": "基于智谱AI实时搜索的最新数据"
+                    "message": "基于MiMo 联网搜索的最新数据"
                 }
                 return result
             except Exception as e:

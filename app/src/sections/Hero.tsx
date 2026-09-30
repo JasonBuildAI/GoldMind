@@ -113,7 +113,7 @@ export default function Hero() {
                   model: 'MiMo mimo-v2.6-flash',
                   architecture: 'ReAct推理架构 + 实时搜索插件',
                   logic: '基于24小时新闻与市场数据，智能提取看涨/看空因子',
-                  dataSource: '智谱AI实时搜索 + 腾讯财经API + MySQL历史数据'
+                  dataSource: 'MiMo 联网搜索 + 腾讯财经API + MySQL历史数据'
                 }
               },
               {
@@ -127,7 +127,7 @@ export default function Hero() {
                   model: 'MiMo mimo-v2.6-flash',
                   architecture: '专用Agent架构 + 定向实时搜索',
                   logic: '实时抓取高盛、瑞银、摩根士丹利、花旗最新预测',
-                  dataSource: '智谱AI实时搜索 + 机构官方报告 + 财经新闻'
+                  dataSource: 'MiMo 联网搜索 + 机构官方报告 + 财经新闻'
                 }
               },
               {
@@ -141,7 +141,7 @@ export default function Hero() {
                   model: 'MiMo mimo-v2.6-flash',
                   architecture: '实时搜索 + 情感分析 + 实体识别',
                   logic: '24小时滚动抓取新闻，分析情感倾向与市场影响',
-                  dataSource: '智谱AI实时搜索 + 新浪财经 + 腾讯财经'
+                  dataSource: 'MiMo 联网搜索 + 新浪财经 + 腾讯财经'
                 }
               },
               {
@@ -151,8 +151,8 @@ export default function Hero() {
                 bg: 'bg-green-500/10',
                 border: 'border-green-500/30',
                 details: {
-                  techStack: 'LangChain + DeepSeek-V3 + RAG',
-                  model: 'DeepSeek-V3 (671B参数)',
+                  techStack: 'MiMo 单轮结构化推理',
+                  model: 'MiMo mimo-v2.6-flash',
                   architecture: 'RAG检索增强生成，融合多源分析结果',
                   logic: '综合分析所有Agent输出，生成个性化投资策略',
                   dataSource: '市场分析Agent + 机构预测Agent + 新闻分析Agent'
@@ -165,8 +165,8 @@ export default function Hero() {
                 bg: 'bg-pink-500/10',
                 border: 'border-pink-500/30',
                 details: {
-                  techStack: 'LangChain + DeepSeek-V3 + 多Agent协作',
-                  model: 'DeepSeek-V3 (671B参数)',
+                  techStack: 'MiMo 单轮结构化推理',
+                  model: 'MiMo mimo-v2.6-flash',
                   architecture: '多Agent结果融合 + 深度推理生成',
                   logic: '整合所有Agent分析结果，生成全面市场认知与投资判断',
                   dataSource: '市场分析Agent + 机构预测Agent + 新闻分析Agent + 投资建议Agent'

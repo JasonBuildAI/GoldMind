@@ -240,7 +240,7 @@ export default function BullishFactors() {
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">数据来源:</span>
-                    <span className="text-gray-300">智谱AI实时搜索 + 腾讯财经API + MySQL历史数据</span>
+                    <span className="text-gray-300">MiMo 联网搜索 + 腾讯财经API + MySQL历史数据</span>
                   </div>
                 </div>
                 {/* Arrow */}
