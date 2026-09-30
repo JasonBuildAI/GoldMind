@@ -21,6 +21,7 @@ from app.services.quant.sources.base import (
     default_get,
     shift_to_next_trading_day,
 )
+from app.utils import timeutil
 
 NOMINAL_CSV_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
@@ -92,5 +93,6 @@ def fetch(
 
 
 def default_years(today: Optional[date] = None, years: int = 10) -> list[int]:
-    today = today or date.today()
+    # 「今年是哪年」必须走项目唯一的时区口径：容器是 UTC，与调度时区不同。
+    today = today or timeutil.today()
     return list(range(today.year - years, today.year + 1))
