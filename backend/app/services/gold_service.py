@@ -132,7 +132,12 @@ class GoldService:
             GoldPrice.date <= end_date.date()
         ).order_by(GoldPrice.date).all()
     
-    def get_correlation_data(self, limit: int = 100) -> List[Dict]:
+    def get_correlation_data(self) -> List[Dict]:
+        """取金价与美元指数按日期对齐后的序列。
+
+        原先带一个 `limit` 参数却从不使用 —— 调用方以为限制了条数，实际拿到全部。
+        裁剪统一放在 router 里：只有那里能看到补完实时点之后的最终序列。
+        """
         # 获取2025年1月1日之后的数据
         start_date = date(2025, 1, 1)
         

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.news import GoldNews, SentimentType
+from app.utils.enum_values import resolve_enum
 from loguru import logger
 
 # 内置默认 RSS 源，格式 "名称|URL"。
@@ -46,17 +47,42 @@ class NewsService:
     # ------------------------------------------------------------------ #
     # 读取
     # ------------------------------------------------------------------ #
+    @staticmethod
+    def as_sentiment(value: object) -> Optional[SentimentType]:
+        """把接口收到的情感值解析成枚举成员。
+
+        列类型是 `Enum(SentimentType)`，SQLAlchemy 存的是**枚举名**
+        （POSITIVE / NEGATIVE / NEUTRAL），而接口对外一律用小写 ——
+        响应体里就是 `"sentiment": "positive"`。
+
+        原实现直接把收到的字符串丢给过滤条件，于是
+        `GET /news?sentiment=positive` 一条都匹配不到，
+        只有 `?sentiment=POSITIVE` 才有结果 —— **接口自己的输出不能当作输入用**。
+
+        解析逻辑统一在 `app/utils/enum_values.py`（因子类型有同样的毛病）。
+        """
+        return resolve_enum(SentimentType, value)
+
     def get_news(
-        self, limit: int = 20, source: Optional[str] = None, sentiment: Optional[str] = None
+        self, limit: int = 20, source: Optional[str] = None, sentiment: Optional[object] = None
     ) -> List[GoldNews]:
-        """获取新闻列表，可按来源与情感过滤（无分页，只取前 limit 条）。"""
+        """获取新闻列表，可按来源与情感过滤（无分页，只取前 limit 条）。
+
+        `sentiment` 接受大小写任意形式的 "positive" / "POSITIVE"，
+        与接口返回的取值保持一致。
+        """
         query = self.db.query(GoldNews)
 
         if source:
             query = query.filter(GoldNews.source == source)
 
         if sentiment:
-            query = query.filter(GoldNews.sentiment == sentiment)
+            member = self.as_sentiment(sentiment)
+            if member is None:
+                # 认不出的情感值：返回空列表，而不是把它当成一个永远匹配不上的
+                # 字符串丢给数据库（那样 SQLite 下会静默返回空，MySQL 下行为还不同）。
+                return []
+            query = query.filter(GoldNews.sentiment == member)
 
         return query.order_by(GoldNews.published_at.desc()).limit(limit).all()
 

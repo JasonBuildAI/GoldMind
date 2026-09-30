@@ -1,6 +1,6 @@
 """市场分析 API 路由"""
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.analysis import FactorResponse, InstitutionResponse
@@ -18,17 +18,26 @@ router = APIRouter()
 @router.get("/factors", response_model=List[FactorResponse])
 async def get_market_factors(
     factor_type: Optional[str] = None,
-    limit: int = 10,
+    limit: int = Query(default=10, ge=1, le=200),
     db: Session = Depends(get_db)
 ):
-    """获取已入库的市场因子，可按类型过滤。"""
-    from app.models.analysis import MarketFactor
-    
+    """获取已入库的市场因子，可按类型过滤。
+
+    过滤值统一按 `app/utils/enum_values.py` 解析：列类型 `Enum(FactorType)`
+    在库里存的是枚举名（BULLISH），而接口对外用小写（"bullish"），
+    原实现直接比较小写串，`?factor_type=bullish` 一条都匹配不到。
+    """
+    from app.models.analysis import FactorType, MarketFactor
+    from app.utils.enum_values import resolve_enum
+
     query = db.query(MarketFactor)
-    
+
     if factor_type:
-        query = query.filter(MarketFactor.type == factor_type)
-    
+        member = resolve_enum(FactorType, factor_type)
+        if member is None:
+            return []
+        query = query.filter(MarketFactor.type == member)
+
     factors = query.order_by(MarketFactor.created_at.desc()).limit(limit).all()
     
     return [

@@ -4,16 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.news_service import NewsService
-from app.schemas.news import NewsResponse
+from app.schemas.news import NewsResponse, SentimentEnum
 
 router = APIRouter()
 
 
 @router.get("/news", response_model=List[NewsResponse])
 async def get_news(
-    limit: int = Query(default=20, le=100),
+    limit: int = Query(default=20, ge=1, le=100),
     source: Optional[str] = None,
-    sentiment: Optional[str] = None,
+    # 用枚举而不是裸 str：取值与 schema / 响应体保持一致（小写），
+    # 传了不认识的值 FastAPI 直接 422，而不是静默返回空列表。
+    sentiment: Optional[SentimentEnum] = None,
     db: Session = Depends(get_db)
 ):
     """获取新闻列表，可按来源与情感过滤（无分页，只取前 limit 条）。"""
