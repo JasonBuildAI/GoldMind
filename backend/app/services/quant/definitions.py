@@ -288,3 +288,27 @@ FACTORS: tuple[FactorDefinition, ...] = (
 factor_by_key = {factor.key: factor for factor in FACTORS}
 
 assert len(factor_by_key) == len(FACTORS), "因子 key 必须唯一"
+
+
+@dataclass(frozen=True)
+class ExtraSeries:
+    """监控仪表盘专用序列：与因子同表存储（``factor_observations``），
+    但**不参与**信号合成 —— 它们是「给你看的水位」，不是打分项。"""
+
+    key: str
+    name: str
+    source: str
+    frequency: str
+
+
+EXTRA_SERIES: tuple[ExtraSeries, ...] = (
+    ExtraSeries("usdcny", "美元兑人民币（USDCNY）", "Yahoo Finance（CNY=X）", "日"),
+    ExtraSeries("cny_gold", "人民币金价参考", "黄金收盘 × USDCNY ÷ 31.1035", "日"),
+    ExtraSeries("tga", "美国财政部 TGA 余额", "美国财政部 Fiscal Data（每日报表）", "日"),
+    ExtraSeries("rrp", "纽约联储逆回购（RRP）", "纽约联储公开市场操作结果", "日"),
+    ExtraSeries("cftc_oi", "COMEX 黄金未平仓合约", "CFTC 持仓报告", "周"),
+)
+
+extra_series_by_key = {item.key: item for item in EXTRA_SERIES}
+
+assert len(extra_series_by_key) == len(EXTRA_SERIES), "额外序列 key 必须唯一"

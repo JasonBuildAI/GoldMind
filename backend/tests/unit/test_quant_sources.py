@@ -11,7 +11,15 @@ import pandas as pd
 import pytest
 
 from app.services.quant.derive import derive_factors, seasonal_expectation
-from app.services.quant.sources import cftc, news_geo, nyfed, sina_macro, treasury, yahoo
+from app.services.quant.sources import (
+    cftc,
+    news_geo,
+    nyfed,
+    sina_macro,
+    treasury,
+    treasury_fiscal,
+    yahoo,
+)
 from app.services.quant.sources.base import SourceError
 
 
@@ -110,6 +118,112 @@ def test_cftc_net_position_and_report_lag():
     assert series.iloc[0] == pytest.approx(246102 - 28355)
 
 
+@pytest.mark.unit
+def test_cftc_open_interest_uses_the_same_report_lag():
+    rows = [
+        {
+            "report_date_as_yyyy_mm_dd": "2026-09-22T00:00:00.000",
+            "noncomm_positions_long_all": "246102",
+            "noncomm_positions_short_all": "28355",
+            "open_interest_all": "571291",
+        }
+    ]
+    fake = FakeGet({"jun7-fc8e": FakeResponse(payload=rows)})
+
+    series = cftc.fetch(date(2026, 1, 1), get=fake)
+
+    assert series["cftc_net"].iloc[0] == pytest.approx(246102 - 28355)
+    assert series["cftc_oi"].index[0] == pd.Timestamp("2026-09-28")
+    assert series["cftc_oi"].iloc[0] == pytest.approx(571291)
+
+
+TGA_PAYLOAD = {
+    "data": [
+        {
+            "record_date": "2026-09-25",
+            "account_type": "Treasury General Account (TGA) Closing Balance",
+            "open_today_bal": "945290",
+            "close_today_bal": "null",
+        },
+        {
+            "record_date": "2026-09-25",
+            "account_type": "Total TGA Deposits (Table II)",
+            "open_today_bal": "49518",
+            "close_today_bal": "null",
+        },
+        {
+            "record_date": "2026-09-24",
+            "account_type": "Treasury General Account (TGA) Closing Balance",
+            "open_today_bal": "924627",
+            "close_today_bal": "null",
+        },
+    ],
+    "meta": {"total-pages": 1},
+}
+
+
+@pytest.mark.unit
+def test_treasury_fiscal_reads_the_closing_balance_and_shifts_a_day():
+    fake = FakeGet({"operating_cash_balance": FakeResponse(payload=TGA_PAYLOAD)})
+
+    series = treasury_fiscal.fetch(date(2026, 9, 1), date(2026, 9, 30), get=fake)
+
+    tga = series["tga"]
+    # 09/25 是周五 → 可用日 09/28（周一）
+    assert tga.index[-1] == pd.Timestamp("2026-09-28")
+    assert tga.iloc[-1] == pytest.approx(945290.0)
+    assert len(tga) == 2  # Deposits 行不是余额，不参与
+
+
+@pytest.mark.unit
+def test_treasury_fiscal_requires_a_closing_row():
+    payload = {"data": [{"record_date": "2026-09-25", "account_type": "Total TGA Deposits (Table II)"}]}
+    with pytest.raises(SourceError, match="TGA"):
+        treasury_fiscal.parse_operating_cash(payload)
+
+
+RP_PAYLOAD = {
+    "repo": {
+        "operations": [
+            {
+                "operationDate": "2026-09-30",
+                "operationType": "Reverse Repo",
+                "totalAmtAccepted": 9_000_000_000,
+            },
+            {
+                "operationDate": "2026-09-30",
+                "operationType": "Reverse Repo",
+                "totalAmtAccepted": 2_539_000_000,
+            },
+            {
+                "operationDate": "2026-09-30",
+                "operationType": "Repo",
+                "totalAmtAccepted": 1_000_000_000,
+            },
+            {
+                "operationDate": "2026-09-29",
+                "operationType": "Reverse Repo",
+                "totalAmtAccepted": 11_000_000_000,
+            },
+        ]
+    }
+}
+
+
+@pytest.mark.unit
+def test_nyfed_rrp_sums_the_day_and_shifts_to_next_business_day():
+    fake = FakeGet({"reverserepo": FakeResponse(payload=RP_PAYLOAD)})
+
+    series = nyfed.fetch_reverserepo(get=fake)["rrp"]
+
+    # 09/29 是周二 → 09/30；09/30 是周三 → 10/01
+    assert series.index[0] == pd.Timestamp("2026-09-30")
+    assert series[series.index[0]] == pytest.approx(110.0)
+    assert series.index[-1] == pd.Timestamp("2026-10-01")
+    # 同一天两笔逆回购相加（9 + 2.539 = 11.539 bn = 115.39 亿美元）；Repo 不计入
+    assert series.iloc[-1] == pytest.approx(115.39)
+
+
 SINA_PAYLOAD = (
     "/*<script>location.href='//sina.com';</script>*/\n"
     'SINAREMOTECALLCALLBACK1601651495761(({config:{all:[[0,"统计时间"],[1,"黄金储备","万盎司"]]},'
@@ -169,6 +283,20 @@ def test_yahoo_shares_falls_back_to_net_assets():
     assert yahoo.parse_shares({"netAssets": 1000.0, "navPrice": 100.0}) == pytest.approx(10.0)
     with pytest.raises(SourceError):
         yahoo.parse_shares({})
+
+
+@pytest.mark.unit
+def test_yahoo_maps_cny_to_usdcny():
+    assert yahoo.SYMBOLS["CNY=X"] == "usdcny"
+    frame = pd.DataFrame(
+        [[4000.0, 7.12], [4010.0, 7.10]],
+        index=pd.to_datetime(["2026-09-28", "2026-09-29"]),
+        columns=pd.MultiIndex.from_tuples([("Close", "GC=F"), ("Close", "CNY=X")]),
+    )
+
+    series = yahoo.parse_close_frame(frame, {"GC=F": "gold_close", "CNY=X": "usdcny"})
+
+    assert series["usdcny"].iloc[-1] == pytest.approx(7.10)
 
 
 @pytest.mark.unit
@@ -241,3 +369,32 @@ def test_derive_factors_units():
     assert derived["momentum"].iloc[-1] == pytest.approx((1.001 ** 60 - 1) * 100, rel=1e-6)
     # 没有 hyg/ief 时不会凭空产出信用因子
     assert "credit_appetite" not in derived
+
+
+@pytest.mark.unit
+def test_derive_cny_gold_converts_with_troy_ounce():
+    index = pd.date_range("2026-09-01", periods=5, freq="B")
+    gold = pd.Series([4000.0] * 5, index=index)
+    usdcny = pd.Series([7.10] * 5, index=index)
+
+    derived = derive_factors({"gold_close": gold, "usdcny": usdcny})
+
+    expected = 4000.0 * 7.10 / 31.1035
+    assert derived["cny_gold"].iloc[-1] == pytest.approx(expected, rel=1e-9)
+    assert derived["usdcny"].iloc[-1] == pytest.approx(7.10)
+
+
+@pytest.mark.unit
+def test_derive_passes_monitor_extras_through():
+    index = pd.date_range("2026-09-01", periods=5, freq="B")
+    raw = {
+        "tga": pd.Series([900_000.0] * 5, index=index),
+        "rrp": pd.Series([300.0] * 5, index=index),
+        "cftc_oi": pd.Series([500_000.0] * 5, index=index),
+    }
+
+    derived = derive_factors(raw)
+
+    assert derived["tga"].iloc[-1] == pytest.approx(900_000.0)
+    assert derived["rrp"].iloc[-1] == pytest.approx(300.0)
+    assert derived["cftc_oi"].iloc[-1] == pytest.approx(500_000.0)

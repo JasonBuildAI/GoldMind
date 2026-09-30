@@ -21,16 +21,25 @@ from sqlalchemy.orm import Session
 
 from app.services.cache_manager import CacheManager
 from app.services.quant import storage
-from app.services.quant.definitions import BENCHMARK_KEY, FACTORS
+from app.services.quant.definitions import BENCHMARK_KEY, EXTRA_SERIES, FACTORS
 from app.services.quant.derive import derive_factors
-from app.services.quant.sources import cftc, news_geo, nyfed, sina_macro, treasury, yahoo
+from app.services.quant.sources import (
+    cftc,
+    news_geo,
+    nyfed,
+    sina_macro,
+    treasury,
+    treasury_fiscal,
+    yahoo,
+)
 from app.services.quant.sources.base import SourceError
 from app.utils import timeutil
 
-SOURCE_ORDER = ("treasury", "nyfed", "cftc", "sina_macro", "yahoo", "news_geo")
+SOURCE_ORDER = ("treasury", "treasury_fiscal", "nyfed", "cftc", "sina_macro", "yahoo", "news_geo")
 
 SOURCE_LABELS = {
     "treasury": "美国财政部收益率曲线",
+    "treasury_fiscal": "美国财政部 Fiscal Data（TGA 每日余额）",
     "nyfed": "纽约联储参考利率",
     "cftc": "CFTC 持仓报告",
     "sina_macro": "新浪财经宏观数据（央行储备）",
@@ -41,6 +50,7 @@ SOURCE_LABELS = {
 # 每个源最短抓取间隔：数据本身多久更新一次，就多久抓一次。
 SOURCE_MIN_INTERVALS: Dict[str, timedelta] = {
     "treasury": timedelta(hours=12),
+    "treasury_fiscal": timedelta(hours=12),
     "nyfed": timedelta(hours=6),
     "cftc": timedelta(hours=24),
     "sina_macro": timedelta(hours=24),
@@ -97,9 +107,17 @@ def _fetch_source(
         start = _start_date(db, "real_yield_10y", today, history_years)
         years = sorted({start.year, today.year})
         return treasury.fetch(years)
+    if name == "treasury_fiscal":
+        start = _start_date(db, "tga", today, history_years)
+        return treasury_fiscal.fetch(start, today)
     if name == "nyfed":
         start = _start_date(db, "policy_expectation", today, history_years)
-        return nyfed.fetch(start=start, end=today)
+        series = nyfed.fetch(start=start, end=today)
+        try:
+            series.update(nyfed.fetch_reverserepo())
+        except Exception as exc:  # RRP 失败不拖累 EFFR；仪表盘行会如实标不可用
+            logger.warning(f"[量化] 纽约联储逆回购结果不可用：{type(exc).__name__}: {exc}")
+        return series
     if name == "cftc":
         start = _start_date(db, "cftc_positioning", today, history_years)
         return cftc.fetch(start=start)
@@ -120,6 +138,7 @@ class SyncReport:
     finished_at: Optional[str] = None
     source_status: dict = field(default_factory=dict)
     factor_status: dict = field(default_factory=dict)
+    extra_status: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         ok_sources = [name for name, item in self.source_status.items() if item.get("status") == "ok"]
@@ -128,6 +147,7 @@ class SyncReport:
             "finished_at": self.finished_at,
             "sources": self.source_status,
             "factors": self.factor_status,
+            "extras": self.extra_status,
             "sources_ok": len(ok_sources),
             "sources_total": len(self.source_status),
         }
@@ -200,6 +220,26 @@ def run_sync(
     benchmark = derived.get(BENCHMARK_KEY)
     if benchmark is not None and not benchmark.empty:
         storage.upsert_series(db, BENCHMARK_KEY, benchmark, source="Yahoo Finance（GC=F 收盘）", commit=False)
+
+    for extra in EXTRA_SERIES:
+        series = derived.get(extra.key)
+        if series is None or series.empty:
+            report.extra_status[extra.key] = {
+                "status": "unavailable",
+                "name": extra.name,
+                "reason": _missing_reason(extra.key, report),
+            }
+            continue
+        inserted, updated = storage.upsert_series(
+            db, extra.key, series, source=extra.source, commit=False
+        )
+        report.extra_status[extra.key] = {
+            "status": "ok",
+            "name": extra.name,
+            "rows_inserted": inserted,
+            "rows_updated": updated,
+            "latest_date": series.index[-1].date().isoformat(),
+        }
 
     db.commit()
 

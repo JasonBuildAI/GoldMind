@@ -21,6 +21,8 @@ from app.services.quant.sources.base import SourceError, clean_series
 
 SEASONAL_LOOKBACK_YEARS = 6
 SEASONAL_MIN_YEARS = 3
+# 金衡盎司 → 克（人民币金价参考的唯一换算口径）
+GRAMS_PER_TROY_OUNCE = 31.1035
 
 
 def seasonal_expectation(prices: pd.Series) -> pd.Series:
@@ -115,6 +117,16 @@ def derive_factors(raw: dict[str, pd.Series]) -> dict[str, pd.Series]:
     add("bitcoin", raw.get("btc"))
     add("risk_appetite", raw.get("spy"))
 
+    # 监控仪表盘的额外序列：同表存储、不参与信号合成
+    usdcny = raw.get("usdcny")
+    add("usdcny", usdcny)
+    if gold is not None and usdcny is not None:
+        combined = gold.align(usdcny, join="inner")
+        add("cny_gold", combined[0] * combined[1] / GRAMS_PER_TROY_OUNCE)
+    add("tga", raw.get("tga"))
+    add("rrp", raw.get("rrp"))
+    add("cftc_oi", raw.get("cftc_oi"))
+
     return derived
 
 
@@ -135,6 +147,10 @@ def required_raw_keys() -> set[str]:
         "cftc_net",
         "gld_shares",
         "gold_close",
+        "usdcny",
+        "tga",
+        "rrp",
+        "cftc_oi",
         "btc",
         "spy",
     }

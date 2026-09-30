@@ -34,6 +34,22 @@ def parse_rows(rows: list[dict]) -> pd.Series:
     return clean_series(values, name="cftc_net")
 
 
+def parse_open_interest(rows: list[dict]) -> pd.Series:
+    """同一份报告里的 COMEX 黄金未平仓合约（张）；缺失时返回空序列。"""
+    values = {}
+    for row in rows or []:
+        try:
+            report_date = pd.Timestamp(str(row["report_date_as_yyyy_mm_dd"])[:10])
+            open_interest = float(row["open_interest_all"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        usable_date = report_date + pd.tseries.offsets.BDay(4)
+        values[usable_date] = open_interest
+    if not values:
+        return pd.Series(dtype="float64", name="cftc_oi")
+    return clean_series(values, name="cftc_oi")
+
+
 def fetch(
     start: date,
     *,
@@ -58,4 +74,8 @@ def fetch(
         raise SourceError(f"CFTC 响应不是 JSON：{exc}") from exc
     if not isinstance(rows, list):
         raise SourceError("CFTC 响应不是行数组")
-    return {"cftc_net": parse_rows(rows)}
+    result = {"cftc_net": parse_rows(rows)}
+    open_interest = parse_open_interest(rows)
+    if not open_interest.empty:
+        result["cftc_oi"] = open_interest
+    return result

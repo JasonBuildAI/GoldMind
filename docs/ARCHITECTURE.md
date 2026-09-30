@@ -305,7 +305,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 
 | 环节 | 位置 | 要点 |
 |---|---|---|
-| 数据源 | `sources/*.py` | 全部免费、无需密钥；HTTP 客户端可注入，测试永不真出网 |
+| 数据源 | `sources/*.py` | 全部免费、无需密钥（含财政部 DTS 的 TGA、纽约联储 RRP、CFTC 未平仓量、Yahoo 的 USDCNY）；HTTP 客户端可注入，测试永不真出网 |
 | 派生 | `derive.py` | 原始序列 → 因子值，单位与口径只在这一层固定 |
 | 落库 | `storage.py` | `factor_observations`，唯一约束 `(factor_key, obs_date)`，幂等 |
 | 同步 | `sync.py` | 按源节流（6h ~ 24h）、增量抓取、逐源降级并写入同步报告 |
@@ -313,6 +313,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 公允价 | `decompose.py` | 走查式扩展窗口 OLS（`log 金价 ~ 实际利率 + log 美元指数 + log 央行储备 + VIX`）把金价拆成 宏观锚＋需求溢价＋风险溢价＋情绪残差；偏离度 = 市场价 / 公允价 − 1 |
 | 情景 | `scenarios.py` | 预测分布 N(μ, σ²) 的分位数 → Base [q25, q75]（50%）/ Bull 上 25% / Bear 下 25%；触发与失效条件由该尺度最重因子＋200 日均线生成 |
 | 回测 | `backtest.py` | 走查式命中率 + 三个基准 + 80% 区间覆盖率 + 2022-01-01 前后分段 + 逐因子命中率与 IC |
+| 监测 | `monitor.py` | 周更仪表盘逐行给频率 / 来源 / 值 / 信号 / 数据截至日；信号规则集中在 `_rule`，信息型行 `signal=null`，缺数据标「不可用 + 原因」 |
 | 出口 | `service.py` | 调度任务与 `POST /api/gold/quant/refresh` 共用同一条链路 |
 
 三条不能破的口径：
@@ -341,6 +342,11 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 （`metrics.interval_coverage_80`）与以 2022-01-01 为界的 `metrics.regimes`
 分段成绩；某段样本不足时只给样本数与原因，不凑数字。
 守卫：`backend/tests/unit/quant/test_backtest_metrics.py`。
+
+监测仪表盘（`monitor.py`）覆盖 16 行指标；其中 usdcny / cny_gold / tga / rrp /
+cftc_oi 是监控专用序列，与因子同表（`factor_observations`）存储但不参与信号合成。
+上海金溢价的公开接口实测不可用，行内如实显示「不可用 + 原因」。
+守卫：`backend/tests/unit/quant/test_monitor.py`。
 
 ---
 

@@ -53,6 +53,7 @@
 | `GET` | `/api/gold/prices/daily` | 获取日线价格数据 |
 | `GET` | `/api/gold/quant/accuracy` | 走查式回测的命中率：与「永远看多 / 动量 / 抛硬币」并排对照。 |
 | `GET` | `/api/gold/quant/factors` | 四类影响因素的当前快照：值、方向、贡献、来源与数据截至时间。 |
+| `GET` | `/api/gold/quant/monitor` | 监测仪表盘：每行一个指标（频率、来源、当前值、信号、数据截至时间）。 |
 | `GET` | `/api/gold/quant/predictions` | 量化预测：方向、上行概率、目标价与逐因子贡献。 |
 | `POST` | `/api/gold/quant/refresh` | 立即抓取因子、重算预测并追加一次回测（耗时数十秒，已按付费档限流）。（**重操作**，限流更严） |
 | `GET` | `/api/gold/stats` | 获取 2025 年至今的金价统计（当前价、涨跌幅、波动区间等）。 |

@@ -31,6 +31,10 @@ def _raw_bundle(periods: int = 850) -> dict:
         "cftc_net": pd.Series(150_000 + steps[::5] * 100, index=index[::5]),
         "cb_gold_reserves": pd.Series(7600 + steps[::21] * 10, index=index[::21]),
         "news_geo_intensity": pd.Series(5 + np.cos(steps[-60:] / 7), index=index[-60:]),
+        "usdcny": pd.Series(7.0 + steps * 0.0001, index=index),
+        "tga": pd.Series(900_000 + steps * 100, index=index),
+        "rrp": pd.Series(300 + np.sin(steps / 5), index=index),
+        "cftc_oi": pd.Series(500_000 + steps[::5] * 2, index=index[::5]),
     }
 
 
@@ -43,16 +47,28 @@ def _fetchers(*, failing: tuple[str, ...] = ()) -> dict:
                 raise RuntimeError(f"{name} 不可用（测试注入）")
             if name == "treasury":
                 return {key: bundle[key] for key in ("ust_real_10y", "ust_nominal_10y", "ust_nominal_2y")}
+            if name == "treasury_fiscal":
+                return {"tga": bundle["tga"]}
             if name == "nyfed":
-                return {"effr": bundle["effr"]}
+                return {"effr": bundle["effr"], "rrp": bundle["rrp"]}
             if name == "cftc":
-                return {"cftc_net": bundle["cftc_net"]}
+                return {"cftc_net": bundle["cftc_net"], "cftc_oi": bundle["cftc_oi"]}
             if name == "sina_macro":
                 return {"cb_gold_reserves": bundle["cb_gold_reserves"]}
             if name == "yahoo":
                 return {
                     key: bundle[key]
-                    for key in ("gold_close", "dxy", "vix", "hyg", "ief", "btc", "spy", "gld_shares")
+                    for key in (
+                        "gold_close",
+                        "dxy",
+                        "vix",
+                        "hyg",
+                        "ief",
+                        "btc",
+                        "spy",
+                        "gld_shares",
+                        "usdcny",
+                    )
                 }
             if name == "news_geo":
                 return {"news_geo_intensity": bundle["news_geo_intensity"]}
@@ -86,8 +102,19 @@ def test_sync_derives_and_stores_every_available_factor(db_session):
         "bitcoin",
         "risk_appetite",
         "gold_close",
+        "usdcny",
+        "cny_gold",
+        "tga",
+        "rrp",
+        "cftc_oi",
     ):
         assert key in stored and not stored[key].empty, f"{key} 没有落库"
+
+    assert all(item["status"] == "ok" for item in report.extra_status.values())
+    gold = stored["gold_close"]
+    usdcny = stored["usdcny"]
+    expected_cny = gold.iloc[-1] * usdcny.iloc[-1] / 31.1035
+    assert stored["cny_gold"].iloc[-1] == pytest.approx(expected_cny, rel=1e-9)
 
     # 派生口径抽查：通胀预期 = 名义 10Y − 实际 10Y
     inflation = stored["inflation_expectation"]
@@ -111,6 +138,8 @@ def test_source_failure_degrades_only_its_own_factors(db_session):
     assert "dollar_index" not in stored
     # 基准价格序列也来自 yahoo，缺了它就不该出现
     assert "gold_close" not in stored
+    assert "usdcny" not in stored
+    assert "cny_gold" not in stored
 
 
 @pytest.mark.unit

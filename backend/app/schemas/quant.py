@@ -185,6 +185,27 @@ class AccuracyResponse(BaseModel):
     history: List[AccuracyRow]
 
 
+class MonitorRow(BaseModel):
+    key: str
+    name: str
+    frequency: str
+    source: str
+    value: Optional[float] = None
+    unit: str
+    change: Optional[float] = None
+    obs_date: Optional[date] = None
+    signal: Optional[str] = None
+    signal_label: str
+    note: str
+    status: str
+    reason: Optional[str] = None
+
+
+class MonitorResponse(BaseModel):
+    as_of: Optional[date] = None
+    rows: List[MonitorRow] = []
+
+
 class RefreshResponse(BaseModel):
     success: bool
     message: str

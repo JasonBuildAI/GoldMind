@@ -24,6 +24,7 @@ SYMBOLS = {
     "IEF": "ief",
     "BTC-USD": "btc",
     "SPY": "spy",
+    "CNY=X": "usdcny",
 }
 
 ETF_SHARES_SYMBOL = "GLD"

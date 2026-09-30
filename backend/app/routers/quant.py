@@ -14,10 +14,11 @@ from app.database import get_db
 from app.schemas.quant import (
     AccuracyResponse,
     FactorDashboardResponse,
+    MonitorResponse,
     QuantPredictionsResponse,
     RefreshResponse,
 )
-from app.services.quant import service
+from app.services.quant import monitor, service
 
 router = APIRouter()
 
@@ -55,6 +56,15 @@ async def get_quant_accuracy(db: Session = Depends(get_db)):
     从未回测过时返回空样本与原因，不返回 0% 之类的假数字。
     """
     return service.accuracy_report(db)
+
+
+@router.get("/quant/monitor", response_model=MonitorResponse)
+async def get_quant_monitor(db: Session = Depends(get_db)):
+    """监测仪表盘：每行一个指标（频率、来源、当前值、信号、数据截至时间）。
+
+    取不到数据行如实标「不可用 + 原因」（如上海金溢价），不编数字。
+    """
+    return monitor.build_monitor(db)
 
 
 @router.post("/quant/refresh", response_model=RefreshResponse)

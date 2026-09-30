@@ -98,6 +98,28 @@ def test_accuracy_endpoint_reports_baselines(client, db_session, seed_quant_pane
     assert body["history"]
 
 
+def test_monitor_endpoint_lists_rows_with_value_or_reason(client, db_session, seed_quant_panel):
+    seed_quant_panel()
+
+    body = client.get("/api/gold/quant/monitor").json()
+
+    assert len(body["rows"]) >= 10
+    for row in body["rows"]:
+        assert row["name"] and row["frequency"] and row["source"] and row["unit"] and row["note"]
+        assert row["status"] in ("ok", "unavailable")
+        if row["status"] == "ok":
+            assert row["value"] is not None
+            assert row["obs_date"]
+        else:
+            assert row["reason"]
+            assert row["value"] is None
+            assert row["signal"] is None
+    rows = {row["key"]: row for row in body["rows"]}
+    assert rows["ma200"]["status"] == "ok"
+    assert rows["shanghai_premium"]["status"] == "unavailable"
+    assert "不编数" in rows["shanghai_premium"]["reason"]
+
+
 @pytest.mark.integration
 def test_every_quant_endpoint_degrades_honestly_on_an_empty_database(client):
     predictions = client.get("/api/gold/quant/predictions").json()
@@ -120,6 +142,11 @@ def test_every_quant_endpoint_degrades_honestly_on_an_empty_database(client):
     assert all(row["sample_size"] == 0 for row in accuracy["latest"])
     assert all(row["accuracy"] is None for row in accuracy["latest"])
     assert all(row["reason"] for row in accuracy["latest"])
+
+    monitor = client.get("/api/gold/quant/monitor").json()
+    assert len(monitor["rows"]) >= 10
+    assert all(row["status"] == "unavailable" for row in monitor["rows"])
+    assert all(row["reason"] for row in monitor["rows"])
 
 
 @pytest.mark.integration
