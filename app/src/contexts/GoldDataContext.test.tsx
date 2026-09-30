@@ -15,7 +15,10 @@ vi.mock('@/services/api', () => ({
 
 const mocked = vi.mocked(goldApi, true)
 
-const TODAY = new Date().toISOString().split('T')[0]
+// 用**本地**日期，别用 toISOString() —— 那是 UTC 日期。
+// 原来这里和被测代码用了同一个 UTC 公式，两边「错得一样」，
+// 于是永远相等、测试永远绿，掩盖了东八区 00:00-08:00 之间不更新的 bug。
+const TODAY = new Date().toLocaleDateString('en-CA')
 
 const STATS = {
   current_price: 2710.8,
@@ -49,6 +52,8 @@ const DOLLAR_REALTIME = {
   previous_close: 108,
   change_percent: -0.46,
   updated_at: '2026-02-03T10:00:00',
+  // 行情自带的交易日：前端用它判断「最后一个点是不是今天」
+  date: TODAY,
   source: '测试',
 }
 
@@ -155,6 +160,54 @@ describe('GoldDataProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('corr-last-dollar')).toHaveTextContent('106.5')
     })
+    expect(screen.getByTestId('corr-count')).toHaveTextContent('2')
+  })
+
+  it('按行情自带的交易日判断，而不是浏览器算出来的「今天」', async () => {
+    // 回归：原实现用 `new Date().toISOString().split('T')[0]` 取「今天」，
+    // 那是 **UTC** 日期 —— 东八区 00:00-08:00 之间它给出的是昨天，
+    // 于是「最后一个点是不是今天」永远判 false，实时美元指数静默不更新，
+    // 相关性图上今天那个点一直显示旧值。
+    //
+    // 这条测试不依赖跑测试时的钟点：故意用一个**不可能是今天**的日期，
+    // 只要两边一致就必须合并。旧实现拿它跟「今天」比，必然不合并。
+    const quoteDay = '2025-06-01'
+    mocked.getCorrelation.mockResolvedValue([
+      { date: '2025-01-02', gold_price: 2600, dollar_index: 108 },
+      { date: quoteDay, gold_price: 2610, dollar_index: 107.9 },
+    ])
+    mocked.getDollarRealtime.mockResolvedValue({
+      ...DOLLAR_REALTIME,
+      date: quoteDay,
+      price: 106.5,
+    })
+
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('corr-last-dollar')).toHaveTextContent('106.5')
+    })
+    expect(screen.getByTestId('corr-count')).toHaveTextContent('2')
+  })
+
+  it('行情日期与最后一点不一致时不动它', async () => {
+    // 反向：日期对不上就不该合并，否则又是拿实时值去覆盖一个别的交易日。
+    mocked.getCorrelation.mockResolvedValue([
+      { date: '2025-01-02', gold_price: 2600, dollar_index: 108 },
+      { date: '2025-01-03', gold_price: 2610, dollar_index: 107.9 },
+    ])
+    mocked.getDollarRealtime.mockResolvedValue({
+      ...DOLLAR_REALTIME,
+      date: '2025-01-04',
+      price: 106.5,
+    })
+
+    renderProvider()
+
+    await waitFor(() => {
+      expect(mocked.getDollarRealtime).toHaveBeenCalled()
+    })
+    expect(screen.getByTestId('corr-last-dollar')).toHaveTextContent('107.9')
     expect(screen.getByTestId('corr-count')).toHaveTextContent('2')
   })
 

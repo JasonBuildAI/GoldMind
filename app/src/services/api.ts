@@ -111,6 +111,15 @@ export interface DollarRealtime {
   previous_close: number;
   change_percent: number;
   updated_at: string;
+  /**
+   * 这条行情所属的交易日，由**数据源**给出（后端的 `values[10]`）。
+   *
+   * 必须用它来判断「最后一个数据点是不是今天」，不能用
+   * `new Date().toISOString().split('T')[0]` —— 那是 **UTC** 日期：
+   * 东八区在 00:00-08:00 之间算出来的是昨天，实时美元指数就静默地不更新了，
+   * 相关性图上今天那个点会一直显示旧值。
+   */
+  date: string;
   source: string;
 }
 

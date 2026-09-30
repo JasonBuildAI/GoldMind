@@ -44,6 +44,14 @@
    换供应商、端点、模型只改 `backend/app/config.py` 或 `.env`。
 4. **测试不得访问真实外部服务。** LLM、行情接口、RSS 全部必须被替换；
    `backend/tests/conftest.py` 已提供假 LLM 夹具与出网拦截。
+5. **时间只在一个时区里流动。** `settings.SCHEDULER_TIMEZONE`（默认 `Asia/Shanghai`）
+   是全项目唯一的时区口径：**数据进入系统时立刻换算成它，离开系统时才转回去**。
+   不得直接用 `datetime.now()` 取「今天」（那是服务器本地时间 —— 容器默认 UTC，
+   与 cron 用的时区不一致）；不得用 `new Date().toISOString()` 取日期
+   （那是 UTC 日期）。要「现在」用 `scheduler.scheduler_now()`；要换算外部时间戳
+   （RSS 的 UTC、数据源的交易日）用现成的换算函数。
+   **这条红线是两次真实故障逼出来的**，两次都只在特定部署下才显形 ——
+   详见 `docs/ARCHITECTURE.md` 第七节。
 
 ## 工程底线
 

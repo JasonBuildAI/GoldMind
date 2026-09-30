@@ -167,6 +167,36 @@ TTL 默认 2 小时。`CACHE_DIR` 可配置（默认 `backend/cache`），测试
 | `RATE_LIMIT_PER_MINUTE` | `60` | 普通接口每 IP 上限 |
 | `RATE_LIMIT_AI_PER_MINUTE` | `6` | 会调用 LLM 的接口上限 |
 | `SCHEDULER_ENABLED` | `true` | 定时任务总开关 |
+| `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | **全项目唯一的时区口径**，见下 |
+
+### 时区口径
+
+`SCHEDULER_TIMEZONE` 不只是 cron 的时区，它是**整个项目的时间口径**：
+
+> 数据进入系统时立刻换算成它，离开系统时才转回去。
+
+这条规则不是设计洁癖，是两次真实故障逼出来的 —— 两次都只在特定部署下才显形：
+
+| 故障 | 表现 |
+|---|---|
+| 定时任务用 `datetime.now().date()` 取「今天」 | cron 按东八区触发，容器默认 UTC，同一份行情在 Docker 里被记到**前一天** |
+| RSS 的 `published_parsed` 是 UTC，直接 `datetime(*parsed[:6])` 存库 | 库里存的是 UTC 墙上时间、读的却按本地时间算，**「最近24小时」的窗口实际覆盖约 32 小时** |
+
+同一根因还有一处：前端用 `new Date().toISOString().split('T')[0]` 取「今天」，
+那是 **UTC 日期** —— 东八区 00:00-08:00 之间它给出昨天，实时美元指数就静默不更新。
+
+现成的入口（不要另造）：
+
+| 需要什么 | 用什么 |
+|---|---|
+| 后端要「现在」/「今天」 | `app.scheduler.scheduler_now()` / `scheduler_today()` |
+| 外部时间戳（RSS 的 UTC struct_time） | `app.services.news_service.to_local_naive()` |
+| 数据源自报的交易日（字符串） | `app.scheduler.parse_source_date()` |
+| 前端要判断「是不是今天」 | **不要自己算** —— 用后端给的交易日字段（如 `DollarRealtime.date`） |
+
+禁止的写法：`datetime.now().date()` 取「今天」、`datetime.utcnow()`、
+`new Date().toISOString()` 取日期。测试用固定时刻构造场景，不要依赖跑测试时的钟点 ——
+本机是东八区，很多时区错误在这里**根本测不出来**。
 
 ---
 

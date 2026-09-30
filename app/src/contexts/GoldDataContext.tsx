@@ -119,10 +119,13 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
         try {
           const dollarRealtime: DollarRealtime = await goldApi.getDollarRealtime();
           if (correlation && correlation.length > 0 && dollarRealtime) {
-            const today = new Date().toISOString().split('T')[0];
+            // 用**行情自带的交易日**比较，不要用 UTC 日期。
+            // `toISOString()` 取的是 UTC：东八区 00:00-08:00 之间它给出的是昨天，
+            // 于是「最后一个点是不是今天」永远判 false，实时美元指数静默不更新。
+            const quoteDate = dollarRealtime.date;
             const lastIndex = correlation.length - 1;
 
-            if (correlation[lastIndex].date === today) {
+            if (quoteDate && correlation[lastIndex].date === quoteDate) {
               // 只有当最后一点确实是「今天」时，才用实时值更新它
               correlation[lastIndex] = {
                 ...correlation[lastIndex],
@@ -174,11 +177,12 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
           return prevData;
         }
 
-        const today = new Date().toISOString().split('T')[0];
+        // 同上：用行情自带的交易日，而不是 UTC 日期
+        const quoteDate = dollarData.date;
         const lastIndex = prevData.length - 1;
         const newData = [...prevData];
 
-        if (newData[lastIndex].date === today) {
+        if (quoteDate && newData[lastIndex].date === quoteDate) {
           // 只有当最后一点确实是「今天」时，才用实时值更新它
           newData[lastIndex] = {
             ...newData[lastIndex],
