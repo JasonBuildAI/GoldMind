@@ -1,6 +1,6 @@
 """黄金市场综合分析服务 - 使用 MiMo 进行全方位市场总结"""
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 # 全局线程池
 _executor = ThreadPoolExecutor(max_workers=2)
-
 
 class MarketSummaryAnalyzer:
     """使用 MiMo 分析所有市场数据，生成综合市场总结"""
@@ -233,7 +232,6 @@ class MarketSummaryAnalyzer:
             "time_horizon": "",
         }
 
-
 class MarketSummaryService:
     """市场综合分析服务 - 支持缓存优化"""
 
@@ -347,7 +345,6 @@ class MarketSummaryService:
         )
 
         return default_data
-
 
     _ANALYSIS_KEY = "market_summary"
 

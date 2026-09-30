@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from concurrent.futures import ThreadPoolExecutor
+import time
 import threading
 import asyncio
 from functools import partial
@@ -124,11 +125,11 @@ class BearishFactorAnalyzer:
 
     def fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
         """获取最近24小时内的新闻"""
-        since = datetime.now() - timedelta(hours=hours)
+        since = timeutil.now_naive() - timedelta(hours=hours)
         return db.query(GoldNews).filter(
             and_(
                 GoldNews.published_at >= since,
-                GoldNews.published_at <= datetime.now()
+                GoldNews.published_at <= timeutil.now_naive()
             )
         ).order_by(GoldNews.published_at.desc()).all()
 
@@ -154,7 +155,7 @@ class BearishFactorAnalyzer:
                         'title': entry.get('title', ''),
                         'summary': entry.get('summary', '')[:200],
                         'source': source,
-                        'published_at': datetime.now()
+                        'published_at': timeutil.now_naive()
                     })
             except Exception as e:
                 logger.error(f"获取 {source} 新闻失败: {e}")
@@ -426,7 +427,7 @@ class BearishFactorAnalyzer:
                 existing.description = factor_data.get("description", "")
                 existing.details = factor_data.get("details", [])
                 existing.impact = ImpactLevel(factor_data.get("impact", "medium"))
-                existing.updated_at = datetime.now()
+                existing.updated_at = timeutil.now_naive()
             else:
                 # 创建新记录
                 new_factor = MarketFactor(
@@ -457,7 +458,7 @@ class BearishFactorService:
         with _cache_lock:
             if self._cache_key in _cache:
                 cached_data, timestamp = _cache[self._cache_key]
-                if datetime.now().timestamp() - timestamp < _cache_ttl:
+                if time.time() - timestamp < _cache_ttl:
                     return cached_data
         return None
 
@@ -475,7 +476,7 @@ class BearishFactorService:
         """设置内存缓存"""
         global _cache
         with _cache_lock:
-            _cache[self._cache_key] = (data, datetime.now().timestamp())
+            _cache[self._cache_key] = (data, time.time())
 
     def get_bearish_factors(self, use_cache: bool = True) -> Dict[str, Any]:
         """
@@ -589,7 +590,7 @@ class BearishFactorService:
                 self.analyzer.save_to_database(db, result)
                 # 更新内存缓存
                 self._store_result(result)
-                logger.info(f"[BearishFactor] 后台分析完成，时间: {datetime.now()}")
+                logger.info(f"[BearishFactor] 后台分析完成，时间: {timeutil.now()}")
             finally:
                 db.close()
         except Exception as e:

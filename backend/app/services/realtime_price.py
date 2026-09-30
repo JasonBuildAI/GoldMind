@@ -24,8 +24,9 @@
 """
 from __future__ import annotations
 
+import time
 import re
-from datetime import datetime
+
 from typing import Any, Dict, Optional
 
 import requests
@@ -52,7 +53,6 @@ _F_OPEN = 8
 _F_DATE = 12
 _F_NAME = 13
 
-
 def _safe_float(value: Any, default: float = 0.0) -> float:
     """把上游返回的字符串安全转成 float。"""
     try:
@@ -60,7 +60,6 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(text) if text else default
     except (TypeError, ValueError):
         return default
-
 
 def _build_result(
     *,
@@ -95,7 +94,6 @@ def _build_result(
         "unit": "美元/盎司",
     }
 
-
 def _parse_hq_payload(payload: str, *, source: str, source_name: str) -> Optional[Dict[str, Any]]:
     """解析腾讯 / 新浪的 hf_ 逗号分隔数据。"""
     parts = payload.split(",")
@@ -118,7 +116,6 @@ def _parse_hq_payload(payload: str, *, source: str, source_name: str) -> Optiona
         source_name=source_name,
     )
 
-
 # --------------------------------------------------------------------------- #
 # 各数据源
 # --------------------------------------------------------------------------- #
@@ -139,7 +136,6 @@ def fetch_from_tencent() -> Optional[Dict[str, Any]]:
     except Exception as exc:  # 网络、超时、解析
         logger.error(f"[RealtimePrice] 腾讯财经失败: {exc}")
         return None
-
 
 def fetch_from_sina() -> Optional[Dict[str, Any]]:
     """新浪财经（伦敦金）。必须带 Referer，且返回是 GB2312。"""
@@ -163,7 +159,6 @@ def fetch_from_sina() -> Optional[Dict[str, Any]]:
         logger.error(f"[RealtimePrice] 新浪财经失败: {exc}")
         return None
 
-
 def fetch_from_eastmoney() -> Optional[Dict[str, Any]]:
     """东方财富（黄金/美元）。
 
@@ -176,7 +171,7 @@ def fetch_from_eastmoney() -> Optional[Dict[str, Any]]:
             params={
                 "secid": "122.XAU",
                 "fields": "f43,f44,f45,f46,f57,f58,f60",
-                "_": int(datetime.now().timestamp() * 1000),
+                "_": int(time.time() * 1000),
             },
             headers={"User-Agent": _USER_AGENT},
             timeout=5,
@@ -192,7 +187,7 @@ def fetch_from_eastmoney() -> Optional[Dict[str, Any]]:
         if not price:
             return None
 
-        now = datetime.now()
+        now = timeutil.now_naive()
         return _build_result(
             price=price,
             previous_close=_safe_float(data.get("f60")) / 100,
@@ -208,13 +203,11 @@ def fetch_from_eastmoney() -> Optional[Dict[str, Any]]:
         logger.error(f"[RealtimePrice] 东方财富失败: {exc}")
         return None
 
-
 _FETCHERS = {
     "tencent": fetch_from_tencent,
     "sina": fetch_from_sina,
     "eastmoney": fetch_from_eastmoney,
 }
-
 
 # --------------------------------------------------------------------------- #
 # 对外入口

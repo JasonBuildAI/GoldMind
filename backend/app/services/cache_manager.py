@@ -7,14 +7,13 @@ import os
 import tempfile
 import threading
 import time
-from datetime import datetime
+
 from typing import Any, Dict, Optional
 from pathlib import Path
 
 from app.utils import timeutil
 from app.config import settings
 from loguru import logger
-
 
 # 缓存目录
 # 文件缓存是否可用。目录建不出来时置 False，退化为纯内存缓存。
@@ -23,7 +22,6 @@ from loguru import logger
 # 原实现在这里直接抛，`import app.services.cache_manager` 就失败，
 # 凡是（直接或间接）依赖它的接口全部 500，服务连启动都做不到。
 _FILE_CACHE_ENABLED = True
-
 
 def _resolve_cache_dir() -> Path:
     """解析缓存目录。
@@ -55,7 +53,6 @@ def _resolve_cache_dir() -> Path:
 
     return base
 
-
 CACHE_DIR = _resolve_cache_dir()
 
 # 内存缓存（进程内）
@@ -73,11 +70,9 @@ _memory_cache_lock = threading.Lock()
 _file_write_locks: Dict[str, threading.Lock] = {}
 _file_write_locks_guard = threading.Lock()
 
-
 def _write_lock_for(cache_key: str) -> threading.Lock:
     with _file_write_locks_guard:
         return _file_write_locks.setdefault(cache_key, threading.Lock())
-
 
 def _replace_with_retry(source: Path, target: Path, attempts: int = 5) -> None:
     """把 source 原子地替换成 target，遇到瞬时占用就重试。
@@ -95,7 +90,6 @@ def _replace_with_retry(source: Path, target: Path, attempts: int = 5) -> None:
             time.sleep(0.02 * (i + 1))
     if last is not None:
         raise last
-
 
 class CacheManager:
     """缓存管理器"""
@@ -190,7 +184,6 @@ class CacheManager:
     def exists(self) -> bool:
         """检查缓存是否存在且有效"""
         return self.get() is not None
-
 
 def get_cache_status():
     """获取缓存状态。"""

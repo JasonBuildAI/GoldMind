@@ -104,11 +104,19 @@ def test_fetch_from_rss_stores_local_time(db_session, monkeypatch):
 # --------------------------------------------------------------------------- #
 @pytest.mark.integration
 def test_recent_news_window_is_about_24_hours(db_session):
-    """窗口应当真的接近 24 小时，而不是被时区偏移撑大。"""
+    """窗口应当真的接近 24 小时，而不是被时区偏移撑大。
+
+    夹具用 `timeutil.now_naive()` —— 与 `get_recent_news` 内部同一个口径。
+    这一点很重要：这个测试原先夹具和被测代码**都用 `datetime.now()`**，
+    两边「错得一样」，于是无论时区怎么错都恒绿，什么也守不住。
+    「代码有没有用服务器本地时间」由 `test_timezone_discipline.py` 的结构性
+    守卫负责（本机是东八区，靠跑测试根本区分不出两种写法）。
+    """
     from app.models.news import GoldNews
+    from app.utils import timeutil
 
     service = NewsService(db_session)
-    now = datetime.now()
+    now = timeutil.now_naive()
 
     # 窗口内（23 小时前）与窗口外（25 小时前）各放一条
     for title, age_hours in (("窗口内", 23), ("窗口外", 25)):
@@ -127,3 +135,31 @@ def test_recent_news_window_is_about_24_hours(db_session):
 
     assert "窗口内" in titles
     assert "窗口外" not in titles, "24 小时窗口把 25 小时前的新闻也算进来了"
+
+
+@pytest.mark.integration
+def test_recent_news_window_boundary_is_exact(db_session):
+    """边界要卡准：24 小时内包含、24 小时外排除。"""
+    from app.models.news import GoldNews
+    from app.utils import timeutil
+
+    service = NewsService(db_session)
+    now = timeutil.now_naive()
+
+    for title, age in (("刚好在内", timedelta(hours=23, minutes=59)),
+                       ("刚好在外", timedelta(hours=24, minutes=1))):
+        db_session.add(
+            GoldNews(
+                title=title,
+                content="x",
+                url=f"https://example.invalid/{title}",
+                source="测试源",
+                published_at=now - age,
+            )
+        )
+    db_session.commit()
+
+    titles = {n.title for n in service.get_recent_news(hours=24)}
+
+    assert "刚好在内" in titles
+    assert "刚好在外" not in titles

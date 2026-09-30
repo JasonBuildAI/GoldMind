@@ -1,6 +1,6 @@
 """机构预测分析服务"""
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from concurrent.futures import ThreadPoolExecutor
@@ -33,7 +33,6 @@ _RATING_ALIASES = {
     "neutral": "neutral", "hold": "neutral", "中性": "neutral", "观望": "neutral",
 }
 
-
 def normalize_rating(value: Any) -> str:
     """把 LLM 给出的评级归一化到三种取值之一。
 
@@ -49,7 +48,6 @@ def normalize_rating(value: Any) -> str:
         return _RATING_ALIASES[text]
     logger.warning(f"[InstitutionPrediction] 认不出的评级 {value!r}，按 neutral 处理")
     return "neutral"
-
 
 class InstitutionPredictionAnalyzer:
     """使用MiMo 联网搜索抓取四大机构最新预测"""
@@ -114,11 +112,11 @@ class InstitutionPredictionAnalyzer:
 
     def fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
         """获取最近24小时内的新闻"""
-        since = datetime.now() - timedelta(hours=hours)
+        since = timeutil.now_naive() - timedelta(hours=hours)
         return db.query(GoldNews).filter(
             and_(
                 GoldNews.published_at >= since,
-                GoldNews.published_at <= datetime.now()
+                GoldNews.published_at <= timeutil.now_naive()
             )
         ).order_by(GoldNews.published_at.desc()).all()
 
@@ -144,7 +142,7 @@ class InstitutionPredictionAnalyzer:
                         'title': entry.get('title', ''),
                         'summary': entry.get('summary', '')[:200],
                         'source': source,
-                        'published_at': datetime.now()
+                        'published_at': timeutil.now_naive()
                     })
             except Exception as e:
                 logger.error(f"获取 {source} 新闻失败: {e}")
@@ -265,7 +263,7 @@ class InstitutionPredictionAnalyzer:
                 existing.timeframe = inst_data.get("timeframe", "")
                 existing.reasoning = inst_data.get("reasoning", "")
                 existing.key_points = inst_data.get("key_points", [])
-                existing.updated_at = datetime.now()
+                existing.updated_at = timeutil.now_naive()
             else:
                 # 创建新记录
                 new_view = InstitutionView(
@@ -280,7 +278,6 @@ class InstitutionPredictionAnalyzer:
                 db.add(new_view)
 
         db.commit()
-
 
 class InstitutionPredictionService:
     """机构预测服务类 - 优化版（支持实时搜索和缓存）"""
@@ -337,7 +334,7 @@ class InstitutionPredictionService:
             return cached_data
 
         # 2. 检查数据库中是否有最近2小时内的数据
-        two_hours_ago = datetime.now() - timedelta(hours=2)
+        two_hours_ago = timeutil.now_naive() - timedelta(hours=2)
         recent_views = self.db.query(InstitutionView).filter(
             InstitutionView.updated_at >= two_hours_ago
         ).all()
@@ -403,7 +400,6 @@ class InstitutionPredictionService:
         finally:
             single_flight.end(self._ANALYSIS_KEY)
 
-
     def _background_analysis_task(self) -> None:
         """后台分析任务"""
         try:
@@ -414,7 +410,7 @@ class InstitutionPredictionService:
                 self.analyzer.save_to_database(db, result)
                 # 更新文件缓存
                 self.cache.set(result)
-                logger.info(f"[InstitutionPrediction] 后台分析完成，时间: {datetime.now()}")
+                logger.info(f"[InstitutionPrediction] 后台分析完成，时间: {timeutil.now()}")
             finally:
                 db.close()
         except Exception as e:

@@ -118,7 +118,7 @@ class NewsService:
         """最近 N 小时的新闻 —— 因子分析的数据来源。"""
         from datetime import timedelta
 
-        since = datetime.now() - timedelta(hours=hours)
+        since = timeutil.now_naive() - timedelta(hours=hours)
         return (
             self.db.query(GoldNews)
             .filter(GoldNews.published_at >= since)
@@ -214,7 +214,7 @@ class NewsService:
         if published_at is None:
             # RSS 偶尔不提供时间。回落到抓取时刻，否则这条会被
             # 「最近 24 小时」查询直接排除，等于白抓。
-            published_at = datetime.now()
+            published_at = timeutil.now_naive()
 
         try:
             news = GoldNews(

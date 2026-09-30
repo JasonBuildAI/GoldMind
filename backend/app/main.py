@@ -3,7 +3,7 @@ import os
 import sys
 import time
 import asyncio
-from datetime import datetime
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +16,6 @@ from app.database import engine, Base
 from app.routers import gold_prices, analysis, news, predictions
 from app.scheduler import init_scheduler, shutdown_scheduler
 from app.utils.rate_limit import SlidingWindowRateLimiter
-
 
 # --------------------------------------------------------------------------- #
 # 日志
@@ -38,9 +37,7 @@ def _configure_logging() -> None:
         diagnose=False,
     )
 
-
 _configure_logging()
-
 
 async def warmup_cache():
     """启动时预热缓存（后台执行，不阻塞服务启动）"""
@@ -86,7 +83,6 @@ async def warmup_cache():
     except Exception as e:
         logger.error(f"[缓存预热] 预热失败: {e}")
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
@@ -106,7 +102,6 @@ async def lifespan(app: FastAPI):
     
     logger.info("关闭黄金市场分析系统...")
     shutdown_scheduler()
-
 
 app = FastAPI(
     title="黄金市场分析系统",
@@ -142,7 +137,6 @@ _upstream_probe: dict = {"at": 0.0, "payload": None}
 _AI_PATH_SUFFIXES = ("/refresh",)
 _AI_QUERY_FLAGS = ("refresh=true", "refresh=1")
 
-
 def _is_ai_path(path: str, query: str = "") -> bool:
     if path.endswith(_AI_PATH_SUFFIXES):
         return True
@@ -151,7 +145,6 @@ def _is_ai_path(path: str, query: str = "") -> bool:
         return False
     lowered = (query or "").lower()
     return any(flag in lowered for flag in _AI_QUERY_FLAGS)
-
 
 @app.middleware("http")
 async def rate_limit_middleware(request, call_next):
@@ -184,7 +177,6 @@ async def rate_limit_middleware(request, call_next):
 
     return await call_next(request)
 
-
 # --------------------------------------------------------------------------- #
 # CORS
 # --------------------------------------------------------------------------- #
@@ -205,12 +197,10 @@ app.include_router(analysis.router, prefix="/api/gold", tags=["市场分析"])
 app.include_router(news.router, prefix="/api/gold", tags=["新闻资讯"])
 app.include_router(predictions.router, prefix="/api/gold", tags=["价格预测"])
 
-
 @app.get("/")
 async def root():
     """服务信息与文档入口。"""
     return {"message": "黄金市场分析系统 API", "version": "1.0.0", "docs": "/docs"}
-
 
 @app.get("/health")
 async def health_check():
@@ -344,7 +334,6 @@ async def health_check():
         health_status["status"] = "degraded"
     
     return health_status
-
 
 if __name__ == "__main__":
     import uvicorn

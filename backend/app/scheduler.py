@@ -91,7 +91,7 @@ def init_scheduler():
         logger.info(f"[调度器] 已添加任务: update_ai_analysis ({settings.UPDATE_AI_ANALYSIS_CRON})")
         
         scheduler.start()
-        logger.info(f"[调度器] 定时任务调度器已启动，当前时间: {datetime.now()}")
+        logger.info(f"[调度器] 定时任务调度器已启动，当前时间: {timeutil.now()}")
         
         # 打印所有任务信息
         jobs = scheduler.get_jobs()
@@ -266,7 +266,7 @@ async def update_prices_job():
                 existing.low_price = min(existing.low_price or low_price, low_price) if low_price else existing.low_price
                 existing.close_price = price
                 existing.change_percent = change_percent
-                existing.updated_at = datetime.now()
+                existing.updated_at = timeutil.now_naive()
                 logger.info(f"更新 {today} 的金价记录")
             else:
                 # 创建新记录
@@ -461,7 +461,7 @@ async def update_dollar_index_job():
                 existing.high_price = max(existing.high_price or high_price, high_price)
                 existing.low_price = min(existing.low_price or low_price, low_price)
                 existing.close_price = price
-                existing.updated_at = datetime.now()
+                existing.updated_at = timeutil.now_naive()
                 logger.info(f"更新 {today} 的美元指数记录")
             else:
                 # 创建新记录

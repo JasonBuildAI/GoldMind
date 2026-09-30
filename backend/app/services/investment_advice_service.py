@@ -37,7 +37,7 @@ class InvestmentAdviceAnalyzer:
 
     def _fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
         """获取最近的新闻"""
-        cutoff_time = datetime.now() - timedelta(hours=hours)
+        cutoff_time = timeutil.now_naive() - timedelta(hours=hours)
         return db.query(GoldNews).filter(
             GoldNews.created_at >= cutoff_time
         ).order_by(GoldNews.created_at.desc()).limit(20).all()
@@ -48,7 +48,7 @@ class InvestmentAdviceAnalyzer:
 
     def _fetch_recent_prices(self, db: Session, days: int = 10) -> List[GoldPrice]:
         """获取最近N天的价格数据"""
-        cutoff_date = datetime.now() - timedelta(days=days)
+        cutoff_date = timeutil.now_naive() - timedelta(days=days)
         return db.query(GoldPrice).filter(
             GoldPrice.date >= cutoff_date
         ).order_by(GoldPrice.date.desc()).limit(days).all()
@@ -471,7 +471,7 @@ class InvestmentAdviceService:
                 )
                 # 更新文件缓存
                 self.cache.set(result)
-                logger.info(f"[InvestmentAdvice] 后台分析完成，时间: {datetime.now()}")
+                logger.info(f"[InvestmentAdvice] 后台分析完成，时间: {timeutil.now()}")
             finally:
                 db.close()
         except Exception as e:

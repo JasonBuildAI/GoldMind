@@ -25,6 +25,11 @@ ALLOWED_FILES = {"utils/timeutil.py", "scheduler.py"}
 
 # 会算错「今天是哪天」的写法
 FORBIDDEN = (
+    # 裸的 datetime.now()：取的是服务器本地时间。
+    # **这条是后补的** —— 上一版只查 .date()/.strftime()/.isoformat()，
+    # 于是 `datetime.now() - timedelta(hours=24)` 这种**算术**用法整片漏掉，
+    # 而它正是「最近24小时」窗口多算 8 小时的原因。
+    re.compile(r"datetime\.now\(\s*\)"),
     re.compile(r"datetime\.now\(\)\.date\(\)"),
     re.compile(r"datetime\.now\(\)\.strftime\("),
     re.compile(r"datetime\.now\(\)\.isoformat\("),

@@ -118,11 +118,11 @@ class BullishFactorAnalyzer:
 
     def fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
         """获取最近24小时内的新闻"""
-        since = datetime.now() - timedelta(hours=hours)
+        since = timeutil.now_naive() - timedelta(hours=hours)
         return db.query(GoldNews).filter(
             and_(
                 GoldNews.published_at >= since,
-                GoldNews.published_at <= datetime.now()
+                GoldNews.published_at <= timeutil.now_naive()
             )
         ).order_by(GoldNews.published_at.desc()).all()
     
@@ -148,7 +148,7 @@ class BullishFactorAnalyzer:
                         'title': entry.get('title', ''),
                         'summary': entry.get('summary', '')[:200],
                         'source': source,
-                        'published_at': datetime.now()
+                        'published_at': timeutil.now_naive()
                     })
             except Exception as e:
                 logger.error(f"获取 {source} 新闻失败: {e}")
@@ -420,7 +420,7 @@ class BullishFactorAnalyzer:
                 existing.description = factor_data.get("description", "")
                 existing.details = factor_data.get("details", [])
                 existing.impact = ImpactLevel(factor_data.get("impact", "medium"))
-                existing.updated_at = datetime.now()
+                existing.updated_at = timeutil.now_naive()
             else:
                 # 创建新记录
                 new_factor = MarketFactor(
@@ -553,7 +553,7 @@ class BullishFactorService:
                 self.analyzer.save_to_database(db, result)
                 # 更新缓存
                 self.cache.set(result)
-                logger.info(f"[BullishFactor] 后台分析完成，时间: {datetime.now()}")
+                logger.info(f"[BullishFactor] 后台分析完成，时间: {timeutil.now()}")
             finally:
                 db.close()
         except Exception as e:

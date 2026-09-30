@@ -1,5 +1,5 @@
 """黄金价格 API 路由"""
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Query, HTTPException
 from anyio import to_thread
@@ -14,7 +14,6 @@ from app.services.gold_service import GoldService
 
 router = APIRouter()
 
-
 def _parse_date(value: str, field: str) -> datetime:
     """把 YYYY-MM-DD 解析成 datetime；格式不对返回 422 而不是 500。
 
@@ -28,7 +27,6 @@ def _parse_date(value: str, field: str) -> datetime:
             status_code=422,
             detail=f"{field} 的格式应为 YYYY-MM-DD，收到 {value!r}",
         )
-
 
 @router.get("/prices/daily", response_model=List[DailyPriceResponse])
 async def get_daily_prices(
@@ -109,10 +107,6 @@ async def get_daily_prices(
 
     return result
 
-
-
-
-
 @router.get("/prices/correlation", response_model=List[CorrelationDataResponse])
 async def get_correlation_data(
     limit: int = Query(default=100, ge=1, le=500),
@@ -192,7 +186,6 @@ async def get_correlation_data(
 
     return result
 
-
 @router.get("/dollar-realtime")
 async def get_dollar_realtime():
     """获取实时美元指数（直接调用东方财富API）"""
@@ -207,7 +200,6 @@ async def get_dollar_realtime():
         raise HTTPException(status_code=503, detail="无法获取实时美元指数")
 
     return dollar_data
-
 
 @router.get("/stats", response_model=GoldStatsResponse)
 async def get_gold_stats():
@@ -224,7 +216,6 @@ async def get_gold_stats():
         raise HTTPException(status_code=404, detail="暂无数据")
 
     return GoldStatsResponse(**stats)
-
 
 @router.get("/latest")
 async def get_latest_price():

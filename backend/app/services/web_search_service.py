@@ -28,7 +28,7 @@ HTTP 400 `Param Incorrect`（已用 scripts/smoke_mimo.py 二分排除参数写�
 from __future__ import annotations
 
 import json
-from datetime import datetime
+
 from typing import Any, Dict, Optional
 
 from app.utils import timeutil
@@ -36,7 +36,6 @@ from app.config import settings
 from app.services import llm_provider
 
 __all__ = ["WebSearchService", "get_web_search_service", "extract_json_object"]
-
 
 def extract_json_object(content: str) -> Optional[Dict[str, Any]]:
     """从模型输出里取出 JSON 对象。
@@ -67,7 +66,6 @@ def extract_json_object(content: str) -> Optional[Dict[str, Any]]:
         except json.JSONDecodeError:
             return None
     return None
-
 
 class WebSearchService:
     """基于 MiMo `web_search` 工具的联网搜索服务。"""
@@ -197,7 +195,6 @@ class WebSearchService:
 
 # 单例（构造无副作用，可以安全缓存）
 _web_search_service: Optional[WebSearchService] = None
-
 
 def get_web_search_service() -> WebSearchService:
     """获取联网搜索服务实例。"""
