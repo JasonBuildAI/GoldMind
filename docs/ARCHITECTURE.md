@@ -45,8 +45,11 @@ GoldMind/
 │   ├── 10-密钥与隐私.md    密钥规则与历史泄漏处理
 │   ├── ARCHITECTURE.md    本文件
 │   └── API.md             接口规范
-├── app/                   前端
-│   ├── src/sections/      页面区块（7 个）
+├── app/                   前端（浅色研究简报；视觉与文案规则见 docs/20-前端设计规范.md）
+│   ├── src/sections/      五节：行情 / 多空对照 / 机构观点 / 投资策略 / 总结
+│   ├── src/layout/        报头（字标、锚点导航、数据来源）与页脚
+│   ├── src/components/    节内原语（Section / StateBlock / 表格 / 报价……）
+│   ├── src/styles/        设计令牌与基础排版
 │   ├── src/services/api.ts  唯一的 HTTP 出口
 │   ├── src/contexts/      行情数据的 Provider 与轮询
 │   ├── src/components/ui/  仅保留 tabs.tsx
