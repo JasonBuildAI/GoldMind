@@ -83,5 +83,58 @@ def get_db():
         db.close()
 
 
+def mysql_connection_params(include_database: bool = True) -> dict:
+    """从 `DATABASE_URL` 解析出 pymysql 需要的连接参数。
+
+    ## 为什么要有这个函数
+
+    数据库连接信息原本有**两处来源**：
+
+    - `DATABASE_URL` —— 应用（`app/database.py`）用它
+    - `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` ——
+      `init_db.py` 与 `seed_data.py` 用它们
+
+    两处一旦不一致，**建表与灌数据的库和应用实际读写的库就不是同一个**，
+    而且不会有任何报错 —— 表现只是「接口里没数据」。
+    这违反了项目自己那条「同一事实只保留一个权威来源」。
+
+    现在统一以 `DATABASE_URL` 为准，`DB_*` 只在它缺失时兜底。
+
+    Args:
+        include_database: 是否需要库名。`init_db.py` 要先连上去建库，
+            此时库还不存在，必须传 False。
+    """
+    url = settings.DATABASE_URL or ""
+
+    if url.startswith("mysql"):
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(url)
+        params = {
+            "host": parsed.hostname or "localhost",
+            "port": parsed.port or 3306,
+            "user": unquote(parsed.username or "root"),
+            "password": unquote(parsed.password or ""),
+            "charset": "utf8mb4",
+        }
+        if include_database:
+            params["database"] = (parsed.path or "/").lstrip("/") or "gold_analysis"
+        return params
+
+    # 没配 DATABASE_URL（或用的不是 MySQL）时，退回旧的 DB_* 约定
+    import os
+
+    params = {
+        "host": os.getenv("DB_HOST", "localhost"),
+        "port": int(os.getenv("DB_PORT", "3306")),
+        "user": os.getenv("DB_USER", "root"),
+        "password": os.getenv("DB_PASSWORD", "root123"),
+        "charset": "utf8mb4",
+    }
+    if include_database:
+        params["database"] = os.getenv("DB_NAME", "gold_analysis")
+    return params
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)

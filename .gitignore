@@ -77,7 +77,9 @@ htmlcov/
 local_settings.py
 
 # Docker
-.dockerignore
+# 注意：.dockerignore **必须入库** —— 它是构建配置，不是产物。
+# 它和 .gitignore 是两回事：前者管「哪些文件不进镜像构建上下文」，
+# 后者管「哪些文件不进版本控制」。
 docker-compose.override.yml
 
 # Misc

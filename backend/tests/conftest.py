@@ -35,7 +35,17 @@ for _var in (
 ):
     os.environ.pop(_var, None)
 
-os.environ["DATABASE_URL"] = "sqlite://"
+# 默认用内存 SQLite：快、隔离、不依赖外部服务。
+#
+# 但生产用的是 MySQL，而两者在**枚举存储、JSON 列、字符串比较大小写、
+# 事务与约束行为**上都有差异 —— 「SQLite 全绿」不等于「MySQL 全绿」。
+# 所以留一个开关，可以拿同一套用例去跑另一个方言：
+#
+#   GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" \
+#       python -m pytest
+#
+# 注意必须指向**独立的测试库**：用例会清空所有表。
+os.environ["DATABASE_URL"] = os.environ.get("GOLDMIND_TEST_DATABASE_URL", "sqlite://")
 os.environ["SCHEDULER_ENABLED"] = "false"
 os.environ.setdefault("MIMO_API_KEY", "test-key-not-real")
 os.environ.setdefault("MIMO_BASE_URL", "https://example.invalid/v1")

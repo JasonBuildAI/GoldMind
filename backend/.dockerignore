@@ -1,0 +1,36 @@
+# 构建上下文里要排除的东西。
+#
+# 最重要的一条是 `.env`：Dockerfile 里是 `COPY . .`，没有这个文件的话
+# 本机的 `backend/.env`（含真实 API key）会被烤进镜像层。
+# 运行时该由 `env_file:` / 部署环境注入，不该来自镜像。
+
+# 密钥与本地配置
+.env
+.env.*
+!.env.example
+
+# 版本控制
+.git
+.gitignore
+
+# Python 产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 本地运行产物（不该进镜像）
+cache/
+*.db
+*.sqlite
+*.sqlite3
+e2e-cache/
+logs/
+*.log
+scripts/smoke_mimo_result.json
+
+# 开发工具
+.vscode
+.idea

@@ -160,6 +160,11 @@ cp .env.example .env
 # MySQL数据库连接URL
 DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
 
+# 这一项是**唯一真源**：后端应用、init_db.py、seed_data.py、scripts/*.py 都从这里取。
+# 不要再单独配 DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME —— 两套配置一旦不一致，
+# 建表灌数据的库和应用读写的库就不是同一个，而且不会有任何报错。
+# （那两个脚本只在 DATABASE_URL 缺失时才退回 DB_*。）
+
 # ============================================
 # AI API 密钥配置
 # ============================================
@@ -278,23 +283,25 @@ npm run dev
 #### 1. 配置环境变量
 
 ```bash
-# 复制示例配置文件
+# 复制示例配置文件（后端应用自己的变量，比如 MIMO_API_KEY）
 cp backend/.env.example backend/.env
 
-# 编辑 .env 文件，填入必要的 API 密钥
+# 编辑 backend/.env，填入必要的 API 密钥
 ```
 
-**必需的环境变量：**
+**Docker 部署的变量分两处，别放错：**
 
 ```bash
 # ============================================
-# 数据库配置（Docker内部使用）
+# ① 项目根目录的 .env —— 供 docker-compose 做变量插值
 # ============================================
+# compose 里的 ${MYSQL_ROOT_PASSWORD:-goldmind123} 只认**宿主环境**和
+# **项目根目录的 .env**，不认 `env_file:` 指定的 backend/.env。
+# 放错地方的结果是 MySQL 用默认密码、后端却按你写的密码去连，连不上。
 MYSQL_ROOT_PASSWORD=your_secure_password
-DATABASE_URL=mysql+pymysql://root:your_secure_password@mysql:3306/gold_analysis
 
 # ============================================
-# AI API 密钥配置
+# ② backend/.env —— 供容器内的应用读取
 # ============================================
 # 小米 MiMo - 推理与联网搜索统一使用同一个 key
 # 获取地址: https://platform.xiaomimimo.com/
@@ -305,7 +312,14 @@ MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
 MIMO_MODEL=mimo-v2.6-flash
 ```
 
-> 💡 **注意**：`docker-compose.yml` 已配置自动加载 `backend/.env` 文件，无需手动设置环境变量。
+> 💡 `docker-compose.yml` 会加载 `backend/.env` 作为容器环境（`env_file:`），
+> 并在 `environment:` 里覆盖数据库连接与 `DEBUG` / `LOG_LEVEL`。
+> **`DATABASE_URL` 不必写进 `backend/.env`** —— compose 会用
+> `${MYSQL_ROOT_PASSWORD}` 拼好并覆盖它，写在那里也不会生效。
+>
+> 注意 `environment:` 的优先级高于 `env_file:`，所以那里**不要**写
+> `- MIMO_API_KEY=${MIMO_API_KEY}`：项目根目录没有该变量时它会插值成空串，
+> 反过来把 `backend/.env` 里配好的 key 覆盖掉。
 
 #### 2. 启动服务
 
@@ -392,8 +406,22 @@ python -m pytest tests/unit          # 单元：不依赖数据库与网络
 python -m pytest tests/integration   # 集成：内存 SQLite + 假 LLM
 python -m pytest tests/e2e           # 端到端：按真实使用顺序串起整条链路
 
+# 换 MySQL 方言再跑一遍（改数据库相关代码后建议做）
+# 生产用 MySQL，而 SQLite 与它在枚举存储、JSON 列、字符串比较大小写上都有差异 ——
+# 「SQLite 全绿」不等于「MySQL 全绿」。必须指向**独立的测试库**：用例会清空所有表。
+GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" \
+    python -m pytest
+
 # 静态检查：全量语法
 python -m compileall -q app
+
+# 数据库初始化（建库 + 建表 + 灌历史数据）
+python init_db.py
+SKIP_SEED=1 python init_db.py        # 只建库建表，不灌数据
+
+# 修正旧库里的枚举列取值（幂等；只影响 schema.sql 早期版本建出来的库）
+python scripts/fix_enum_columns.py --dry-run
+python scripts/fix_enum_columns.py
 ```
 
 ### 前端

@@ -1,7 +1,7 @@
 # GoldMind - 完整部署配置
 # 一键启动：前端 + 后端 + 数据库
-
-version: '3.8'
+#
+# 不写 `version:` —— 它在 Compose V2 里已废弃，写了只会得到一条警告。
 
 services:
   # ============================================
@@ -20,10 +20,11 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      # 原先挂的是 ./backend/init.sql，但仓库里只有 schema.sql ——
-      # 挂一个不存在的路径会让 Docker 在容器内建出一个同名**目录**，
-      # MySQL 的初始化脚本目录里就多了一个无效条目。
-      # schema.sql 自带 CREATE DATABASE + USE，且全部是 IF NOT EXISTS，可直接作为初始化脚本。
+      # 挂载 schema.sql 作为初始化脚本。
+      # 它全部是 IF NOT EXISTS，且不自带 CREATE DATABASE / USE —— 官方 mysql 镜像
+      # 会用 MYSQL_DATABASE 选好库，写死库名反而会让配置失效。
+      # （原先挂的是 ./backend/init.sql，那个文件不存在：Docker 会在容器内建出一个
+      #   同名**目录**，初始化脚本目录里就多一个无效条目。）
       - ./backend/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
@@ -48,17 +49,21 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      # 数据库配置（覆盖.env中的配置）
+      # 数据库配置（覆盖 .env 里的本机配置）
       - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-goldmind123}@mysql:3306/gold_analysis
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_USER=root
       - DB_PASSWORD=${MYSQL_ROOT_PASSWORD:-goldmind123}
       - DB_NAME=gold_analysis
-      # AI API 密钥
-      - MIMO_API_KEY=${MIMO_API_KEY}
-      - MIMO_BASE_URL=${MIMO_BASE_URL:-https://token-plan-cn.xiaomimimo.com/v1}
-      - MIMO_MODEL=${MIMO_MODEL:-mimo-v2.6-flash}
+      # 注意：这里**不要**再写 MIMO_API_KEY / MIMO_BASE_URL / MIMO_MODEL。
+      #
+      # `environment` 的优先级高于 `env_file`，而 `${MIMO_API_KEY}` 这种插值只认
+      # 宿主环境与 compose 项目目录下的 .env —— 不认 env_file。本仓库根目录没有 .env，
+      # 所以原来那句 `- MIMO_API_KEY=${MIMO_API_KEY}` 会插值成**空串**，
+      # 反过来把 backend/.env 里配好的 key 覆盖掉，容器里的 LLM 直接不可用。
+      # 这三个值由 env_file 提供即可；缺省值 config.py 里也有。
+      #
       # 应用配置
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -67,6 +72,12 @@ services:
     volumes:
       - backend_cache:/app/cache
       - backend_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
     networks:
       - goldmind_network
 
@@ -80,7 +91,8 @@ services:
     container_name: goldmind_frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"

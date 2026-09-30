@@ -26,12 +26,14 @@ import pymysql
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-# 数据库配置（从环境变量或默认值）
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PORT = int(os.getenv('DB_PORT', 3306))
-DB_USER = os.getenv('DB_USER', 'root')
-DB_PASSWORD = os.getenv('DB_PASSWORD', 'root123')
-DB_NAME = os.getenv('DB_NAME', 'gold_analysis')
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from app.database import mysql_connection_params  # noqa: E402
+
+# 数据库配置：以 DATABASE_URL 为唯一真源（与后端应用一致）。
+# 曾经这里读 DB_*、应用读 DATABASE_URL，两处不一致时会把数据灌到另一个库上，
+# 且没有任何报错 —— 表现只是「接口里没数据」。
+DB_PARAMS = mysql_connection_params(include_database=True)
+DB_NAME = DB_PARAMS["database"]
 
 # 数据获取配置
 START_DATE = date(2025, 1, 1)
@@ -51,15 +53,7 @@ class DatabaseError(Exception):
 def get_db_connection():
     """获取数据库连接"""
     try:
-        conn = pymysql.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            port=DB_PORT,
-            database=DB_NAME,
-            charset='utf8mb4'
-        )
-        return conn
+        return pymysql.connect(**DB_PARAMS)
     except Exception as e:
         raise DatabaseError(f"数据库连接失败: {e}")
 
@@ -528,7 +522,7 @@ def main():
     print("🚀 数据库种子数据初始化")
     print("=" * 60)
     print(f"数据范围: {START_DATE} 至 {END_DATE}")
-    print(f"数据库: {DB_HOST}:{DB_PORT}/{DB_NAME}")
+    print(f"数据库: {DB_PARAMS['host']}:{DB_PARAMS['port']}/{DB_NAME}")
     print("-" * 60)
     
     try:

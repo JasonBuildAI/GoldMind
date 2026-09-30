@@ -1,0 +1,28 @@
+# 构建上下文里要排除的东西。
+#
+# 这不是可选项：Dockerfile 里 `npm ci` 之后紧跟 `COPY . .`，
+# 如果没有这个文件，宿主机的 node_modules 会**覆盖**容器里刚装好的那份 ——
+# 而宿主是 Windows、镜像是 alpine，二进制不兼容，构建随即失败或产物不可用。
+# dist/ 同理：拷进去的旧构建产物会让人以为改动没生效。
+
+node_modules
+dist
+dist-ssr
+
+# 本地环境变量：不该进镜像（密钥只走部署环境）
+.env
+.env.*
+!.env.example
+
+# 版本控制与工具产物
+.git
+.gitignore
+test-results
+playwright-report
+blob-report
+.playwright
+.vscode
+.idea
+
+*.log
+*.local
