@@ -11,22 +11,12 @@ from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
 from app.services.cache_manager import CacheManager
-from app.services.zhipu_service import get_zhipu_service
+from app.services.llm_provider import get_chat_llm
+from app.services.web_search_service import get_web_search_service
 import json
 
 # 全局线程池（所有服务共享）
 _executor = ThreadPoolExecutor(max_workers=4)
-
-# 延迟导入langchain_openai（避免启动时慢）
-ChatOpenAI = None
-
-def _get_chat_openai():
-    """延迟加载ChatOpenAI类"""
-    global ChatOpenAI
-    if ChatOpenAI is None:
-        from langchain_openai import ChatOpenAI as _ChatOpenAI
-        ChatOpenAI = _ChatOpenAI
-    return ChatOpenAI
 
 
 class BullishFactorAnalyzer:
@@ -34,7 +24,7 @@ class BullishFactorAnalyzer:
     
     def __init__(self):
         self._llm = None
-        self.zhipu_service = get_zhipu_service()
+        self.web_search_service = get_web_search_service()
         self.prompt_template = """你是一位专业的黄金市场分析师，专注于分析影响黄金价格上涨的因素。
 
 当前金价数据：
@@ -118,16 +108,9 @@ class BullishFactorAnalyzer:
 
     @property
     def llm(self):
-        """延迟创建LLM实例"""
+        """延迟创建 LLM 实例（供应商由 llm_provider 工厂统一决定）"""
         if self._llm is None:
-            ChatOpenAIClass = _get_chat_openai()
-            self._llm = ChatOpenAIClass(
-                model=settings.MODEL_NAME,
-                api_key=settings.DEEPSEEK_API_KEY,
-                base_url=settings.DEEPSEEK_BASE_URL,
-                temperature=0.7,
-                max_tokens=4096
-            )
+            self._llm = get_chat_llm(temperature=0.7, max_tokens=4096)
         return self._llm
 
     def fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
@@ -269,66 +252,16 @@ class BullishFactorAnalyzer:
 5. 确保5个因子都有数据
 """
         
-        try:
-            from openai import OpenAI
-            
-            client = OpenAI(
-                api_key=settings.ZHIPU_API_KEY,
-                base_url=settings.ZHIPU_BASE_URL
-            )
-            
-            response = client.chat.completions.create(
-                model=settings.ZHIPU_MODEL,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }],
-                tools=[{
-                    "type": "web_search",
-                    "web_search": {
-                        "enable": True,
-                        "search_result": True
-                    }
-                }],
-                temperature=0.3,
-                max_tokens=4096
-            )
-            
-            content = response.choices[0].message.content
-            
-            # 尝试解析JSON
-            try:
-                # 清理可能的markdown代码块
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-                
-                result = json.loads(content.strip())
-                return result
-            except json.JSONDecodeError:
-                # 尝试从文本中提取JSON
-                start = content.find('{')
-                end = content.rfind('}') + 1
-                if start != -1 and end > start:
-                    try:
-                        result = json.loads(content[start:end])
-                        return result
-                    except:
-                        pass
-                
-                return {
-                    "bullish_factors": [],
-                    "analysis_summary": "解析失败",
-                    "raw_content": content
-                }
-                
-        except Exception as e:
-            print(f"搜索看涨因素失败: {e}")
+        result = self.web_search_service.search_json(prompt)
+        if not result.get("available"):
+            # 联网搜索不可用（密钥缺失 / 插件未开通 / 凭证无权调用）时返回空结果，
+            # 交给 analyze() 回退到数据库与 RSS 新闻。绝不编造因子 ——
+            # 迁移前这里会把「搜索失败: ...」当成分析结果返回给上层。
             return {
                 "bullish_factors": [],
-                "analysis_summary": f"搜索失败: {str(e)}"
+                "analysis_summary": f"联网搜索不可用: {result.get('reason')}",
             }
+        return result
     
     def _analyze_with_traditional_llm(self, db: Session) -> Dict[str, Any]:
         """使用传统LLM分析（备用方案）"""

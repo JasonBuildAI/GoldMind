@@ -9,21 +9,11 @@ from app.models.news import GoldNews
 from app.models.gold_price import GoldPrice
 from app.config import settings
 from app.services.cache_manager import CacheManager
+from app.services.llm_provider import get_chat_llm
 import json
 import logging
 
 logger = logging.getLogger(__name__)
-
-# 延迟导入langchain_openai（避免启动时慢）
-ChatOpenAI = None
-
-def _get_chat_openai():
-    """延迟加载ChatOpenAI类"""
-    global ChatOpenAI
-    if ChatOpenAI is None:
-        from langchain_openai import ChatOpenAI as _ChatOpenAI
-        ChatOpenAI = _ChatOpenAI
-    return ChatOpenAI
 
 # 全局线程池
 _executor = ThreadPoolExecutor(max_workers=2)
@@ -37,16 +27,9 @@ class InvestmentAdviceAnalyzer:
 
     @property
     def llm(self):
-        """延迟创建LLM实例"""
+        """延迟创建 LLM 实例（供应商由 llm_provider 工厂统一决定）"""
         if self._llm is None:
-            ChatOpenAIClass = _get_chat_openai()
-            self._llm = ChatOpenAIClass(
-                model=settings.MODEL_NAME,
-                api_key=settings.DEEPSEEK_API_KEY,
-                base_url=settings.DEEPSEEK_BASE_URL,
-                temperature=0.7,
-                max_tokens=4096
-            )
+            self._llm = get_chat_llm(temperature=0.7, max_tokens=4096)
         return self._llm
 
     def _fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
@@ -430,7 +413,7 @@ class InvestmentAdviceService:
         优化策略：
         1. 优先从文件缓存读取（<10ms）
         2. 无缓存时返回默认数据并触发后台分析
-        3. use_cache=False时直接执行DeepSeek分析
+        3. use_cache=False时直接执行 MiMo 分析
 
         Args:
             market_status: 市场状态
@@ -442,9 +425,9 @@ class InvestmentAdviceService:
         Returns:
             投资建议分析结果
         """
-        # 如果强制刷新，直接执行DeepSeek分析
+        # 如果强制刷新，直接执行 MiMo 分析
         if not use_cache:
-            print("[InvestmentAdvice] 强制刷新，执行DeepSeek实时分析...")
+            print("[InvestmentAdvice] 强制刷新，执行 MiMo 实时分析...")
             try:
                 result = self.analyzer.analyze(
                     self.db,
@@ -456,14 +439,14 @@ class InvestmentAdviceService:
                 self.cache.set(result)
                 result["metadata"] = {
                     "cached": False,
-                    "cache_source": "deepseek_realtime",
+                    "cache_source": "mimo_realtime",
                     "generated_at": datetime.now().isoformat(),
                     "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
-                    "analysis_method": "LangChain Agent + DeepSeek LLM 实时分析"
+                    "analysis_method": "MiMo LLM 实时分析"
                 }
                 return result
             except Exception as e:
-                print(f"[InvestmentAdvice] DeepSeek分析失败: {e}")
+                print(f"[InvestmentAdvice] MiMo 分析失败: {e}")
                 # 如果分析失败，返回缓存数据
                 pass
         
@@ -475,7 +458,7 @@ class InvestmentAdviceService:
                 "cache_source": "file",
                 "generated_at": datetime.now().isoformat(),
                 "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
-                "analysis_method": "LangChain Agent + DeepSeek LLM"
+                "analysis_method": "MiMo LLM 综合分析"
             }
             return cached_data
 
@@ -528,7 +511,7 @@ class InvestmentAdviceService:
                 "status": "analyzing",
                 "message": "AI分析进行中，首次加载可能需要1-2分钟",
                 "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
-                "analysis_method": "LangChain Agent + DeepSeek LLM"
+                "analysis_method": "MiMo LLM 综合分析"
             }
         }
 

@@ -52,8 +52,9 @@ services:
       - DB_PASSWORD=${MYSQL_ROOT_PASSWORD:-goldmind123}
       - DB_NAME=gold_analysis
       # AI API 密钥
-      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - MIMO_API_KEY=${MIMO_API_KEY}
+      - MIMO_BASE_URL=${MIMO_BASE_URL:-https://token-plan-cn.xiaomimimo.com/v1}
+      - MIMO_MODEL=${MIMO_MODEL:-mimo-v2.6-flash}
       # 应用配置
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -76,8 +77,6 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    environment:
-      - VITE_API_URL=http://backend:8000
     ports:
       - "80:80"
       - "443:443"

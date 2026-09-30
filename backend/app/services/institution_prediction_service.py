@@ -10,19 +10,9 @@ from app.models.news import GoldNews
 from app.models.analysis import InstitutionView
 from app.config import settings
 from app.services.cache_manager import CacheManager
-from app.services.zhipu_service import get_zhipu_service
+from app.services.llm_provider import get_chat_llm
+from app.services.web_search_service import get_web_search_service
 import json
-
-# 延迟导入langchain_openai（避免启动时慢）
-ChatOpenAI = None
-
-def _get_chat_openai():
-    """延迟加载ChatOpenAI类"""
-    global ChatOpenAI
-    if ChatOpenAI is None:
-        from langchain_openai import ChatOpenAI as _ChatOpenAI
-        ChatOpenAI = _ChatOpenAI
-    return ChatOpenAI
 
 # 全局线程池
 _executor = ThreadPoolExecutor(max_workers=2)
@@ -33,7 +23,7 @@ class InstitutionPredictionAnalyzer:
 
     def __init__(self):
         self._llm = None
-        self.zhipu_service = get_zhipu_service()
+        self.web_search_service = get_web_search_service()
         self.prompt_template = """你是一位专业的金融市场数据分析师，专注于追踪华尔街顶级投行对黄金价格的最新预测。
 
 你的任务是搜索并整理以下四家主流机构对黄金的最新预测：
@@ -129,16 +119,9 @@ class InstitutionPredictionAnalyzer:
 
     @property
     def llm(self):
-        """延迟创建LLM实例"""
+        """延迟创建 LLM 实例（供应商由 llm_provider 工厂统一决定）"""
         if self._llm is None:
-            ChatOpenAIClass = _get_chat_openai()
-            self._llm = ChatOpenAIClass(
-                model="deepseek-chat",
-                openai_api_key=settings.DEEPSEEK_API_KEY,
-                openai_api_base=settings.DEEPSEEK_BASE_URL,
-                temperature=0.7,
-                max_tokens=4096
-            )
+            self._llm = get_chat_llm(temperature=0.7, max_tokens=4096)
         return self._llm
 
     def fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
@@ -181,23 +164,24 @@ class InstitutionPredictionAnalyzer:
         return all_news
 
     def analyze(self, db: Session) -> Dict[str, Any]:
-        """执行分析 - 使用智谱AI实时搜索"""
+        """执行分析 - 使用 MiMo 联网搜索"""
         # 使用智谱AI实时搜索获取最新机构预测
         try:
-            print("[InstitutionPrediction] 使用智谱AI实时搜索机构预测...")
-            search_result = self.zhipu_service.search_institution_predictions()
+            print("[InstitutionPrediction] 使用 MiMo 联网搜索机构预测...")
+            search_result = self.web_search_service.search_institution_predictions()
             
-            # 检查搜索结果是否有效
-            if search_result.get("institutions") and len(search_result["institutions"]) > 0:
+            # 必须同时确认搜索真的可用，否则「搜到空结果」与「搜索不可用」
+            # 会被混为一谈，上层就无法决定是否该回退。
+            if search_result.get("available") and search_result.get("institutions"):
                 print(f"[InstitutionPrediction] 成功获取 {len(search_result['institutions'])} 家机构预测")
                 search_result["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                search_result["data_source"] = "智谱AI实时搜索"
+                search_result["data_source"] = "MiMo 联网搜索"
                 return search_result
             else:
                 print("[InstitutionPrediction] 搜索结果为空，使用备用方案")
                 
         except Exception as e:
-            print(f"[InstitutionPrediction] 智谱AI搜索失败: {e}")
+            print(f"[InstitutionPrediction] MiMo 搜索失败: {e}")
         
         # 备用方案：使用传统方式分析
         return self._analyze_with_traditional_llm(db)
@@ -361,7 +345,7 @@ class InstitutionPredictionService:
         self.db = db
         self.analyzer = InstitutionPredictionAnalyzer()
         self.cache = CacheManager("institution_predictions", ttl=3600)  # 1小时缓存（实时数据更频繁更新）
-        self.zhipu_service = get_zhipu_service()
+        self.web_search_service = get_web_search_service()
 
     def get_institution_predictions(self, use_cache: bool = True) -> Dict[str, Any]:
         """

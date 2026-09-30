@@ -1,4 +1,4 @@
-"""黄金市场综合分析服务 - 使用DeepSeek进行全方位市场总结"""
+"""黄金市场综合分析服务 - 使用 MiMo 进行全方位市场总结"""
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -9,42 +9,25 @@ import logging
 
 from app.config import settings
 from app.services.cache_manager import CacheManager
+from app.services.llm_provider import get_chat_llm
 
 logger = logging.getLogger(__name__)
-
-# 延迟导入langchain_openai
-ChatOpenAI = None
-
-def _get_chat_openai():
-    """延迟加载ChatOpenAI类"""
-    global ChatOpenAI
-    if ChatOpenAI is None:
-        from langchain_openai import ChatOpenAI as _ChatOpenAI
-        ChatOpenAI = _ChatOpenAI
-    return ChatOpenAI
 
 # 全局线程池
 _executor = ThreadPoolExecutor(max_workers=2)
 
 
 class MarketSummaryAnalyzer:
-    """使用DeepSeek分析所有市场数据，生成综合市场总结"""
+    """使用 MiMo 分析所有市场数据，生成综合市场总结"""
 
     def __init__(self):
         self._llm = None
 
     @property
     def llm(self):
-        """延迟创建LLM实例"""
+        """延迟创建 LLM 实例（供应商由 llm_provider 工厂统一决定）"""
         if self._llm is None:
-            ChatOpenAIClass = _get_chat_openai()
-            self._llm = ChatOpenAIClass(
-                model=settings.MODEL_NAME,
-                api_key=settings.DEEPSEEK_API_KEY,
-                base_url=settings.DEEPSEEK_BASE_URL,
-                temperature=0.7,
-                max_tokens=4096
-            )
+            self._llm = get_chat_llm(temperature=0.7, max_tokens=4096)
         return self._llm
 
     def analyze(
@@ -80,7 +63,7 @@ class MarketSummaryAnalyzer:
         )
 
         try:
-            # 调用DeepSeek进行分析
+            # 调用 MiMo 进行分析
             response = self.llm.invoke(prompt)
             analysis_text = response.content
 
@@ -89,7 +72,7 @@ class MarketSummaryAnalyzer:
             return result
 
         except Exception as e:
-            logger.error(f"DeepSeek分析失败: {e}")
+            logger.error(f"MiMo 分析失败: {e}")
             # 返回默认结构
             return self._get_default_analysis()
 
@@ -208,7 +191,7 @@ class MarketSummaryAnalyzer:
         return prompt
 
     def _parse_analysis_result(self, analysis_text: str) -> Dict[str, Any]:
-        """解析DeepSeek返回的分析结果"""
+        """解析 MiMo 返回的分析结果"""
         try:
             # 提取JSON部分
             json_start = analysis_text.find('{')
@@ -315,9 +298,9 @@ class MarketSummaryService:
         # 获取实时金价（用于覆盖结果中的价格）
         realtime_price = self._get_realtime_price()
 
-        # 如果强制刷新，直接执行DeepSeek分析
+        # 如果强制刷新，直接执行 MiMo 分析
         if not use_cache:
-            print("[MarketSummary] 强制刷新，执行DeepSeek实时分析...")
+            print("[MarketSummary] 强制刷新，执行 MiMo 实时分析...")
             try:
                 result = self.analyzer.analyze(
                     self.db,
@@ -332,14 +315,14 @@ class MarketSummaryService:
                 self.cache.set(result)
                 result["metadata"] = {
                     "cached": False,
-                    "cache_source": "deepseek_realtime",
+                    "cache_source": "mimo_realtime",
                     "generated_at": datetime.now().isoformat(),
                     "data_sources": ["实时金价数据", "看涨因子", "看跌因子", "机构预测", "24小时新闻"],
-                    "analysis_method": "DeepSeek LLM 综合分析"
+                    "analysis_method": "MiMo LLM 综合分析"
                 }
                 return result
             except Exception as e:
-                print(f"[MarketSummary] DeepSeek分析失败: {e}")
+                print(f"[MarketSummary] MiMo 分析失败: {e}")
                 pass
 
         # 1. 首先尝试文件缓存
@@ -352,7 +335,7 @@ class MarketSummaryService:
                 "cache_source": "file",
                 "generated_at": datetime.now().isoformat(),
                 "data_sources": ["实时金价数据", "看涨因子", "看跌因子", "机构预测", "24小时新闻"],
-                "analysis_method": "DeepSeek LLM 综合分析"
+                "analysis_method": "MiMo LLM 综合分析"
             }
             return cached_data
 

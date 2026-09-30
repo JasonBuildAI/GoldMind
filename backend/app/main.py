@@ -228,11 +228,12 @@ async def health_check():
     
     # 5. 检查AI服务配置
     try:
+        from app.services.llm_provider import describe as describe_llm
+
+        llm_info = describe_llm()
         health_status["services"]["ai_config"] = {
-            "status": "ok",
-            "deepseek_configured": bool(settings.DEEPSEEK_API_KEY),
-            "zhipu_configured": bool(settings.ZHIPU_API_KEY),
-            "llm_provider": settings.LLM_PROVIDER
+            "status": "ok" if llm_info["configured"] else "unconfigured",
+            **llm_info,
         }
     except Exception as e:
         health_status["services"]["ai_config"] = {
