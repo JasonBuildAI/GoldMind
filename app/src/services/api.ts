@@ -434,8 +434,47 @@ export interface QuantFactorsResponse {
   unavailable_reason: string | null
 }
 
+export interface QuantScenario {
+  key: 'base' | 'bull' | 'bear'
+  label: string
+  probability: number
+  price_low: number | null
+  price_high: number | null
+  trigger: string
+  invalidation: string
+}
+
+export interface QuantDecompositionDriver {
+  key: string
+  name: string
+  log_contribution: number | null
+}
+
+export interface QuantDecompositionBlock {
+  key: 'anchor' | 'demand' | 'risk' | 'residual'
+  name: string
+  usd: number | null
+  share_pct: number | null
+  drivers: QuantDecompositionDriver[]
+}
+
+export interface QuantDecomposition {
+  status: string
+  reason: string | null
+  as_of: string | null
+  market_price: number | null
+  fair_value: number | null
+  deviation_pct: number | null
+  r2: number | null
+  samples: number
+  blocks: QuantDecompositionBlock[]
+}
+
 export interface QuantPredictionItem {
   horizon_days: number
+  scale_label: string | null
+  scale: string | null
+  scale_description: string | null
   status: string
   reason: string | null
   direction: 'up' | 'down' | null
@@ -446,6 +485,10 @@ export interface QuantPredictionItem {
   expected_return: number | null
   uncertainty: number | null
   probability_up: number | null
+  range_low: number | null
+  range_high: number | null
+  scenarios: QuantScenario[]
+  scenario_reason: string | null
   score: number | null
   model_version: string
   available_factors: number
@@ -456,6 +499,7 @@ export interface QuantPredictionItem {
 export interface QuantPredictionsResponse {
   model_version: string
   as_of: string | null
+  fair_value: QuantDecomposition
   predictions: QuantPredictionItem[]
 }
 
@@ -482,9 +526,33 @@ export interface QuantAccuracyRow {
   baseline_up_accuracy: number | null
   baseline_momentum_accuracy: number | null
   brier_score: number | null
-  metrics: Record<string, unknown>
+  metrics: QuantAccuracyMetrics
   factors: QuantFactorPerformance[]
   reason: string | null
+}
+
+export interface QuantRegimeBlock {
+  label: string
+  window_start: string | null
+  window_end: string | null
+  sample_size: number
+  accuracy: number | null
+  baseline_up_accuracy: number | null
+  baseline_momentum_accuracy: number | null
+  reason: string | null
+}
+
+export interface QuantAccuracyMetrics {
+  interval_nominal_80?: number
+  interval_coverage_80?: number | null
+  regimes?: {
+    split_date?: string
+    note?: string
+    pre?: QuantRegimeBlock
+    post?: QuantRegimeBlock
+  }
+  reason?: string
+  [key: string]: unknown
 }
 
 export interface QuantAccuracyResponse {
@@ -500,6 +568,27 @@ export interface QuantRefreshResponse {
   factor_status: Record<string, unknown>
   predictions: QuantPredictionItem[]
   evaluations: QuantAccuracyRow[]
+}
+
+export interface QuantMonitorRow {
+  key: string
+  name: string
+  frequency: string
+  source: string
+  value: number | null
+  unit: string
+  change: number | null
+  obs_date: string | null
+  signal: 'bull' | 'bear' | 'neutral' | null
+  signal_label: string
+  note: string
+  status: string
+  reason: string | null
+}
+
+export interface QuantMonitorResponse {
+  as_of: string | null
+  rows: QuantMonitorRow[]
 }
 
 export const quantApi = {
@@ -521,6 +610,11 @@ export const quantApi = {
 
   getAccuracy: async (): Promise<QuantAccuracyResponse> => {
     const response = await api.get<QuantAccuracyResponse>('/api/gold/quant/accuracy')
+    return response.data
+  },
+
+  getMonitor: async (): Promise<QuantMonitorResponse> => {
+    const response = await api.get<QuantMonitorResponse>('/api/gold/quant/monitor')
     return response.data
   },
 

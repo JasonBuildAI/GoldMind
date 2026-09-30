@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,10 +6,13 @@ import Quant from './Quant'
 import { quantApi } from '../services/api'
 import type {
   QuantAccuracyRow,
+  QuantDecomposition,
   QuantFactorSnapshot,
   QuantFactorsResponse,
+  QuantMonitorResponse,
   QuantPredictionItem,
   QuantPredictionsResponse,
+  QuantScenario,
 } from '../services/api'
 
 vi.mock('../services/api', () => ({
@@ -17,6 +20,7 @@ vi.mock('../services/api', () => ({
     getFactors: vi.fn(),
     getPredictions: vi.fn(),
     getAccuracy: vi.fn(),
+    getMonitor: vi.fn(),
     refresh: vi.fn(),
   },
 }))
@@ -107,9 +111,65 @@ const FACTOR_RESPONSE: QuantFactorsResponse = {
   unavailable_reason: null,
 }
 
+const SCENARIOS: QuantScenario[] = [
+  {
+    key: 'base',
+    label: '基准情景',
+    probability: 0.5,
+    price_low: 4150,
+    price_high: 4280,
+    trigger: 'VIX 方向对齐 z 停留在 ±1 之间，且金价在 [4,150, 4,280] 内震荡',
+    invalidation: 'VIX 方向对齐 z 越过 ±1，或金价收盘走出 [4,150, 4,280]',
+  },
+  {
+    key: 'bull',
+    label: '看涨情景',
+    probability: 0.25,
+    price_low: 4280,
+    price_high: null,
+    trigger: 'VIX 方向对齐 z 维持为正，且金价站上 200 日均线（4,050）',
+    invalidation: 'VIX 方向对齐 z 转负，或金价跌破 200 日均线（4,050）',
+  },
+  {
+    key: 'bear',
+    label: '看跌情景',
+    probability: 0.25,
+    price_low: null,
+    price_high: 4150,
+    trigger: 'VIX 方向对齐 z 转负，或金价跌破 200 日均线（4,050）',
+    invalidation: 'VIX 方向对齐 z 转正，或金价站上 200 日均线（4,050）',
+  },
+]
+
+const FAIR_VALUE: QuantDecomposition = {
+  status: 'ok',
+  reason: null,
+  as_of: '2026-09-30',
+  market_price: 4200,
+  fair_value: 4130.5,
+  deviation_pct: 0.0168,
+  r2: 0.912,
+  samples: 780,
+  blocks: [
+    {
+      key: 'anchor',
+      name: '宏观锚（实际利率 + 美元）',
+      usd: 3900,
+      share_pct: 92.9,
+      drivers: [{ key: 'real_yield_10y', name: '美债 10 年期实际利率', log_contribution: -0.12 }],
+    },
+    { key: 'demand', name: '需求结构（央行购金）', usd: 120, share_pct: 2.9, drivers: [] },
+    { key: 'risk', name: '风险溢价（VIX）', usd: 400, share_pct: 9.5, drivers: [] },
+    { key: 'residual', name: '情绪残差', usd: -219.5, share_pct: -5.3, drivers: [] },
+  ],
+}
+
 function prediction(overrides: Partial<QuantPredictionItem>): QuantPredictionItem {
   return {
     horizon_days: 1,
+    scale_label: '1 日',
+    scale: '日内～一周',
+    scale_description: '资金流、技术面、仓位拥挤度主导，宏观基本面权重最低',
     status: 'ok',
     reason: null,
     direction: 'up',
@@ -120,6 +180,10 @@ function prediction(overrides: Partial<QuantPredictionItem>): QuantPredictionIte
     expected_return: 0.0143,
     uncertainty: 0.02,
     probability_up: 0.62,
+    range_low: 4100,
+    range_high: 4330,
+    scenarios: SCENARIOS,
+    scenario_reason: null,
     score: 0.42,
     model_version: 'quant-v1',
     available_factors: 4,
@@ -163,6 +227,7 @@ function prediction(overrides: Partial<QuantPredictionItem>): QuantPredictionIte
 const PREDICTION_RESPONSE: QuantPredictionsResponse = {
   model_version: 'quant-v1',
   as_of: '2026-09-30',
+  fair_value: FAIR_VALUE,
   predictions: [
     prediction({ horizon_days: 1 }),
     prediction({
@@ -186,9 +251,27 @@ const PREDICTION_RESPONSE: QuantPredictionsResponse = {
       expected_return: null,
       uncertainty: null,
       probability_up: null,
+      range_low: null,
+      range_high: null,
+      scenarios: [],
+      scenario_reason: '预测不可用，无法生成情景',
       score: null,
       available_factors: 2,
       factors: [],
+    }),
+    prediction({
+      horizon_days: 60,
+      direction: 'up',
+      direction_label: '看涨',
+      base_price: 4200,
+      target_price: 4380,
+      expected_return: 0.0429,
+      probability_up: 0.66,
+      score: 0.55,
+      range_low: null,
+      range_high: null,
+      scenarios: [],
+      scenario_reason: '200 日均线历史样本不足，无法生成触发条件',
     }),
   ],
 }
@@ -203,7 +286,34 @@ const ACCURACY_ROW: QuantAccuracyRow = {
   baseline_up_accuracy: 0.54,
   baseline_momentum_accuracy: 0.487,
   brier_score: 0.241,
-  metrics: {},
+  metrics: {
+    interval_nominal_80: 0.8,
+    interval_coverage_80: 0.764,
+    regimes: {
+      split_date: '2022-01-01',
+      note: '2022 年起央行购金与地缘冲突改变了定价结构',
+      pre: {
+        label: '2022-01-01 之前',
+        window_start: '2015-01-02',
+        window_end: '2021-12-31',
+        sample_size: 400,
+        accuracy: 0.585,
+        baseline_up_accuracy: 0.51,
+        baseline_momentum_accuracy: 0.47,
+        reason: null,
+      },
+      post: {
+        label: '2022-01-01 起',
+        window_start: '2022-01-03',
+        window_end: '2026-09-30',
+        sample_size: 380,
+        accuracy: 0.658,
+        baseline_up_accuracy: 0.58,
+        baseline_momentum_accuracy: 0.51,
+        reason: null,
+      },
+    },
+  },
   factors: [
     {
       key: 'real_yield_10y',
@@ -241,10 +351,77 @@ const ACCURACY_RESPONSE = {
   history: [ACCURACY_ROW],
 }
 
+const MONITOR_RESPONSE: QuantMonitorResponse = {
+  as_of: '2026-09-30',
+  rows: [
+    {
+      key: 'ma200',
+      name: '金价 vs 200 日均线',
+      frequency: '日',
+      source: '自有价格序列',
+      value: 4050,
+      unit: '美元',
+      change: 3.7,
+      obs_date: '2026-09-30',
+      signal: 'bull',
+      signal_label: '看涨',
+      note: '偏离 ≥ +0.5% 看涨、≤ −0.5% 看跌',
+      status: 'ok',
+      reason: null,
+    },
+    {
+      key: 'rrp',
+      name: '纽约联储逆回购（RRP）',
+      frequency: '日',
+      source: '纽约联储公开市场操作结果',
+      value: 320.5,
+      unit: '亿美元',
+      change: -82.4,
+      obs_date: '2026-09-29',
+      signal: 'bull',
+      signal_label: '看涨',
+      note: '20 个观测增加 ≥ 50 亿看跌、减少 ≥ 50 亿看涨（释放流动性）',
+      status: 'ok',
+      reason: null,
+    },
+    {
+      key: 'usdcny',
+      name: '美元兑人民币（USDCNY）',
+      frequency: '日',
+      source: 'Yahoo Finance（CNY=X）',
+      value: 7.12,
+      unit: '元',
+      change: 0.03,
+      obs_date: '2026-09-30',
+      signal: null,
+      signal_label: '信息',
+      note: '信息行：只作人民币金价换算参考，不参与多空',
+      status: 'ok',
+      reason: null,
+    },
+    {
+      key: 'shanghai_premium',
+      name: '上海金溢价',
+      frequency: '日',
+      source: '上海黄金交易所 AU9999',
+      value: null,
+      unit: '元/克',
+      change: null,
+      obs_date: null,
+      signal: null,
+      signal_label: '不可用',
+      note: '公开无密钥接口实测不可用：如实标不可用，不编数',
+      status: 'unavailable',
+      reason: '公开无密钥接口（上海黄金交易所 AU9999）实测返回空，不编数',
+    },
+  ],
+}
+
 function mockApi() {
   mocked.getFactors.mockResolvedValue(FACTOR_RESPONSE)
   mocked.getPredictions.mockResolvedValue(PREDICTION_RESPONSE)
   mocked.getAccuracy.mockResolvedValue(ACCURACY_RESPONSE)
+  mocked.getMonitor.mockResolvedValue(MONITOR_RESPONSE)
 }
 
 beforeEach(() => {
@@ -272,10 +449,26 @@ describe('Quant', () => {
     render(<Quant />)
     await screen.findByText('▼ 看跌')
 
-    await user.click(screen.getAllByRole('tab', { name: '1 个交易日' })[0])
+    await user.click(screen.getAllByRole('tab', { name: '1 日' })[0])
 
-    expect(await screen.findByText('▲ 看涨')).toBeInTheDocument()
-    expect(screen.getByText('$4,260.00')).toBeInTheDocument()
+    const panel = await screen.findByTestId('quant-prediction-1')
+    expect(within(panel).getByText('▲ 看涨')).toBeInTheDocument()
+    expect(within(panel).getByText('$4,260.00')).toBeInTheDocument()
+  })
+
+  it('给出五个尺度，切换后各自给结论', async () => {
+    mockApi()
+    const user = userEvent.setup()
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    for (const label of ['1 日', '1 周', '1 月', '1 季', '1 年']) {
+      expect(screen.getAllByRole('tab', { name: label }).length).toBeGreaterThan(0)
+    }
+
+    await user.click(screen.getAllByRole('tab', { name: '1 月' })[0])
+    expect(await screen.findByText('1 月的预测不可用')).toBeInTheDocument()
   })
 
   it('预测不可用时只给原因，不给方向与数字', async () => {
@@ -285,11 +478,78 @@ describe('Quant', () => {
     render(<Quant />)
     await screen.findByText('▼ 看跌')
 
-    await user.click(screen.getAllByRole('tab', { name: '20 个交易日' })[0])
+    await user.click(screen.getAllByRole('tab', { name: '1 月' })[0])
 
-    expect(await screen.findByText('20 个交易日的预测不可用')).toBeInTheDocument()
-    expect(screen.getByText(/可用因子只有 2 个/)).toBeInTheDocument()
-    expect(screen.queryByText('▲ 看涨')).not.toBeInTheDocument()
+    const block = await screen.findByTestId('quant-prediction-unavailable-20')
+    expect(within(block).getByText('1 月的预测不可用')).toBeInTheDocument()
+    expect(within(block).getByText(/可用因子只有 2 个/)).toBeInTheDocument()
+    expect(screen.queryByTestId('quant-prediction-20')).not.toBeInTheDocument()
+    expect(within(block).queryByText(/\$/)).not.toBeInTheDocument()
+  })
+
+  it('三情景给出区间、触发与失效条件', async () => {
+    mockApi()
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    expect(screen.getByText('基准情景')).toBeInTheDocument()
+    expect(screen.getByText('$4,150.00 ~ $4,280.00')).toBeInTheDocument()
+    expect(screen.getByText('$4,280.00 以上')).toBeInTheDocument()
+    expect(screen.getByText('$4,150.00 以下')).toBeInTheDocument()
+    expect(screen.getByText(/VIX 方向对齐 z 停留在 ±1 之间/)).toBeInTheDocument()
+    expect(screen.getAllByText(/金价跌破 200 日均线/).length).toBeGreaterThan(0)
+  })
+
+  it('情景缺样本时只说明原因，不摆区间', async () => {
+    mockApi()
+    const user = userEvent.setup()
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    await user.click(screen.getAllByRole('tab', { name: '1 季' })[0])
+
+    expect(await screen.findByTestId('quant-scenarios-unavailable-60')).toBeInTheDocument()
+    expect(screen.getByText(/200 日均线历史样本不足，无法生成触发条件/)).toBeInTheDocument()
+  })
+
+  it('公允价分解给出四块构成与偏离度', async () => {
+    mockApi()
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    expect(screen.getByText('公允价值分解')).toBeInTheDocument()
+    expect(screen.getByText('$4,130.50')).toBeInTheDocument()
+    expect(screen.getByText('+1.68%')).toBeInTheDocument()
+    expect(screen.getByText('0.912')).toBeInTheDocument()
+    expect(screen.getByText('宏观锚（实际利率 + 美元）')).toBeInTheDocument()
+    expect(screen.getByText('情绪残差')).toBeInTheDocument()
+    expect(screen.getByText('92.9%')).toBeInTheDocument()
+  })
+
+  it('公允价不可用时只给原因，不摆分解数字', async () => {
+    mockApi()
+    mocked.getPredictions.mockResolvedValue({
+      ...PREDICTION_RESPONSE,
+      fair_value: {
+        ...FAIR_VALUE,
+        status: 'unavailable',
+        reason: '回归样本不足（最近 250 个交易日）',
+        market_price: null,
+        fair_value: null,
+        deviation_pct: null,
+        r2: null,
+        samples: 0,
+        blocks: [],
+      },
+    })
+
+    render(<Quant />)
+
+    expect(await screen.findByTestId('quant-fair-value-unavailable')).toBeInTheDocument()
+    expect(screen.getByText(/回归样本不足/)).toBeInTheDocument()
   })
 
   it('四类因素表都渲染，并给出数据截至、来源与陈旧原因', async () => {
@@ -316,20 +576,48 @@ describe('Quant', () => {
     render(<Quant />)
 
     expect(await screen.findByText('回测命中率')).toBeInTheDocument()
-    expect(screen.getByText('本模型')).toBeInTheDocument()
+    expect(screen.getAllByText('本模型').length).toBeGreaterThan(0)
     expect(screen.getByText('62.1%')).toBeInTheDocument()
-    expect(screen.getByText('永远看多')).toBeInTheDocument()
+    expect(screen.getAllByText('永远看多').length).toBeGreaterThan(0)
     expect(screen.getByText('54.0%')).toBeInTheDocument()
     expect(screen.getByText('动量（60 日）')).toBeInTheDocument()
     expect(screen.getByText('抛硬币')).toBeInTheDocument()
     expect(screen.getByText('50.0%')).toBeInTheDocument()
     expect(screen.getByText(/样本 780 个交易日/)).toBeInTheDocument()
+
+    expect(screen.getByText(/实际覆盖率 76.4%/)).toBeInTheDocument()
+    expect(screen.getByText('2022-01-01 之前')).toBeInTheDocument()
+    expect(screen.getByText('2022-01-01 起')).toBeInTheDocument()
+    expect(screen.getByText('65.8%')).toBeInTheDocument()
+    // 58.0% 也出现在逐因子命中率表里，用 all 断言存在即可
+    expect(screen.getAllByText('58.0%').length).toBeGreaterThan(1)
+  })
+
+  it('监测仪表盘给出值、数据截至与信号，不可用的行说明原因', async () => {
+    mockApi()
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    expect(screen.getByText('监测仪表盘（周更表）')).toBeInTheDocument()
+    expect(screen.getByText('金价 vs 200 日均线')).toBeInTheDocument()
+    expect(screen.getByText('4050 美元')).toBeInTheDocument()
+    expect(screen.getByText('+3.70')).toBeInTheDocument()
+    expect(screen.getByText('2026-09-29')).toBeInTheDocument()
+    expect(screen.getAllByText('▲ 看涨').length).toBeGreaterThan(0)
+    // 信息型指标不给方向，照实标「信息」
+    expect(screen.getByText('信息')).toBeInTheDocument()
+    // 上海金溢价拿不到数据：只给原因，不编一个数
+    expect(screen.getByText('上海金溢价')).toBeInTheDocument()
+    expect(screen.getByTestId('quant-monitor-reason-shanghai_premium')).toBeInTheDocument()
+    expect(screen.getByText(/AU9999）实测返回空，不编数/)).toBeInTheDocument()
   })
 
   it('接口失败时如实说不可用，不摆内置数字', async () => {
     mocked.getFactors.mockRejectedValue(new Error('boom'))
     mocked.getPredictions.mockRejectedValue(new Error('boom'))
     mocked.getAccuracy.mockRejectedValue(new Error('boom'))
+    mocked.getMonitor.mockRejectedValue(new Error('boom'))
 
     render(<Quant />)
 

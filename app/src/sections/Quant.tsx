@@ -10,13 +10,25 @@ import {
   quantApi,
   type QuantAccuracyResponse,
   type QuantAccuracyRow,
+  type QuantDecomposition,
   type QuantFactorSnapshot,
   type QuantFactorsResponse,
+  type QuantMonitorResponse,
+  type QuantMonitorRow,
   type QuantPredictionItem,
   type QuantPredictionsResponse,
+  type QuantScenario,
 } from '@/services/api'
 
-const HORIZONS = [1, 5, 20]
+const HORIZONS = [1, 5, 20, 60, 250]
+
+const SCALE_SHORT: Record<number, string> = {
+  1: '1 日',
+  5: '1 周',
+  20: '1 月',
+  60: '1 季',
+  250: '1 年',
+}
 
 const STATUS_LABEL: Record<string, string> = {
   ok: '正常',
@@ -28,7 +40,7 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 function horizonLabel(days: number): string {
-  return `${days} 个交易日`
+  return SCALE_SHORT[days] ?? `${days} 个交易日`
 }
 
 /** 涨跌方向：符号 + 文字一起给，颜色只是加强。 */
@@ -41,6 +53,248 @@ function Direction({ direction }: { direction: 'up' | 'down' | null }) {
 function statusTag(status: string) {
   if (status === 'ok') return null
   return <span className="tag">{STATUS_LABEL[status] ?? status}</span>
+}
+
+function scenarioRange(scenario: QuantScenario): string {
+  if (scenario.price_low !== null && scenario.price_high !== null) {
+    return `${formatUsd(scenario.price_low)} ~ ${formatUsd(scenario.price_high)}`
+  }
+  if (scenario.price_low !== null) return `${formatUsd(scenario.price_low)} 以上`
+  if (scenario.price_high !== null) return `${formatUsd(scenario.price_high)} 以下`
+  return '—'
+}
+
+/** 三情景：区间来自预测分布分位数；触发条件出现就改情景，失效条件出现就作废。 */
+function ScenarioTable({ prediction }: { prediction: QuantPredictionItem }) {
+  if (prediction.scenarios.length === 0) {
+    return (
+      <p className="note" data-testid={`quant-scenarios-unavailable-${prediction.horizon_days}`}>
+        三情景不可用：{prediction.scenario_reason ?? '预测分布或历史样本不足，这里不摆区间。'}
+      </p>
+    )
+  }
+  return (
+    <div className="table-scroll">
+      <table className="data-table">
+        <caption className="note">
+          三情景由该尺度预测分布 N(μ, σ²) 的分位数定义：Base 50%、Bull 25%、Bear 25%。
+          点位必须带失效条件 —— 触发条件出现就切换情景，失效条件出现就作废。
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">情景</th>
+            <th scope="col" className="num">
+              概率
+            </th>
+            <th scope="col">
+              价格区间
+            </th>
+            <th scope="col">触发条件</th>
+            <th scope="col">失效条件</th>
+          </tr>
+        </thead>
+        <tbody>
+          {prediction.scenarios.map((scenario) => (
+            <tr key={scenario.key}>
+              <th scope="row">{scenario.label}</th>
+              <td className="num">{formatShare(scenario.probability * 100, 0)}</td>
+              <td className="num">{scenarioRange(scenario)}</td>
+              <td className="note">{scenario.trigger}</td>
+              <td className="note">{scenario.invalidation}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** 公允价：把市场价拆成宏观锚、需求溢价、风险溢价与情绪残差。 */
+function FairValuePanel({ decomposition }: { decomposition: QuantDecomposition }) {
+  if (decomposition.status !== 'ok') {
+    return (
+      <StateBlock
+        kind="unavailable"
+        testId="quant-fair-value-unavailable"
+        title="公允价值分解不可用"
+        detail={
+          decomposition.reason ??
+          '回归样本或回归量不足。这里不显示编出来的公允价 —— 宁可只给市场价。'
+        }
+      />
+    )
+  }
+  return (
+    <div className="space-y-6" data-testid="quant-fair-value">
+      <dl className="metrics">
+        <div>
+          <dt>市场价</dt>
+          <dd className="num">{formatUsd(decomposition.market_price)}</dd>
+        </div>
+        <div>
+          <dt>公允价</dt>
+          <dd className="num">{formatUsd(decomposition.fair_value)}</dd>
+        </div>
+        <div>
+          <dt>偏离度</dt>
+          <dd>
+            {decomposition.deviation_pct === null
+              ? '—'
+              : formatPercent(decomposition.deviation_pct * 100)}
+          </dd>
+        </div>
+        <div>
+          <dt>拟合 R²</dt>
+          <dd>{decomposition.r2 === null ? '—' : decomposition.r2.toFixed(3)}</dd>
+        </div>
+        <div>
+          <dt>回归样本</dt>
+          <dd>{decomposition.samples}</dd>
+        </div>
+        <div>
+          <dt>数据截至</dt>
+          <dd>{displayStamp(decomposition.as_of) ?? '—'}</dd>
+        </div>
+      </dl>
+
+      <div className="table-scroll">
+        <table className="data-table">
+          <caption className="note">
+            四块之和恒等于市场价：中枢 + 需求溢价 + 风险溢价 + 情绪残差（残差走阔 = 模型外因素在定价）。
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">分块</th>
+              <th scope="col" className="num">
+                美元
+              </th>
+              <th scope="col" className="num">
+                占比
+              </th>
+              <th scope="col">驱动</th>
+            </tr>
+          </thead>
+          <tbody>
+            {decomposition.blocks.map((block) => (
+              <tr key={block.key}>
+                <th scope="row">{block.name}</th>
+                <td className="num">{formatUsd(block.usd)}</td>
+                <td className="num">
+                  {block.share_pct === null ? '—' : formatShare(block.share_pct, 1)}
+                </td>
+                <td className="note">
+                  {block.drivers.map((driver) => driver.name).join('、') || '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+const SIGNAL_TEXT: Record<string, string> = {
+  bull: '▲ 看涨',
+  bear: '▼ 看跌',
+  neutral: '— 中性',
+}
+
+/** 变化量按量级给小数位：0.12 -> +0.12；123456 -> +12.3 万。 */
+function formatChange(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '\u2212' : ''
+  const abs = Math.abs(value)
+  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)} 万`
+  return `${sign}${abs.toFixed(abs >= 100 ? 0 : 2)}`
+}
+
+/** 仪表盘的值按量级取舍小数位：800000 百万美元不该显示成 800000.00。 */
+function formatMonitorValue(value: number): string {
+  const abs = Math.abs(value)
+  if (abs >= 10000) return formatChange(value)
+  return value.toFixed(abs >= 100 ? 0 : 2)
+}
+
+function MonitorSignal({ row }: { row: QuantMonitorRow }) {
+  if (row.status !== 'ok') return <span className="tag">不可用</span>
+  const text = row.signal === null ? null : SIGNAL_TEXT[row.signal]
+  if (text === null) return <span className="note">{row.signal_label}</span>
+  return (
+    <span className={row.signal === 'bull' ? 'is-up' : row.signal === 'bear' ? 'is-down' : ''}>
+      {text}
+    </span>
+  )
+}
+
+/**
+ * 监测仪表盘：方法论第七节的周更表。
+ *
+ * 每行给频率、来源、最新值与数据截至，避免「拿三个月前的数当今天」；
+ * 取不到就说原因（宁可标不可用），信息型指标不给方向。
+ */
+function MonitorTable({ monitor }: { monitor: QuantMonitorResponse }) {
+  if (monitor.rows.length === 0) {
+    return (
+      <StateBlock
+        kind="unavailable"
+        testId="quant-monitor-unavailable"
+        title="监测仪表盘不可用"
+        detail="接口没有返回任何监测行。"
+      />
+    )
+  }
+  return (
+    <div className="table-scroll">
+      <table className="data-table" data-testid="quant-monitor-table">
+        <caption className="note">
+          周更表：阈值是确定性规则（见各行说明），信号只是把规则翻译成多空；
+          数据截至一列是每个指标的观测日 —— 值越旧，越要打折看。
+          {monitor.as_of ? ` 全部指标中最新观测日：${monitor.as_of}。` : ''}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">指标</th>
+            <th scope="col">频率</th>
+            <th scope="col">来源</th>
+            <th scope="col" className="num">
+              最新值
+            </th>
+            <th scope="col" className="num">
+              变化
+            </th>
+            <th scope="col">数据截至</th>
+            <th scope="col">信号</th>
+            <th scope="col">说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          {monitor.rows.map((row) => (
+            <tr key={row.key} data-testid={`quant-monitor-row-${row.key}`}>
+              <th scope="row">{row.name}</th>
+              <td className="note">{row.frequency}</td>
+              <td className="note">{row.source}</td>
+              <td className="num">
+                {row.value === null ? '—' : `${formatMonitorValue(row.value)} ${row.unit}`}
+              </td>
+              <td className="num">{row.change === null ? '—' : formatChange(row.change)}</td>
+              <td>{row.obs_date ?? '—'}</td>
+              <td>
+                <MonitorSignal row={row} />
+              </td>
+              <td className="note">
+                {row.note}
+                {row.reason ? (
+                  <span className="note" data-testid={`quant-monitor-reason-${row.key}`}>
+                    （{row.reason}）
+                  </span>
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 /**
@@ -65,7 +319,7 @@ function PredictionPanel({ prediction }: { prediction: QuantPredictionItem }) {
     .sort((left, right) => Math.abs(right.contribution ?? 0) - Math.abs(left.contribution ?? 0))
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid={`quant-prediction-${prediction.horizon_days}`}>
       <dl className="metrics">
         <div>
           <dt>方向</dt>
@@ -109,6 +363,12 @@ function PredictionPanel({ prediction }: { prediction: QuantPredictionItem }) {
           <dd>{displayStamp(prediction.as_of) ?? '—'}</dd>
         </div>
       </dl>
+
+      {prediction.scale_description ? (
+        <p className="note">该尺度的主控层：{prediction.scale_description}</p>
+      ) : null}
+
+      <ScenarioTable prediction={prediction} />
 
       <div className="table-scroll">
         <table className="data-table">
@@ -172,6 +432,12 @@ function AccuracyPanel({ row }: { row: QuantAccuracyRow }) {
     { label: '动量（60 日）', value: row.baseline_momentum_accuracy },
     { label: '抛硬币', value: 0.5 },
   ]
+  const coverage =
+    typeof row.metrics.interval_coverage_80 === 'number' ? row.metrics.interval_coverage_80 : null
+  const regimes = row.metrics.regimes
+  const regimeRows = [regimes?.pre, regimes?.post].filter(
+    (block): block is NonNullable<typeof block> => Boolean(block),
+  )
 
   return (
     <div className="space-y-6">
@@ -197,6 +463,58 @@ function AccuracyPanel({ row }: { row: QuantAccuracyRow }) {
           </tbody>
         </table>
       </div>
+
+      {coverage !== null ? (
+        <p className="note">
+          80% 名义区间的实际覆盖率 {formatShare(coverage * 100, 1)}（理想值 80%）：低于 80%
+          说明不确定度被低估，区间比真实波动窄。
+        </p>
+      ) : null}
+
+      {regimeRows.length > 0 ? (
+        <div className="table-scroll">
+          <table className="data-table">
+            <caption className="note">
+              以 {regimes?.split_date ?? '2022-01-01'} 为界分段{regimes?.note ? `（${regimes.note}）` : ''}：
+              2022 年前后的定价函数可能不同，分段成绩比一个总数更可核对。
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">区间</th>
+                <th scope="col" className="num">
+                  本模型
+                </th>
+                <th scope="col" className="num">
+                  永远看多
+                </th>
+                <th scope="col" className="num">
+                  样本
+                </th>
+                <th scope="col">覆盖时段 / 原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              {regimeRows.map((block) => (
+                <tr key={block.label}>
+                  <th scope="row">{block.label}</th>
+                  <td className="num">
+                    {block.accuracy === null ? '—' : formatShare(block.accuracy * 100, 1)}
+                  </td>
+                  <td className="num">
+                    {block.baseline_up_accuracy === null
+                      ? '—'
+                      : formatShare(block.baseline_up_accuracy * 100, 1)}
+                  </td>
+                  <td className="num">{block.sample_size}</td>
+                  <td className="note">
+                    {block.reason ?? `${block.window_start ?? '—'} ~ ${block.window_end ?? '—'}`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
 
       <p className="provenance">
         走查式回测：{row.window_start ?? '—'} ~ {row.window_end ?? '—'}，样本 {row.sample_size} 个交易日，
@@ -307,6 +625,7 @@ interface QuantData {
   factors: QuantFactorsResponse
   predictions: QuantPredictionsResponse
   accuracy: QuantAccuracyResponse
+  monitor: QuantMonitorResponse
 }
 
 /**
@@ -334,12 +653,13 @@ export default function Quant() {
       if (refresh) {
         await quantApi.refresh()
       }
-      const [factors, predictions, accuracy] = await Promise.all([
+      const [factors, predictions, accuracy, monitor] = await Promise.all([
         quantApi.getFactors(),
         quantApi.getPredictions(),
         quantApi.getAccuracy(),
+        quantApi.getMonitor(),
       ])
-      setData({ factors, predictions, accuracy })
+      setData({ factors, predictions, accuracy, monitor })
     } catch (err) {
       setError(
         describeApiError(err, {
@@ -430,6 +750,16 @@ export default function Quant() {
         </div>
 
         <div className="panel">
+          <h3 className="panel__title">公允价值分解</h3>
+          <FairValuePanel decomposition={data.predictions.fair_value} />
+        </div>
+
+        <div className="panel">
+          <h3 className="panel__title">监测仪表盘（周更表）</h3>
+          <MonitorTable monitor={data.monitor} />
+        </div>
+
+        <div className="panel">
           <h3 className="panel__title">回测命中率</h3>
           <Tabs value={horizon} onValueChange={setHorizon}>
             <TabsList aria-label="回测周期">
@@ -476,7 +806,7 @@ export default function Quant() {
     <Section
       id="quant"
       title="量化预测"
-      intro="按「货币政策与利率 / 避险与信用 / 供需结构 / 市场与技术面」四类因素合成方向与目标价，并给出走查式回测的命中率与基准对照。"
+      intro="按 1 日 / 1 周 / 1 月 / 1 季 / 1 年五个尺度，用「货币政策与利率 / 避险与信用 / 供需结构 / 市场与技术面」四类因素合成方向、目标价与三情景；另给公允价分解、周更监测仪表盘，以及走查式回测的命中率与基准对照。"
       actions={refreshButton}
     >
       {body}
