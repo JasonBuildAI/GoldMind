@@ -152,3 +152,51 @@ def test_readme_gate_section_exists_and_points_at_agents_md():
 
     assert "常用命令" in readme, "README 里找不到「常用命令」章节"
     assert "AGENTS.md" in readme, "README 没有指回 AGENTS.md"
+
+
+# --------------------------------------------------------------------------- #
+# 页内锚点
+# --------------------------------------------------------------------------- #
+HEADING = re.compile(r"^#{1,6}\s+(.*)$", re.MULTILINE)
+# 页内锚点有两种写法：markdown 的 `](#anchor)` 与 HTML 的 `href="#anchor"`
+ANCHOR_LINK = re.compile(r'(?:\]\(#|href="#)([^)"]+)')
+
+
+def _slug(heading: str) -> str:
+    """按 GitHub 的规则把标题转成锚点。
+
+    规则：转小写 -> 去掉非「字母/数字/下划线/空格/连字符」的字符（表情符号就这样没了，
+    中日韩字符属于 \\w 会保留）-> 空格换成连字符。
+    """
+    text = heading.strip().lower()
+    text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
+    return text.replace(" ", "-")
+
+
+def _headings(text: str) -> set[str]:
+    return {_slug(h) for h in HEADING.findall(text)}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("rel", ["README.md", "README_EN.md"])
+def test_readme_in_page_anchors_resolve(rel):
+    """README 顶部导航里的 `#锚点` 必须指向真实存在的标题。
+
+    回归：README 的导航里有 `#-agent原理`，但那一节早就被删了（早期文档把单轮
+    调用描述成多智能体，改写时删掉了整节），留下一个点了没反应的死链。
+    """
+    text = _read(rel)
+    slugs = _headings(text)
+
+    dead = sorted({a for a in ANCHOR_LINK.findall(text) if a.lower() not in slugs})
+
+    assert not dead, f"{rel} 里有指向不存在标题的锚点：{dead}"
+
+
+@pytest.mark.unit
+def test_anchor_parser_is_not_silently_empty():
+    """确保解析器本身有效，否则上面的断言会变成空转。"""
+    text = _read("README.md")
+
+    assert len(_headings(text)) > 5
+    assert ANCHOR_LINK.findall(text), "没从 README 里解析出任何页内锚点，解析逻辑失效了"

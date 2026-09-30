@@ -5,8 +5,8 @@
 <h1 align="center">🥇 GoldMind</h1>
 
 <p align="center">
-  <strong>基于多智能体协作的下一代黄金市场智能分析引擎</strong><br>
-  <em>A Next-Generation Multi-Agent Gold Market Intelligence Analysis Engine</em>
+  <strong>面向国际黄金市场的 AI 数据分析引擎</strong><br>
+  <em>An AI Data Analysis Engine for the International Gold Market</em>
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Docker-部署就绪-2496ED?style=flat-square&logo=docker" alt="Docker">
   <img src="https://img.shields.io/badge/version-v1.0.0-brightgreen?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react" alt="React">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React">
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 <p align="center">
   <a href="#-快速开始">快速开始</a> •
   <a href="#-项目概述">项目概述</a> •
-  <a href="#-agent原理">Agent原理</a> •
+  <a href="#-实际的分析链路">分析链路</a> •
   <a href="#-系统展示">系统展示</a> •
   <a href="#-工作流程">工作流程</a> •
   <a href="#-贡献">贡献</a> •

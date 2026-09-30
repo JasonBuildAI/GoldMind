@@ -5,8 +5,8 @@
 <h1 align="center">🥇 GoldMind</h1>
 
 <p align="center">
-  <strong>Next-Generation Multi-Agent Gold Market Intelligence Analysis Engine</strong><br>
-  <em>A Next-Generation Multi-Agent Gold Market Intelligence Analysis Engine</em>
+  <strong>An AI Data Analysis Engine for the International Gold Market</strong><br>
+  <em>An AI Data Analysis Engine for the International Gold Market</em>
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker" alt="Docker">
   <img src="https://img.shields.io/badge/version-v1.0.0-brightgreen?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react" alt="React">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React">
 </p>
 
 <p align="center">
@@ -24,7 +24,6 @@
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-overview">Overview</a> •
-  <a href="#-agent-principles">Agent Principles</a> •
   <a href="#-system-showcase">System Showcase</a> •
   <a href="#-workflow">Workflow</a> •
   <a href="#-contributing">Contributing</a> •
@@ -321,239 +320,92 @@ The data fetching process may take 1-3 minutes, please observe the logs and wait
 
 ## 🔄 Workflow
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           GoldMind System Workflow                           │
-└─────────────────────────────────────────────────────────────────────────────┘
+What the code actually does, end to end:
 
-     ┌──────────────┐
-     │  Data Layer   │
-     └──────┬───────┘
-            │
-     ┌──────▼───────┐     ┌──────────────────────────────────────────────────┐
-     │ Data Sources  │────▶│ • Gold Price API (Yahoo Finance)                │
-     │               │     │ • US Dollar Index API                            │
-     │               │     │ • Web Search (MiMo)                          │
-     │               │     │ • News Websites                                  │
-     └──────┬───────┘     └──────────────────────────────────────────────────┘
-            │
-            ▼
-     ┌──────────────────────────────────────────────────────────────────────┐
-     │                        Agent Analysis Layer                           │
-     │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐      │
-     │  │ Market Analysis │  │ News Intelligence│  │Institution      │      │
-     │  │     Agent       │  │     Agent       │  │Research Agent   │      │
-     │  │                 │  │                 │  │                 │      │
-     │  │• Price Trends   │  │• News Search    │  │• Institution    │      │
-     │  │• Technical      │  │• Sentiment      │  │  Views Tracking │      │
-     │  │  Indicators     │  │  Analysis       │  │• Report         │      │
-     │  │• Pattern        │  │• Event          │  │  Analysis       │      │
-     │  │  Recognition    │  │  Extraction     │  │                 │      │
-     │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘      │
-     │           │                    │                    │               │
-     │           └────────────────────┼────────────────────┘               │
-     │                                │                                    │
-     │                                ▼                                    │
-     │                    ┌─────────────────────┐                          │
-     │                    │   Data Integration  │                          │
-     │                    │   & Structured      │                          │
-     │                    │   Output            │                          │
-     │                    └──────────┬──────────┘                          │
-     └───────────────────────────────┼──────────────────────────────────────┘
-                                     │
-                                     ▼
-     ┌──────────────────────────────────────────────────────────────────────┐
-     │                     MiMo Fusion Layer                             │
-     │                                                                       │
-     │  ┌─────────────────────────────────────────────────────────────────┐  │
-     │  │              Investment Advisory Agent                           │  │
-     │  │                                                                  │  │
-     │  │  • Multi-dimensional Information Fusion                          │  │
-     │  │  • Logical Consistency Check                                     │  │
-     │  │  • Strategy Recommendation Generation                            │  │
-     │  │  • Risk Assessment                                               │  │
-     │  │                                                                  │  │
-     │  │  Output: Comprehensive Investment Advice Report                  │  │
-     │  └─────────────────────────────────────────────────────────────────┘  │
-     └──────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     ▼
-     ┌──────────────────────────────────────────────────────────────────────┐
-     │                      Presentation Layer                               │
-     │                                                                       │
-     │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
-     │  │   Price     │  │   Bullish/  │  │ Institution │  │ Investment  │ │
-     │  │   Chart     │  │   Bearish   │  │    Views    │  │   Advice    │ │
-     │  │             │  │   Factors   │  │             │  │             │ │
-     │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘ │
-     │                                                                       │
-     └──────────────────────────────────────────────────────────────────────┘
 ```
+Market data ──► MySQL ──┐
+RSS news    ──► MySQL ──┼──► assemble prompt ──► llm.invoke() ──► parse JSON ──► cache ──► dashboard
+                        │
+                        └──► (optional) MiMo web_search, skipped when unavailable
+```
+
+| Analysis service | Input | Output |
+|---|---|---|
+| Bullish factors | Last 24h news + gold price | 5 bullish factors |
+| Bearish factors | Last 24h news + gold price | 5 bearish factors |
+| Institutional views | Last 24h news + (search) | Four institutions' targets and reasoning |
+| Investment advice | Market status + both factor sets + institutional views | Conservative / balanced / opportunity strategies |
+| Market summary | All of the above | Core logic, risks, overall judgement |
+
+Each of these is **one single-turn LLM call** — see "How it is actually implemented"
+above. There is no agent orchestration, no reasoning loop and no retrieval step;
+the earlier sections describing them have been removed rather than left to
+contradict this one.
 
 ---
 
-## 🤖 Agent Principles
+## 🧪 Commands
 
-### Agent Division of Labor Design
+**The single source of truth for the gate.** Everything must be green before you
+commit (the rules live in [`AGENTS.md`](AGENTS.md)).
 
-GoldMind adopts a **"Divide and Conquer, then Fuse"** design philosophy, with each Agent responsible for analysis in specific domains, ultimately integrated by the Investment Advisory Agent to form a comprehensive judgment.
+### Backend
 
-#### Market Analysis Agent
+```bash
+cd backend
 
-**Responsibilities**: Technical quantitative analysis of gold prices
+# Install dependencies (first time)
+pip install -r requirements.txt -r requirements-dev.txt
 
-**Core Capabilities**:
-- Price trend analysis (support/resistance levels, trend lines)
-- Technical indicator calculation (RSI, MACD, Bollinger Bands, etc.)
-- Pattern recognition (head and shoulders, double tops, triangles, etc.)
-- Volatility analysis
+# Tests - the full gate
+python -m pytest
 
-**Output Format**:
-```json
-{
-  "trend": "bullish/bearish/neutral",
-  "support_levels": [2680, 2650],
-  "resistance_levels": [2720, 2750],
-  "indicators": {
-    "rsi": 65.3,
-    "macd": "bullish_cross"
-  },
-  "patterns": ["ascending_triangle"],
-  "analysis": "Technical analysis text..."
-}
+# One layer at a time
+python -m pytest tests/unit          # unit: no database, no network
+python -m pytest tests/integration   # integration: in-memory SQLite + fake LLM
+python -m pytest tests/e2e           # end to end: the whole chain in real order
+
+# Run the same suite against MySQL (worth doing after database changes)
+# Production is MySQL, and it differs from SQLite on enum storage, JSON columns and
+# case-insensitive comparison - "green on SQLite" is not "green on MySQL".
+# It must point at a SEPARATE test database: the suite truncates every table.
+GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" \
+    python -m pytest
+
+# Static check: compile everything
+python -m compileall -q app
+
+# Database setup (create database + tables + backfill history)
+python init_db.py
+SKIP_SEED=1 python init_db.py        # schema only, no data
+
+# Repair enum values in an older database (idempotent)
+python scripts/fix_enum_columns.py --dry-run
+python scripts/fix_enum_columns.py
 ```
 
-#### News Intelligence Agent
+### Frontend
 
-**Responsibilities**: Real-time search and sentiment analysis of market news
+```bash
+cd app
 
-**Core Capabilities**:
-- Web search via Xiaomi MiMo (currently unavailable with the Token Plan key)
-- Financial news collection and filtering
-- Sentiment analysis (bullish/bearish/neutral)
-- Event extraction and impact assessment
+npm ci
 
-**Output Format**:
-```json
-{
-  "sentiment": "bullish",
-  "confidence": 0.75,
-  "key_events": [
-    {
-      "title": "Fed signals rate cuts",
-      "impact": "high",
-      "sentiment": "bullish"
-    }
-  ],
-  "bullish_factors": ["factor1", "factor2"],
-  "bearish_factors": ["factor3"],
-  "analysis": "News analysis text..."
-}
+# Build + type check - the full gate
+npm run build
+
+# Static check
+npm run lint
+
+# Unit + integration tests (vitest + Testing Library)
+npm test
+
+# Browser end-to-end (Playwright) - needs npm run build first
+npm run test:e2e
+
+# Local development
+npm run dev
 ```
-
-#### Institution Research Agent
-
-**Responsibilities**: Tracking and analyzing mainstream institutional views
-
-**Core Capabilities**:
-- Collect institutional research reports and forecasts
-- Extract key views and price targets
-- Analyze consistency of institutional views
-- Track changes in institutional positions
-
-**Output Format**:
-```json
-{
-  "institutions": [
-    {
-      "name": "Goldman Sachs",
-      "rating": "buy",
-      "target_price": 2800,
-      "key_points": ["point1", "point2"]
-    }
-  ],
-  "consensus": "bullish",
-  "average_target": 2750,
-  "analysis": "Institutional analysis text..."
-}
-```
-
-#### Investment Advisory Agent
-
-**Responsibilities**: Integrate multi-dimensional information to generate investment advice
-
-**Core Capabilities**:
-- Multi-Agent output fusion
-- Logical consistency checking
-- Strategy recommendation generation
-- Risk assessment and position management
-
-**Fusion Strategy**:
-1. **Weighted Scoring**: Assign weights to different dimensions (technical 30%, fundamentals 25%, sentiment 25%, institutional 20%)
-2. **Conflict Detection**: Identify contradictions between different Agent conclusions
-3. **Confidence Calibration**: Adjust confidence based on data quality and timeliness
-4. **Comprehensive Judgment**: Generate final investment advice
-
-**Output Format**:
-```json
-{
-  "recommendation": "buy/hold/sell",
-  "confidence": 0.82,
-  "rationale": "Comprehensive analysis text...",
-  "risk_level": "medium",
-  "position_suggestion": "30%",
-  "time_horizon": "medium_term",
-  "key_factors": ["factor1", "factor2"]
-}
-```
-
-### ReAct Reasoning Pattern
-
-Each Agent internally implements the ReAct (Reasoning + Acting) pattern:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      ReAct Loop                              │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐              │
-│  │  Thought │───▶│  Action  │───▶│Observation│              │
-│  │          │    │          │    │          │              │
-│  │"Current  │    │Call Tool │    │"Data:..." │              │
-│  │ gold     │    │or Search │    │          │              │
-│  │ price is │    │          │    │          │              │
-│  │ 2700,    │    │          │    │          │              │
-│  │ need to  │    │          │    │          │              │
-│  │ analyze  │    │          │    │          │              │
-│  │ trend"   │    │          │    │          │              │
-│  └──────────┘    └──────────┘    └─────┬────┘              │
-│       ▲                                │                    │
-│       │                                │                    │
-│       └────────────────────────────────┘                    │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │                    Final Answer                       │  │
-│  │  "Based on technical analysis, current gold price    │  │
-│  │   shows an upward trend, recommend buying..."        │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### RAG Retrieval Enhancement
-
-The system uses RAG technology to enhance LLM factuality:
-
-**Retrieval Content**:
-- Historical gold price data (2025 to present)
-- Historical US dollar index data
-- Past news sentiment records
-- Historical institutional view records
-
-**Retrieval Strategy**:
-- Time-based: Retrieve data from the most recent 30 days
-- Similarity-based: Retrieve historical periods similar to current market conditions
-- Relevance-based: Retrieve information relevant to current analysis questions
 
 ---
 
@@ -577,7 +429,6 @@ This project is licensed under the [MIT License](./LICENSE).
 
 ## 🙏 Acknowledgements
 
-- [LangChain](https://github.com/langchain-ai/langchain) - LLM application development framework
 - [Xiaomi MiMo](https://platform.xiaomimimo.com/) - LLM inference and web search
 - [FastAPI](https://fastapi.tiangolo.com/) - High-performance Python web framework
 - [React](https://react.dev/) - Frontend UI library
