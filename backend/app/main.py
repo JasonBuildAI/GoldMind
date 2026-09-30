@@ -106,7 +106,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="黄金市场分析系统",
     description="基于AI的黄金市场分析平台，提供实时数据、市场分析和价格预测",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -204,7 +204,7 @@ app.include_router(quant.router, prefix="/api/gold", tags=["量化预测"])
 @app.get("/")
 async def root():
     """服务信息与文档入口。"""
-    return {"message": "黄金市场分析系统 API", "version": "1.0.0", "docs": "/docs"}
+    return {"message": "黄金市场分析系统 API", "version": "2.0.0", "docs": "/docs"}
 
 @app.get("/health")
 async def health_check():
@@ -214,7 +214,7 @@ async def health_check():
     health_status = {
         "status": "healthy",
         "timestamp": timeutil.now_iso(),
-        "version": "1.0.0",
+        "version": "2.0.0",
         "services": {}
     }
     

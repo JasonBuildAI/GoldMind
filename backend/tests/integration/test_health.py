@@ -3,17 +3,24 @@
 这个文件同时充当「测试基建是否可用」的冒烟测试：它验证内存 SQLite、
 TestClient lifespan、以及出网拦截都没问题。
 """
+import re
+
 import pytest
 
 
 @pytest.mark.integration
 def test_health_returns_expected_shape(client):
+    from app.main import app as fastapi_app
+
     resp = client.get("/health")
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] in ("healthy", "degraded")
-    assert body["version"] == "1.0.0"
+    # 版本号只有一个真源：FastAPI 应用自身的 version。写死字面量会让每次发版
+    # 都要改测试，漏改的时候测试也只是变红、而不是指出哪里不一致。
+    assert body["version"] == fastapi_app.version
+    assert re.fullmatch(r"\d+\.\d+\.\d+", body["version"]), "版本号必须是 X.Y.Z"
     for service in ("database", "tencent_api", "cache", "scheduler", "ai_config"):
         assert service in body["services"], f"健康检查缺少 {service}"
 
@@ -41,10 +48,13 @@ def test_health_database_is_connected(client):
 
 @pytest.mark.integration
 def test_root_endpoint(client):
+    from app.main import app as fastapi_app
+
     resp = client.get("/")
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "1.0.0"
+    # `/`、`/health` 与应用元数据三处版本号必须同源，发版时不能漏改其中一处
+    assert resp.json()["version"] == fastapi_app.version
 
 
 # --------------------------------------------------------------------------- #
