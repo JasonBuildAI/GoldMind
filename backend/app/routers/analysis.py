@@ -61,8 +61,15 @@ async def get_bullish_factors(limit: int = 10, db: Session = Depends(get_db)):
     """获取看涨因子（直接读数据库，不做 AI 分析）。"""
     from app.models.analysis import MarketFactor
     
+    # 必须与**枚举成员**比较。列类型是 `Enum(FactorType)`，SQLAlchemy 存的是
+    # 枚举**名**（BULLISH），与字符串 "bullish" 比较：
+    #   MySQL —— ENUM 比较不区分大小写，碰巧能匹配；
+    #   SQLite —— 存的是 VARCHAR，比较区分大小写，**一条都匹配不到**。
+    # 实测：`/factors/bullish` 在 SQLite 下恒返回 []，在 MySQL 下正常。
+    from app.models.analysis import FactorType
+
     factors = db.query(MarketFactor).filter(
-        MarketFactor.type == "bullish"
+        MarketFactor.type == FactorType.BULLISH
     ).order_by(MarketFactor.created_at.desc()).limit(limit).all()
     
     return [
@@ -86,8 +93,10 @@ async def get_bearish_factors(limit: int = 10, db: Session = Depends(get_db)):
     """获取看跌因子（直接读数据库，不做 AI 分析）。"""
     from app.models.analysis import MarketFactor
     
+    from app.models.analysis import FactorType
+
     factors = db.query(MarketFactor).filter(
-        MarketFactor.type == "bearish"
+        MarketFactor.type == FactorType.BEARISH
     ).order_by(MarketFactor.created_at.desc()).limit(limit).all()
     
     return [
