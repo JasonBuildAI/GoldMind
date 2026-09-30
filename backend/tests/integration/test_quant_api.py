@@ -91,7 +91,11 @@ def test_accuracy_endpoint_reports_baselines(client, db_session, seed_quant_pane
 
     assert len(body["latest"]) == len(HORIZONS)
     for row in body["latest"]:
-        assert row["sample_size"] >= 500
+        # 可评估样本 = 日历长度 − 2h − 119（60 天 z 预热、h 天配对、
+        # 补到 60 组校准样本的 59 天、末尾 h 天等待实现）。850 个交易日的
+        # 夹具里长尺度天生短一截（250 日：850 − 500 − 119 = 231），不是漏算
+        floor = 200 if row["horizon_days"] >= 250 else 500
+        assert row["sample_size"] >= floor
         assert row["accuracy"] is not None
         assert row["baseline_up_accuracy"] is not None
         assert row["factors"]

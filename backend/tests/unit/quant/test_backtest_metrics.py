@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import pandas as pd
+import numpy as np
+import pytest
 
-from app.services.quant import backtest
+from app.services.quant import backtest, engine
 
 
 def _series(value: float, count: int = 40) -> pd.Series:
@@ -41,6 +43,43 @@ def test_metrics_report_nominal_and_realized_coverage(panel):
     assert metrics["interval_nominal_80"] == 0.8
     assert metrics["interval_coverage_80"] is not None
     assert 0.0 <= metrics["interval_coverage_80"] <= 1.0
+
+
+def test_accuracy_scores_the_calibrated_direction(make_panel):
+    """回测评的就是页面上的方向 = sign(μ)；未校准的得分方向单列一份（spec 判据）。
+
+    变异验证：把 ``direction`` 改回 ``np.sign(score[mask])``，第一条断言必红
+    （最后一条断言先保证两个口径在这段数据上确实不同，否则守卫是摆设）。
+    """
+    horizon = 20
+    factors, close = make_panel(_long_calendar())
+    evaluation = backtest.evaluate_horizon(factors, close, horizon=horizon)
+
+    calendar = close.index
+    signals = engine.build_signals(engine.align_factors(factors, calendar), calendar)
+    score = engine.composite_score(signals, horizon=horizon)
+    frame = engine.build_prediction_frame(score, close, horizon)
+    forward = close.shift(-horizon) / close - 1.0
+    outcome = np.sign(forward)
+    available = signals.notna().sum(axis=1) >= engine.MIN_AVAILABLE_FACTORS
+    mask = (
+        score.notna()
+        & frame["expected_return"].notna()
+        & forward.notna()
+        & (outcome != 0)
+        & available
+    )
+
+    realized = outcome[mask]
+    calibrated = np.sign(frame["expected_return"][mask])
+    raw = np.sign(score[mask])
+
+    assert evaluation.accuracy == pytest.approx(float((calibrated == realized).mean()))
+    assert evaluation.metrics["score_direction_accuracy"] == pytest.approx(
+        float((raw == realized).mean())
+    )
+    # 两个口径必须不同，否则「换回得分符号」的变异不会变红
+    assert evaluation.accuracy != pytest.approx(evaluation.metrics["score_direction_accuracy"])
 
 
 def _long_calendar() -> pd.DatetimeIndex:

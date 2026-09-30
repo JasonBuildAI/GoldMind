@@ -103,7 +103,7 @@ def _prediction_payload(snapshot: engine.SignalSnapshot, close: pd.Series) -> di
 def _direction_label(direction: Optional[str], status: str) -> Optional[str]:
     if status != engine.STATUS_OK or direction is None:
         return None
-    return "看涨" if direction == "up" else "看跌"
+    return {"up": "看涨", "down": "看跌", "flat": "持平"}.get(direction)
 
 
 def _contribution_payload(state: engine.FactorState) -> dict:

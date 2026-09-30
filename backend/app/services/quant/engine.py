@@ -14,8 +14,12 @@
 
     signed_z_i = sign_i × z(x_i)                逐因子方向对齐
     score_h    = Σ w_i(h) × signed_z_i / Σ w_i(h)  按尺度取权重（缺省=基础权重）
-    p_up       = Φ(score / σ_expanding)          σ 只用 t 之前的历史得分
-    r̂          = α + β · score                   扩展窗口 OLS，样本不足时 β=0
+    μ_h        = α + β · score                   扩展窗口 OLS，样本对满足 s + h ≤ t
+    σ_h        = std(r_s − μ_s | s + h ≤ t)      走查预测误差，样本不足退回已实现收益的扩展标准差
+    p_up       = Φ(μ / σ)                        与目标价、区间、情景同一个分布
+
+方向、概率、目标价、区间、情景只从这一个分布出发；``score`` 是**未校准**的因子偏向，
+只在因子表里展示，并在回测里单列成绩（``metrics.score_direction_accuracy``）。
 """
 from __future__ import annotations
 
@@ -37,6 +41,8 @@ MIN_HISTORY = 60
 MIN_SCORES_FOR_SIGMA = 20
 # 扩展窗口 OLS 至少要有这么多个「已实现」的样本对，否则 β=0（目标价=基准价）
 MIN_OLS_SAMPLES = 60
+# 走查预测误差的 σ 至少要有这么多个「已实现」的误差（与 OLS 同一档）
+MIN_ERRORS_FOR_SIGMA = 60
 
 EPS = 1e-12
 
@@ -140,10 +146,12 @@ def composite_score(signals: pd.DataFrame, *, horizon: Optional[int] = None) -> 
 # --------------------------------------------------------------------------- #
 # 得分 → 概率与期望收益
 # --------------------------------------------------------------------------- #
-def score_probability(score: pd.Series) -> pd.Series:
-    """p_up = Φ(score / σ)，σ 为扩展窗口标准差且只取 t 之前的历史得分。"""
-    sigma = score.expanding(min_periods=MIN_SCORES_FOR_SIGMA).std().shift(1)
-    ratio = score / sigma.where(sigma > EPS)
+def probability_up(expected: pd.Series, sigma: pd.Series) -> pd.Series:
+    """p_up = Φ(μ / σ)：与目标价、区间、情景同一个分布的「上行概率」。
+
+    σ 缺失或非正时不给概率（NaN）—— 不拿别处的 σ 顶替，也不退回 50%。
+    """
+    ratio = expected / sigma.where(sigma > EPS)
     return ratio.map(lambda value: normal_cdf(float(value)) if pd.notna(value) else np.nan)
 
 
@@ -152,18 +160,19 @@ def expanding_ols(
     y: pd.Series,
     *,
     min_samples: int = MIN_OLS_SAMPLES,
-) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """扩展窗口一元回归，返回 ``(alpha, beta, residual_sigma)``。
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """扩展窗口一元回归，返回 ``(alpha, beta, residual_sigma, calibrated)``。
 
     调用方必须传**已经右移过 h 期**的 x / y（见 ``build_prediction_frame``）：
     这样 t 时刻的样本只包含 ``s + h <= t`` 的已实现样本对，回归不会看到未来。
-    样本不足或 x 无波动时 ``alpha = beta = 0`` —— 目标价退化为基准价，
-    而不是编一个数出来。
+    ``calibrated`` 是「这个时刻的回归能不能用」：样本不足或 x 无波动时为 False，
+    此时 alpha/beta 置 0 只是为了让级数连续，调用方必须用 ``calibrated`` 判断
+    能不能拿它当预测 —— 不能（见 ``build_prediction_frame``）。
     """
     frame = pd.DataFrame({"x": x, "y": y}).dropna()
     if frame.empty:
         empty = pd.Series(np.nan, index=x.index, dtype="float64")
-        return empty, empty, empty
+        return empty, empty, empty, pd.Series(False, index=x.index, dtype="bool")
 
     expanding = frame["x"].expanding()
     n = expanding.count()
@@ -193,6 +202,7 @@ def expanding_ols(
         alpha.reindex(x.index),
         beta.reindex(x.index),
         sigma.reindex(x.index),
+        usable.reindex(x.index, fill_value=False).astype("bool"),
     )
 
 
@@ -201,22 +211,32 @@ def build_prediction_frame(
     close: pd.Series,
     horizon: int,
 ) -> pd.DataFrame:
-    """把得分序列变成逐日的预测：概率、期望收益、不确定度、目标价。"""
+    """把得分序列变成逐日的预测：期望收益、不确定度、上行概率、目标价。
+
+    ``uncertainty`` 是**走查预测误差**的标准差，不是回归残差：残差只说明
+    「拟合线周围的散布」，预测误差才回答「模型自己错了多少」——
+    两者的差距就是区间覆盖率与名义值（80%）之间的差距。
+    """
     forward = close.shift(-horizon) / close - 1.0
-    alpha, beta, sigma = expanding_ols(score.shift(horizon), forward.shift(horizon))
-    expected = alpha + beta * score
+    alpha, beta, _, calibrated = expanding_ols(score.shift(horizon), forward.shift(horizon))
+    # 没校准就没有期望收益：NaN 而不是 0，否则「样本不足」会被下游当成「预期不变」
+    expected = (alpha + beta * score).where(calibrated)
+    # t 时刻只取 (s + h ≤ t) 的误差：e_s = 已实现收益 − 当时给出的期望收益
+    errors = (forward - expected).shift(horizon)
+    sigma = errors.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).std()
     # 回归样本不足时退回「已实现 h 日收益的扩展标准差」，仍然只用过去的数据
     fallback = forward.shift(horizon).expanding(min_periods=MIN_SCORES_FOR_SIGMA).std()
+    sigma = sigma.fillna(fallback)
 
     frame = pd.DataFrame(
         {
             "score": score,
-            "probability_up": score_probability(score),
             "expected_return": expected,
-            "uncertainty": sigma.fillna(fallback),
+            "uncertainty": sigma,
             "base_price": close,
         }
     )
+    frame["probability_up"] = probability_up(frame["expected_return"], frame["uncertainty"])
     frame["target_price"] = frame["base_price"] * (1.0 + frame["expected_return"])
     return frame
 
@@ -266,9 +286,18 @@ class SignalSnapshot:
 
     @property
     def direction(self) -> Optional[str]:
-        if self.status != STATUS_OK or self.score is None:
+        """方向 = 校准后期望收益 μ 的符号 —— 页面上的方向、回测评的都是它。
+
+        μ 恰为 0（回归样本不足，目标价 = 基准价）记 ``flat``：
+        不拿未校准的得分符号顶替，那样页面会出现「看跌 + 目标价上调」。
+        """
+        if self.status != STATUS_OK or self.expected_return is None:
             return None
-        return "up" if self.score > 0 else "down"
+        if self.expected_return > 0:
+            return "up"
+        if self.expected_return < 0:
+            return "down"
+        return "flat"
 
     @property
     def available_factors(self) -> int:
@@ -428,6 +457,14 @@ def build_snapshot(
     score = _clean(row["score"])
     if score is None:
         return _unavailable(horizon, "合成得分不可用（因子历史样本不足）", as_of=effective.date(), states=states)
+    if _clean(row["expected_return"]) is None:
+        # 没有校准就没有方向与目标价：给出原因，不退回「预期不变」
+        return _unavailable(
+            horizon,
+            f"回归校准样本不足（{horizon} 日尺度至少需要 {MIN_OLS_SAMPLES} 组已实现的样本对）",
+            as_of=effective.date(),
+            states=states,
+        )
 
     return SignalSnapshot(
         as_of=effective.date(),

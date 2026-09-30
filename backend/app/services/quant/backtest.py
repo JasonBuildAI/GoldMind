@@ -89,7 +89,14 @@ def evaluate_horizon(
     outcome = np.sign(forward)
     available = signals.notna().sum(axis=1) >= engine.MIN_AVAILABLE_FACTORS
 
-    mask = score.notna() & forward.notna() & (outcome != 0) & available
+    expected_return = frame["expected_return"]
+    mask = (
+        score.notna()
+        & expected_return.notna()
+        & forward.notna()
+        & (outcome != 0)
+        & available
+    )
     if start is not None:
         mask &= calendar >= pd.Timestamp(start)
     if end is not None:
@@ -103,9 +110,15 @@ def evaluate_horizon(
             universe=int(mask.size),
         )
 
-    direction = np.sign(score[mask])
+    # 评的就是页面上那个方向：校准后的期望收益符号（spec 判据见
+    # test_backtest_metrics.py::test_accuracy_scores_the_calibrated_direction）
+    direction = np.sign(expected_return[mask])
     realized = outcome[mask]
     accuracy = float((direction == realized).mean())
+
+    # 未校准的因子偏向单独记一份成绩，与「本模型」并排展示，不混为一谈
+    score_direction = np.sign(score[mask])
+    score_direction_accuracy = float((score_direction == realized).mean())
 
     up_direction = pd.Series(1.0, index=realized.index)
     baseline_up = float((up_direction == realized).mean())
@@ -141,6 +154,7 @@ def evaluate_horizon(
     metrics = {
         "coin_flip_accuracy": 0.5,
         "horizon_days": horizon,
+        "score_direction_accuracy": score_direction_accuracy,
         "up_share": float((realized > 0).mean()),
         "mean_score": float(score[mask].mean()),
         "mean_absolute_score": float(score[mask].abs().mean()),

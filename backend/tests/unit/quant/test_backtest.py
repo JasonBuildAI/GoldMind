@@ -34,7 +34,8 @@ def _oracle_panel(calendar, *, seed: int = 3):
 
 @pytest.fixture()
 def oracle():
-    calendar = pd.date_range(end="2026-09-30", periods=400, freq="B")
+    # 900 个交易日：最长尺度（250 日）也要有「250 日 + 60 组校准样本」的评估窗口
+    calendar = pd.date_range(end="2026-09-30", periods=900, freq="B")
     factors, close = _oracle_panel(calendar)
     return factors, close, calendar
 
@@ -45,6 +46,8 @@ def test_known_answer_predicts_every_realized_move(oracle):
     evaluation = backtest.evaluate_horizon(factors, close, horizon=1)
 
     assert evaluation.sample_size > 250
+    # 已知答案：因子偏向（未校准）100% 命中；校准后的方向继承它
+    assert evaluation.metrics["score_direction_accuracy"] == 1.0
     assert evaluation.accuracy == 1.0
     assert evaluation.metrics["per_factor"]["dollar_index"]["hit_rate"] == 1.0
     assert evaluation.brier_score == pytest.approx(0.0, abs=0.05)
@@ -114,22 +117,27 @@ def test_factor_summary_is_ordered_by_weight(oracle):
 def test_momentum_baseline_looks_backwards(oracle):
     """动量基准必须是「过去 60 日的方向」，不是未来。
 
-    构造：先跌后涨的一段，且涨幅小于前期跌幅 —— 在 [110, 150] 这段里
-    过去 60 日动量仍为负、而实现收益为正。用未来动量做基准会得到 100%，
-    用过去动量会得到 0%，两者不可能混淆。
+    构造：先跌 200 日（-0.5/日）再慢涨（+0.02/日）—— 价格要涨 25 倍才回到
+    60 日前的水平，所以恢复到第 60 天（t=259）之前「过去 60 日动量」一直是负的。
+    评估窗口取在涨势的头 51 天：每天的实现收益都是正的、动量却全为负。
+    于是「永远看多」= 100%、「过去 60 日动量」= 0%，两者不可能混淆。
     """
     factors, _, calendar = oracle
     level = np.empty(len(calendar))
-    level[:110] = 100.0 - 0.5 * np.arange(110)
-    level[110:] = level[109] + (25.0 / (len(calendar) - 110)) * np.arange(len(calendar) - 110)
+    level[:200] = 200.0 - 0.5 * np.arange(200)
+    level[200:] = level[199] + 0.02 * np.arange(len(calendar) - 200)
     close = pd.Series(level, index=calendar)
 
     past = close / close.shift(60) - 1.0
-    future = close.shift(-60) / close - 1.0
-    assert past.iloc[150] < 0 < future.iloc[150]
+    one_day = close.shift(-1) / close - 1.0
+    window = slice(200, 251)
+    assert (past.iloc[window] < 0).all()
+    assert (one_day.iloc[window] > 0).all()
 
     evaluation = backtest.evaluate_horizon(
-        factors, close, horizon=1, start=calendar[110].date(), end=calendar[150].date()
+        factors, close, horizon=1, start=calendar[200].date(), end=calendar[250].date()
     )
 
+    assert evaluation.sample_size >= 45
+    assert evaluation.baseline_up_accuracy == 1.0
     assert evaluation.baseline_momentum_accuracy == 0.0
