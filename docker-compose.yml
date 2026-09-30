@@ -20,7 +20,11 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # 原先挂的是 ./backend/init.sql，但仓库里只有 schema.sql ——
+      # 挂一个不存在的路径会让 Docker 在容器内建出一个同名**目录**，
+      # MySQL 的初始化脚本目录里就多了一个无效条目。
+      # schema.sql 自带 CREATE DATABASE + USE，且全部是 IF NOT EXISTS，可直接作为初始化脚本。
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s

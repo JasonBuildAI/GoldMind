@@ -197,8 +197,9 @@ TTL 默认 2 小时。`CACHE_DIR` 可配置（默认 `backend/cache`），测试
 - 前端由 nginx 提供构建产物，`/api/` 与 `/health` 都反代到后端
 - LLM 凭证经 `backend/.env` 注入（`MIMO_*`）
 
-**已知问题**：`docker-compose.yml` 挂载了 `./backend/init.sql`，但仓库里只有
-`schema.sql` —— 该挂载无效，首次启动的表结构由 `init_db.py` 负责创建。
+- MySQL 首次启动时会执行 `backend/schema.sql`（只读挂载为
+  `/docker-entrypoint-initdb.d/01-schema.sql`）；该脚本自带 `CREATE DATABASE`
+  与 `USE`，且全部是 `IF NOT EXISTS`，可重复执行
 
 ---
 
