@@ -244,11 +244,15 @@ async def health_check():
         from app.services.cache_manager import get_cache_status
 
         cache_status = get_cache_status()
+        # 文件缓存被关掉时不能报 "ok"：多进程共享没了，是降级状态。
+        # 把原因（file_cache_enabled）一并暴露，运维才知道 files_count 为什么一直是 0。
+        file_cache_ok = cache_status.get("file_cache_enabled", True)
         health_status["services"]["cache"] = {
-            "status": "ok",
+            "status": "ok" if file_cache_ok else "degraded",
             "files_count": len(cache_status["file_cache_keys"]),
             "memory_keys": cache_status["memory_cache_keys"],
             "cache_dir": cache_status["cache_dir"],
+            "file_cache_enabled": file_cache_ok,
         }
     except Exception as e:
         health_status["services"]["cache"] = {

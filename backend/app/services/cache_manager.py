@@ -15,16 +15,42 @@ from loguru import logger
 
 
 # 缓存目录
+# 文件缓存是否可用。目录建不出来时置 False，退化为纯内存缓存。
+#
+# 缓存只是加速手段，不该因为它不可用就让整个服务起不来 ——
+# 原实现在这里直接抛，`import app.services.cache_manager` 就失败，
+# 凡是（直接或间接）依赖它的接口全部 500，服务连启动都做不到。
+_FILE_CACHE_ENABLED = True
+
+
 def _resolve_cache_dir() -> Path:
     """解析缓存目录。
 
     可用 ``CACHE_DIR`` 覆盖，默认 ``backend/cache``。
     可配置的意义在于让测试使用独立目录 —— 否则测试会读写开发时的缓存，
     既让结果依赖历史状态，也可能把开发缓存改坏。
+
+    目录不可用时**不抛异常**，只记一条警告并关掉文件缓存：
+    常见原因有 ``CACHE_DIR`` 指向一个已存在的文件、挂载卷只读、权限不足。
     """
+    global _FILE_CACHE_ENABLED
+
     configured = (settings.CACHE_DIR or "").strip()
     base = Path(configured) if configured else Path(__file__).parent.parent.parent / "cache"
-    base.mkdir(parents=True, exist_ok=True)
+
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+        if not base.is_dir():
+            raise NotADirectoryError(f"{base} 已存在但不是目录")
+        # 成功即（重新）启用：这个函数如实报告当前状态，而不是只单向下调。
+        _FILE_CACHE_ENABLED = True
+    except OSError as exc:
+        _FILE_CACHE_ENABLED = False
+        logger.warning(
+            f"[CacheManager] 缓存目录不可用（{base}）：{exc}。"
+            "将只使用内存缓存：功能不受影响，只是多进程之间不再共享缓存。"
+        )
+
     return base
 
 
@@ -58,6 +84,8 @@ class CacheManager:
                     return data
         
         # 2. 检查文件缓存
+        if not _FILE_CACHE_ENABLED:
+            return None
         try:
             if self.file_path.exists():
                 with open(self.file_path, 'r', encoding='utf-8') as f:
@@ -83,6 +111,8 @@ class CacheManager:
             _memory_cache[self.cache_key] = (data, timestamp)
         
         # 2. 更新文件缓存（使用原子写入避免并发冲突和文件损坏）
+        if not _FILE_CACHE_ENABLED:
+            return
         try:
             cache_data = {
                 'data': data,
@@ -114,14 +144,22 @@ class CacheManager:
 
 
 def get_cache_status():
-    """获取缓存状态"""
+    """获取缓存状态。"""
     with _memory_cache_lock:
         memory_keys = list(_memory_cache.keys())
-    
-    file_keys = [f.stem for f in CACHE_DIR.glob("*.json")]
-    
+
+    file_keys: list[str] = []
+    if _FILE_CACHE_ENABLED:
+        try:
+            file_keys = [f.stem for f in CACHE_DIR.glob("*.json")]
+        except OSError as exc:
+            # CACHE_DIR 指向文件之类的情况：报告为空，而不是让 /health 崩掉
+            logger.warning(f"[CacheManager] 读取缓存目录失败: {exc}")
+
     return {
         "memory_cache_keys": memory_keys,
         "file_cache_keys": file_keys,
-        "cache_dir": str(CACHE_DIR)
+        "cache_dir": str(CACHE_DIR),
+        # 让 /health 能说明「文件缓存为什么没生效」
+        "file_cache_enabled": _FILE_CACHE_ENABLED,
     }
