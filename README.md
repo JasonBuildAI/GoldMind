@@ -479,9 +479,10 @@ python scripts/smoke_mimo.py
 | [`docs/API.md`](docs/API.md) | 接口规范 | 改接口前 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 贡献流程 | 提 PR 前 |
 
-> ⚠️ `docs/ARCHITECTURE.md` 与 `docs/API.md` 是早期版本，**尚未与当前实现对齐**
-> （例如它们仍描述 Redis、认证中间件、`/api/analysis/*` 前缀等不存在的内容）。
-> 以代码与 `docs/00-产品方向.md` 为准；这两份文档待后续校正。
+> ⚠️ `docs/API.md` 是早期版本，**尚未与当前实现对齐**：它仍以 `/api/analysis/*`
+> 作为前缀（实际全部挂在 `/api/gold` 下），响应示例里的字段名也与代码不符
+> （例如 `/gold/stats` 实际返回 `ytd_return` / `volatility`，文档写的是
+> `ytd_change` / `volatility_range`）。改接口前请以代码为准，该文档待校正。
 
 ---
 
