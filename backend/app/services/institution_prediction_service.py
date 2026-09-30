@@ -10,6 +10,7 @@ from app.models.news import GoldNews
 from app.models.analysis import InstitutionView
 from app.config import settings
 from app.services.cache_manager import CacheManager
+from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 from app.services.web_search_service import get_web_search_service
 import json
@@ -480,12 +481,25 @@ class InstitutionPredictionService:
             }
         }
 
+    _ANALYSIS_KEY = "institution_predictions"
+
     def _trigger_background_analysis(self) -> None:
-        """触发后台分析（不阻塞）"""
+        """触发后台分析（不阻塞，同一服务同时只跑一个）。"""
+        if not single_flight.try_begin(self._ANALYSIS_KEY):
+            return
         try:
-            _executor.submit(self._background_analysis_task)
+            _executor.submit(self._guarded_background_task)
         except Exception as e:
+            single_flight.end(self._ANALYSIS_KEY)
             print(f"[InstitutionPrediction] 触发后台分析失败: {e}")
+
+    def _guarded_background_task(self) -> None:
+        """执行后台任务，结束后释放单飞占位。"""
+        try:
+            self._background_analysis_task()
+        finally:
+            single_flight.end(self._ANALYSIS_KEY)
+
 
     def _background_analysis_task(self) -> None:
         """后台分析任务"""
@@ -504,11 +518,21 @@ class InstitutionPredictionService:
             print(f"[InstitutionPrediction] 后台分析失败: {e}")
 
     def refresh_analysis_sync(self) -> Dict[str, Any]:
-        """同步刷新分析（阻塞，仅用于手动刷新）"""
-        result = self.analyzer.analyze(self.db)
-        self.analyzer.save_to_database(self.db, result)
-        self.cache.set(result)
-        return result
+        """同步刷新分析（阻塞，仅用于定时任务）。
+
+        若同服务已有分析在跑（例如启动预热触发的后台任务），直接跳过 ——
+        它产出的就是同一份结果，重复执行只是多花一次 LLM 费用。
+        """
+        if not single_flight.try_begin(self._ANALYSIS_KEY):
+            print("[InstitutionPrediction] 已有分析在执行，跳过本次刷新")
+            return self.cache.get() or {}
+        try:
+            result = self.analyzer.analyze(self.db)
+            self.analyzer.save_to_database(self.db, result)
+            self.cache.set(result)
+            return result
+        finally:
+            single_flight.end(self._ANALYSIS_KEY)
 
     async def refresh_analysis_async(self) -> Dict[str, Any]:
         """异步刷新分析（非阻塞）"""

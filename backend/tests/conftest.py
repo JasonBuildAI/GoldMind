@@ -173,12 +173,17 @@ def _reset_rate_limiters(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _disable_background_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
+def _disable_background_analysis(request, monkeypatch: pytest.MonkeyPatch) -> None:
     """禁止各分析服务在测试中触发后台线程分析。
 
     这些线程会新建数据库会话、发起真实 LLM 调用，而且可能活过用例本身
     （表现为「no such table」之类来自已销毁引擎的噪声）。测试必须同步、确定。
+
+    需要验证真实触发逻辑的用例可以打 `@pytest.mark.real_background` 跳过本夹具。
     """
+    if request.node.get_closest_marker("real_background"):
+        return
+
     import app.services.bearish_factor_service as bearish
     import app.services.bullish_factor_service as bullish
     import app.services.institution_prediction_service as institution

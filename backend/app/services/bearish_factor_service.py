@@ -12,6 +12,7 @@ from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
 from app.services.cache_manager import CacheManager
+from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 from app.services.web_search_service import get_web_search_service
 import json
@@ -582,13 +583,25 @@ class BearishFactorService:
             }
         }
 
+    _ANALYSIS_KEY = "bearish_factors"
+
     def _trigger_background_analysis(self) -> None:
-        """触发后台分析（不阻塞）"""
+        """触发后台分析（不阻塞，同一服务同时只跑一个）。"""
+        if not single_flight.try_begin(self._ANALYSIS_KEY):
+            return
         try:
-            # 提交到线程池执行
-            _executor.submit(self._background_analysis_task)
+            _executor.submit(self._guarded_background_task)
         except Exception as e:
-            print(f"触发后台分析失败: {e}")
+            single_flight.end(self._ANALYSIS_KEY)
+            print(f"[BearishFactor] 触发后台分析失败: {e}")
+
+    def _guarded_background_task(self) -> None:
+        """执行后台任务，结束后释放单飞占位。"""
+        try:
+            self._background_analysis_task()
+        finally:
+            single_flight.end(self._ANALYSIS_KEY)
+
 
     def _background_analysis_task(self) -> None:
         """后台分析任务"""
@@ -636,11 +649,21 @@ class BearishFactorService:
             db.close()
 
     def refresh_analysis_sync(self) -> Dict[str, Any]:
-        """同步刷新分析（阻塞，仅用于定时任务）"""
-        result = self.analyzer.analyze(self.db)
-        self.analyzer.save_to_database(self.db, result)
-        self._store_result(result)
-        return result
+        """同步刷新分析（阻塞，仅用于定时任务）。
+
+        若同服务已有分析在跑（例如启动预热触发的后台任务），直接跳过 ——
+        它产出的就是同一份结果，重复执行只是多花一次 LLM 费用。
+        """
+        if not single_flight.try_begin(self._ANALYSIS_KEY):
+            print("[BearishFactor] 已有分析在执行，跳过本次刷新")
+            return self.cache.get() or {}
+        try:
+            result = self.analyzer.analyze(self.db)
+            self.analyzer.save_to_database(self.db, result)
+            self._store_result(result)
+            return result
+        finally:
+            single_flight.end(self._ANALYSIS_KEY)
 
     def _get_factor_id(self, title: str) -> str:
         """根据标题获取因子ID"""

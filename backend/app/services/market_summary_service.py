@@ -9,6 +9,7 @@ import logging
 
 from app.config import settings
 from app.services.cache_manager import CacheManager
+from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 
 logger = logging.getLogger(__name__)
@@ -400,6 +401,8 @@ class MarketSummaryService:
             }
         }
 
+    _ANALYSIS_KEY = "market_summary"
+
     def _trigger_background_analysis(
         self,
         market_status: str,
@@ -407,23 +410,53 @@ class MarketSummaryService:
         bearish_factors: List[Dict],
         institution_predictions: List[Dict],
         recent_news: List[Dict]
-    ):
-        """触发后台分析任务"""
-        def analyze_in_background():
-            try:
-                print("[MarketSummary] 后台分析启动...")
-                result = self.analyzer.analyze(
-                    self.db,
-                    market_status,
-                    bullish_factors,
-                    bearish_factors,
-                    institution_predictions,
-                    recent_news
-                )
-                self.cache.set(result)
-                print("[MarketSummary] 后台分析完成，结果已缓存")
-            except Exception as e:
-                print(f"[MarketSummary] 后台分析失败: {e}")
+    ) -> None:
+        """触发后台分析（不阻塞，同一服务同时只跑一个）。"""
+        if not single_flight.try_begin(self._ANALYSIS_KEY):
+            return
+        try:
+            _executor.submit(
+                self._guarded_background_task,
+                market_status,
+                bullish_factors,
+                bearish_factors,
+                institution_predictions,
+                recent_news
+            )
+        except Exception as e:
+            single_flight.end(self._ANALYSIS_KEY)
+            print(f"[MarketSummary] 触发后台分析失败: {e}")
 
-        # 在线程池中执行
-        _executor.submit(analyze_in_background)
+    def _guarded_background_task(
+        self,
+        market_status: str,
+        bullish_factors: List[Dict],
+        bearish_factors: List[Dict],
+        institution_predictions: List[Dict],
+        recent_news: List[Dict]
+    ) -> None:
+        """执行后台分析，结束后释放单飞占位。
+
+        这里必须新建数据库会话：原实现直接用 self.db（请求级会话），
+        而本方法运行在另一个线程里，请求结束时那个会话可能已经关闭。
+        """
+        from app.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            print("[MarketSummary] 后台分析启动...")
+            result = self.analyzer.analyze(
+                db,
+                market_status,
+                bullish_factors,
+                bearish_factors,
+                institution_predictions,
+                recent_news
+            )
+            self.cache.set(result)
+            print("[MarketSummary] 后台分析完成，结果已缓存")
+        except Exception as e:
+            print(f"[MarketSummary] 后台分析失败: {e}")
+        finally:
+            db.close()
+            single_flight.end(self._ANALYSIS_KEY)
