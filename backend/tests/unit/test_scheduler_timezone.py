@@ -154,3 +154,74 @@ def test_price_job_records_the_source_date_not_the_server_date(monkeypatch):
         assert abs(row.close_price - 4214.16) < 0.01
     finally:
         db.close()
+
+# --------------------------------------------------------------------------- #
+# 休市日
+# --------------------------------------------------------------------------- #
+@pytest.mark.integration
+def test_holiday_run_does_not_create_a_row_for_the_holiday(monkeypatch):
+    """休市日运行时不该为休市日建一行。
+
+    `is_trading_day` 只排除周末，不认节假日 —— 所以圣诞节那天任务照跑。
+    但第 7 轮把「记到哪一天」改成以**数据源自报的交易日**为准之后，
+    休市日的数据源仍报上一个交易日，任务只是把同一行重写一遍，
+    不会造出一份「休市日行情」。这条测试把这个结论钉住，免得以后
+    有人把日期来源改回本地时钟又踩回去。
+    """
+    import asyncio
+
+    from app import scheduler as scheduler_module
+    from app.database import Base, SessionLocal, engine
+    from app.models.gold_price import GoldPrice
+
+    Base.metadata.create_all(bind=engine)
+
+    last_trading_day = date(2025, 12, 24)
+    holiday = date(2025, 12, 25)
+
+    db = SessionLocal()
+    try:
+        db.query(GoldPrice).delete()
+        db.add(
+            GoldPrice(
+                date=last_trading_day,
+                open_price=4480.0,
+                high_price=4520.0,
+                low_price=4470.0,
+                close_price=4500.0,
+                volume=0,
+                change_percent=0.22,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    # 数据源在休市日仍报上一个交易日
+    payload = {
+        "price": 4500.0,
+        "open": 4480.0,
+        "high": 4520.0,
+        "low": 4470.0,
+        "previous_close": 4490.0,
+        "change_percent": 0.22,
+        "source_name": "测试源",
+        "date": last_trading_day.isoformat(),
+    }
+    monkeypatch.setattr(scheduler_module, "scheduler_today", lambda: holiday)
+    monkeypatch.setattr(scheduler_module, "is_trading_day", lambda *a, **k: True)
+    import app.services.realtime_price as realtime_module
+
+    monkeypatch.setattr(realtime_module, "get_realtime_gold_price", lambda: payload)
+    monkeypatch.setattr(scheduler_module, "get_realtime_gold_price", lambda: payload, raising=False)
+
+    asyncio.run(scheduler_module.update_prices_job())
+
+    db = SessionLocal()
+    try:
+        rows = db.query(GoldPrice).order_by(GoldPrice.date).all()
+        dates = [r.date for r in rows]
+        assert holiday not in dates, f"为休市日 {holiday} 建了一行，那是一份不存在的数据"
+        assert dates == [last_trading_day], f"行数变了：{dates}"
+    finally:
+        db.close()

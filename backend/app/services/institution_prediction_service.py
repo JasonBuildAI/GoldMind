@@ -350,7 +350,10 @@ class InstitutionPredictionService:
                     for v in recent_views[:4]
                 ],
                 "analysis_summary": "基于最新市场数据的机构预测",
-                "last_updated": recent_views[0].updated_at.strftime("%Y-%m-%d %H:%M:%S") if recent_views else timeutil.now_str(),
+                # 用项目时区的当前时间，而不是 `updated_at` ——
+                # 那一列是数据库的 `func.now()`（库服务器时间）生成的，
+                # 容器里通常是 UTC，展示给用户会差 8 小时（红线 5）。
+                "last_updated": timeutil.now_str(),
                 "metadata": {
                     "cached": True,
                     "cache_source": "database",

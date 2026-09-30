@@ -37,11 +37,20 @@ class InvestmentAdviceAnalyzer:
         return self._llm
 
     def _fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
-        """获取最近的新闻"""
-        cutoff_time = timeutil.now_naive() - timedelta(hours=hours)
-        return db.query(GoldNews).filter(
-            GoldNews.created_at >= cutoff_time
-        ).order_by(GoldNews.created_at.desc()).limit(20).all()
+        """获取最近 N 小时**发布**的新闻。
+
+        原实现按 `created_at`（入库时刻）过滤与排序：
+          - 过滤：一条三天前发布、刚刚抓到的新闻会被算进来，
+            而两小时前发布、昨天抓到的会被排除 —— 窗口没有意义；
+          - 排序：抓取是每 2 小时**批量**插入的，同一批的 `created_at` 几乎相同，
+            于是「最近 20 条」实际是这一批里的任意 20 条。
+        而且 `created_at` 是数据库生成的（库服务器时间），按红线也不该拿来比。
+
+        统一走 `NewsService.get_recent_news()` —— 其余四个服务用的就是它。
+        """
+        from app.services.news_service import NewsService
+
+        return NewsService(db).get_recent_news(hours=hours)[:20]
 
     def _fetch_latest_price(self, db: Session) -> Optional[GoldPrice]:
         """获取最新金价"""
