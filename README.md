@@ -35,7 +35,7 @@
 
 ## ⚡ 项目概述
 
-**GoldMind** 是一个黄金市场分析看板：自动采集金价与美元指数，用大语言模型基于最近的新闻生成多空因子、机构观点、投资建议与市场总结，最后以单页看板呈现。
+**GoldMind** 是一个黄金市场分析看板：自动采集金价与美元指数，用大语言模型基于最近的新闻生成多空对照、机构观点、投资策略与市场总结，以一张单页的**浅色研究简报**呈现 —— 五节（行情 / 多空对照 / 机构观点 / 投资策略 / 总结）全部左对齐，无渐变、无阴影、无卡片套件；数字表格化，红涨绿跌，且方向同时给符号与文字。
 
 当前由**小米 MiMo**（`mimo-v2.6-flash`）单模型驱动，所有 LLM 客户端统一经 `backend/app/services/llm_provider.py` 构造。
 
@@ -59,6 +59,12 @@
 
 **关于「ReAct」**  
 未实现，没有 Thought / Action / Observation 循环。
+
+**关于「某一节显示暂不可用」**
+分析模型是推理模型，`max_tokens=4096` 同时覆盖思考与正文。投资策略要求三档策略的完整
+JSON，输出逼近上限时会被截断、解析失败，于是按红线返回空内容 —— 页面如实显示
+「投资策略暂不可用」，而不是摆一份编造的策略。看涨 / 看跌因子偶发为空时同理，点
+「重新分析」重试即可。
 
 ### 🧩 实际的分析链路
 
@@ -96,35 +102,41 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
 
 ## 📸 系统展示
 
-### 首页仪表盘
+### 报头与行情
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/dashboard.jpeg" alt="Dashboard" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/dashboard.jpeg" alt="报头与行情" width="800">
 </p>
 
-### 实时价格走势
+### 走势与关键数据
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/price-chart.jpeg" alt="Price Chart" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/price-chart.jpeg" alt="走势图与关键数据" width="800">
 </p>
 
-### 多空因素分析
+### 多空对照
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-up.jpeg" alt="Bullish Factors" width="400">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-down.jpeg" alt="Bearish Factors" width="400">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-up.jpeg" alt="看涨因素" width="400">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-down.jpeg" alt="看跌因素" width="400">
 </p>
 
 ### 机构观点
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="Institutional Views" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="机构观点" width="800">
 </p>
 
-### 投资建议
+> 本机部署的 MiMo key 未开通联网搜索（调用返回 `HTTP 400`），检索不到一手机构观点时，
+> 表格如实显示「暂无」，不给任何编造的目标价。
+
+### 投资策略
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/investment-advice.jpeg" alt="Investment Advice" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/investment-advice.jpeg" alt="投资策略" width="800">
 </p>
 
-### 市场总结
+> 上图为分析尚未落库时的状态：模型输出被 token 上限截断时，这一节如实说明「暂不可用」，
+> 而不是摆一份内置策略。
+
+### 总结
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/market-summary.jpeg" alt="Market Summary" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/market-summary.jpeg" alt="市场总结" width="800">
 </p>
 
 ---

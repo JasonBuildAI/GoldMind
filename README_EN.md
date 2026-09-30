@@ -35,8 +35,11 @@
 ## ⚡ Overview
 
 **GoldMind** is a gold market analysis dashboard: it collects gold and dollar-index prices
-automatically, uses an LLM to turn recent news into bullish/bearish factors, institutional
-views, investment advice and a market summary, and presents all of it on a single page.
+automatically and uses an LLM to turn recent news into a bullish/bearish contrast, institutional
+views, investment strategies and a market summary, presented as a single-page **light research
+brief** — five sections (Market / Bullish vs Bearish / Institutions / Strategy / Conclusion), all
+left-aligned, with no gradients, no shadows and no card grid; numbers live in tables, and rising
+is red while falling is green.
 
 It is currently driven by a single model, **Xiaomi MiMo** (`mimo-v2.6-flash`). Every LLM
 client is constructed through `backend/app/services/llm_provider.py`.
@@ -62,6 +65,13 @@ There is no vector store, no embeddings and no retrieval step. Historical prices
 **"ReAct"**
 Not implemented. There is no Thought / Action / Observation loop.
 
+**"A section sometimes says unavailable"**
+The model is a reasoning model, so `max_tokens=4096` covers both its thinking and its answer. The
+investment-strategy prompt asks for three complete strategies in one JSON object; when the output
+approaches that cap it gets truncated and the JSON fails to parse, so the section honestly says
+"unavailable" instead of showing a fabricated strategy. The bullish or bearish factors can go
+empty the same way, less often — press refresh to retry.
+
 ---
 
 ## 🌟 Our Vision
@@ -81,35 +91,42 @@ If this project has been helpful or inspiring to you, a ⭐ **Star** is the best
 
 ## 📸 System Showcase
 
-### Dashboard
+### Masthead and Market
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/dashboard.jpeg" alt="Dashboard" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/dashboard.jpeg" alt="Masthead and market" width="800">
 </p>
 
-### Real-time Price Trends
+### Trend and Key Data
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/price-chart.jpeg" alt="Price Chart" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/price-chart.jpeg" alt="Price trend and key data" width="800">
 </p>
 
-### Bullish/Bearish Factor Analysis
+### Bullish vs Bearish
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-up.jpeg" alt="Bullish Factors" width="400">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-down.jpeg" alt="Bearish Factors" width="400">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-up.jpeg" alt="Bullish factors" width="400">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-down.jpeg" alt="Bearish factors" width="400">
 </p>
 
 ### Institutional Views
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="Institutional Views" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="Institutional views" width="800">
 </p>
 
-### Investment Advice
+> This deployment's MiMo key has no web search (the call returns `HTTP 400`). When no
+> first-hand institutional view can be retrieved the table says "not available" — it never
+> invents a price target.
+
+### Investment Strategy
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/investment-advice.jpeg" alt="Investment Advice" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/investment-advice.jpeg" alt="Investment strategy" width="800">
 </p>
 
-### Market Summary
+> The screenshot above shows the state before an analysis is stored: when the model output is
+> truncated by the token cap, this section says so plainly instead of showing built-in advice.
+
+### Conclusion
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/market-summary.jpeg" alt="Market Summary" width="800">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/market-summary.jpeg" alt="Market summary" width="800">
 </p>
 
 ---
