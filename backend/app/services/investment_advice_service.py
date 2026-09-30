@@ -13,6 +13,7 @@ from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 import json
 import logging
+from loguru import logger
 
 logger = logging.getLogger(__name__)
 
@@ -428,7 +429,7 @@ class InvestmentAdviceService:
         """
         # 如果强制刷新，直接执行 MiMo 分析
         if not use_cache:
-            print("[InvestmentAdvice] 强制刷新，执行 MiMo 实时分析...")
+            logger.info("[InvestmentAdvice] 强制刷新，执行 MiMo 实时分析...")
             try:
                 result = self.analyzer.analyze(
                     self.db,
@@ -447,7 +448,7 @@ class InvestmentAdviceService:
                 }
                 return result
             except Exception as e:
-                print(f"[InvestmentAdvice] MiMo 分析失败: {e}")
+                logger.error(f"[InvestmentAdvice] MiMo 分析失败: {e}")
                 # 如果分析失败，返回缓存数据
                 pass
         
@@ -538,7 +539,7 @@ class InvestmentAdviceService:
             )
         except Exception as e:
             single_flight.end(self._ANALYSIS_KEY)
-            print(f"[InvestmentAdvice] 触发后台分析失败: {e}")
+            logger.error(f"[InvestmentAdvice] 触发后台分析失败: {e}")
 
     def _guarded_background_task(self, *args) -> None:
         """执行后台任务，结束后释放单飞占位。"""
@@ -569,11 +570,11 @@ class InvestmentAdviceService:
                 )
                 # 更新文件缓存
                 self.cache.set(result)
-                print(f"[InvestmentAdvice] 后台分析完成，时间: {datetime.now()}")
+                logger.info(f"[InvestmentAdvice] 后台分析完成，时间: {datetime.now()}")
             finally:
                 db.close()
         except Exception as e:
-            print(f"[InvestmentAdvice] 后台分析失败: {e}")
+            logger.error(f"[InvestmentAdvice] 后台分析失败: {e}")
 
     def refresh_analysis_sync(
         self,
@@ -588,7 +589,7 @@ class InvestmentAdviceService:
         它产出的就是同一份结果，重复执行只是多花一次 LLM 费用。
         """
         if not single_flight.try_begin(self._ANALYSIS_KEY):
-            print("[InvestmentAdvice] 已有分析在执行，跳过本次刷新")
+            logger.warning("[InvestmentAdvice] 已有分析在执行，跳过本次刷新")
             return self.cache.get() or {}
         try:
             result = self.analyzer.analyze(

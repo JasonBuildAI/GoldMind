@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 from pathlib import Path
 
 from app.config import settings
+from loguru import logger
 
 
 # 缓存目录
@@ -69,7 +70,7 @@ class CacheManager:
                             _memory_cache[self.cache_key] = (data, timestamp)
                         return data
         except Exception as e:
-            print(f"[CacheManager] 读取文件缓存失败: {e}")
+            logger.error(f"[CacheManager] 读取文件缓存失败: {e}")
         
         return None
     
@@ -98,7 +99,7 @@ class CacheManager:
             temp_file.replace(self.file_path)
             
         except Exception as e:
-            print(f"[CacheManager] 写入文件缓存失败: {e}")
+            logger.error(f"[CacheManager] 写入文件缓存失败: {e}")
             # 清理临时文件（如果存在）
             try:
                 temp_file = self.file_path.with_suffix('.tmp')

@@ -31,6 +31,7 @@ from typing import Any, Dict, Optional
 import requests
 
 from app.services.cache_manager import CacheManager
+from loguru import logger
 
 # 依次尝试的数据源
 SOURCE_ORDER = ("tencent", "sina", "eastmoney")
@@ -135,7 +136,7 @@ def fetch_from_tencent() -> Optional[Dict[str, Any]]:
             return None
         return _parse_hq_payload(match.group(1), source="tencent", source_name="腾讯财经-纽约黄金")
     except Exception as exc:  # 网络、超时、解析
-        print(f"[RealtimePrice] 腾讯财经失败: {exc}")
+        logger.error(f"[RealtimePrice] 腾讯财经失败: {exc}")
         return None
 
 
@@ -158,7 +159,7 @@ def fetch_from_sina() -> Optional[Dict[str, Any]]:
             return None
         return _parse_hq_payload(match.group(1), source="sina", source_name="新浪财经-伦敦金")
     except Exception as exc:
-        print(f"[RealtimePrice] 新浪财经失败: {exc}")
+        logger.error(f"[RealtimePrice] 新浪财经失败: {exc}")
         return None
 
 
@@ -203,7 +204,7 @@ def fetch_from_eastmoney() -> Optional[Dict[str, Any]]:
             source_name="东方财富-黄金/美元",
         )
     except Exception as exc:
-        print(f"[RealtimePrice] 东方财富失败: {exc}")
+        logger.error(f"[RealtimePrice] 东方财富失败: {exc}")
         return None
 
 
@@ -236,8 +237,8 @@ def get_realtime_gold_price(*, use_cache: bool = True) -> Optional[Dict[str, Any
         result = _FETCHERS[name]()
         if result:
             cache.set(result)
-            print(f"[RealtimePrice] 成功: ${result['price']} ({result['source_name']})")
+            logger.info(f"[RealtimePrice] 成功: ${result['price']} ({result['source_name']})")
             return result
 
-    print("[RealtimePrice] 所有数据源均失败")
+    logger.error("[RealtimePrice] 所有数据源均失败")
     return None

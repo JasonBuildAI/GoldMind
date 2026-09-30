@@ -16,6 +16,7 @@ from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 from app.services.web_search_service import get_web_search_service
 import json
+from loguru import logger
 
 # 全局线程池（所有服务共享）
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -155,7 +156,7 @@ class BearishFactorAnalyzer:
                         'published_at': datetime.now()
                     })
             except Exception as e:
-                print(f"获取 {source} 新闻失败: {e}")
+                logger.error(f"获取 {source} 新闻失败: {e}")
 
         return all_news
 
@@ -199,20 +200,20 @@ class BearishFactorAnalyzer:
         """执行分析 - 使用MiMo 联网搜索"""
         # 使用MiMo 联网搜索获取最新看空因素
         try:
-            print("[BearishFactor] 使用MiMo 联网搜索看空因素...")
+            logger.info("[BearishFactor] 使用MiMo 联网搜索看空因素...")
             search_result = self._search_bearish_factors()
             
             # 检查搜索结果是否有效
             if search_result.get("bearish_factors") and len(search_result["bearish_factors"]) > 0:
-                print(f"[BearishFactor] 成功获取 {len(search_result['bearish_factors'])} 个看空因素")
+                logger.info(f"[BearishFactor] 成功获取 {len(search_result['bearish_factors'])} 个看空因素")
                 search_result["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 search_result["data_source"] = "MiMo 联网搜索"
                 return search_result
             else:
-                print("[BearishFactor] 搜索结果为空，使用备用方案")
+                logger.warning("[BearishFactor] 搜索结果为空，使用备用方案")
                 
         except Exception as e:
-            print(f"[BearishFactor] MiMo 搜索失败: {e}")
+            logger.error(f"[BearishFactor] MiMo 搜索失败: {e}")
         
         # 备用方案：使用传统方式分析
         return self._analyze_with_traditional_llm(db)
@@ -326,7 +327,7 @@ class BearishFactorAnalyzer:
 
             return result
         except Exception as e:
-            print(f"LLM调用失败: {e}")
+            logger.error(f"LLM调用失败: {e}")
             return self._get_default_factors()
 
     def _get_default_factors(self) -> Dict[str, Any]:
@@ -491,7 +492,7 @@ class BearishFactorService:
         """
         # 如果强制刷新，直接执行实时搜索
         if not use_cache:
-            print("[BearishFactor] 强制刷新，执行实时搜索...")
+            logger.info("[BearishFactor] 强制刷新，执行实时搜索...")
             try:
                 result = self.analyzer.analyze(self.db)
                 self.analyzer.save_to_database(self.db, result)
@@ -504,7 +505,7 @@ class BearishFactorService:
                 }
                 return result
             except Exception as e:
-                print(f"[BearishFactor] 实时搜索失败: {e}")
+                logger.error(f"[BearishFactor] 实时搜索失败: {e}")
                 # 如果实时搜索失败，返回缓存数据
                 pass
         
@@ -560,7 +561,7 @@ class BearishFactorService:
             _executor.submit(self._guarded_background_task)
         except Exception as e:
             single_flight.end(self._ANALYSIS_KEY)
-            print(f"[BearishFactor] 触发后台分析失败: {e}")
+            logger.error(f"[BearishFactor] 触发后台分析失败: {e}")
 
     def _guarded_background_task(self) -> None:
         """执行后台任务，结束后释放单飞占位。"""
@@ -581,11 +582,11 @@ class BearishFactorService:
                 self.analyzer.save_to_database(db, result)
                 # 更新内存缓存
                 self._store_result(result)
-                print(f"[BearishFactor] 后台分析完成，时间: {datetime.now()}")
+                logger.info(f"[BearishFactor] 后台分析完成，时间: {datetime.now()}")
             finally:
                 db.close()
         except Exception as e:
-            print(f"[BearishFactor] 后台分析失败: {e}")
+            logger.error(f"[BearishFactor] 后台分析失败: {e}")
 
     async def refresh_analysis_async(self) -> Dict[str, Any]:
         """
@@ -622,7 +623,7 @@ class BearishFactorService:
         它产出的就是同一份结果，重复执行只是多花一次 LLM 费用。
         """
         if not single_flight.try_begin(self._ANALYSIS_KEY):
-            print("[BearishFactor] 已有分析在执行，跳过本次刷新")
+            logger.warning("[BearishFactor] 已有分析在执行，跳过本次刷新")
             return self.cache.get() or {}
         try:
             result = self.analyzer.analyze(self.db)

@@ -11,6 +11,7 @@ from app.config import settings
 from app.services.cache_manager import CacheManager
 from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
+from loguru import logger
 
 logger = logging.getLogger(__name__)
 
@@ -270,7 +271,7 @@ class MarketSummaryService:
             if stats:
                 return stats.get("current_price", 5067)
         except Exception as e:
-            print(f"[MarketSummary] 获取实时价格失败: {e}")
+            logger.error(f"[MarketSummary] 获取实时价格失败: {e}")
         return 5067
 
     def get_market_summary(
@@ -301,7 +302,7 @@ class MarketSummaryService:
 
         # 如果强制刷新，直接执行 MiMo 分析
         if not use_cache:
-            print("[MarketSummary] 强制刷新，执行 MiMo 实时分析...")
+            logger.info("[MarketSummary] 强制刷新，执行 MiMo 实时分析...")
             try:
                 result = self.analyzer.analyze(
                     self.db,
@@ -323,7 +324,7 @@ class MarketSummaryService:
                 }
                 return result
             except Exception as e:
-                print(f"[MarketSummary] MiMo 分析失败: {e}")
+                logger.error(f"[MarketSummary] MiMo 分析失败: {e}")
                 pass
 
         # 1. 首先尝试文件缓存
@@ -425,7 +426,7 @@ class MarketSummaryService:
             )
         except Exception as e:
             single_flight.end(self._ANALYSIS_KEY)
-            print(f"[MarketSummary] 触发后台分析失败: {e}")
+            logger.error(f"[MarketSummary] 触发后台分析失败: {e}")
 
     def _guarded_background_task(
         self,
@@ -444,7 +445,7 @@ class MarketSummaryService:
 
         db = SessionLocal()
         try:
-            print("[MarketSummary] 后台分析启动...")
+            logger.info("[MarketSummary] 后台分析启动...")
             result = self.analyzer.analyze(
                 db,
                 market_status,
@@ -454,9 +455,9 @@ class MarketSummaryService:
                 recent_news
             )
             self.cache.set(result)
-            print("[MarketSummary] 后台分析完成，结果已缓存")
+            logger.info("[MarketSummary] 后台分析完成，结果已缓存")
         except Exception as e:
-            print(f"[MarketSummary] 后台分析失败: {e}")
+            logger.error(f"[MarketSummary] 后台分析失败: {e}")
         finally:
             db.close()
             single_flight.end(self._ANALYSIS_KEY)

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from app.models.gold_price import GoldPrice, DollarIndex
+from loguru import logger
 
 # 创建带重试机制的HTTP Session（提升API稳定性）
 def create_retry_session(
@@ -116,12 +117,12 @@ class GoldService:
                             ),
                             "source": "新浪财经-ICE美元指数(DXY)",
                         }
-                        print(f"[GoldService] 获取实时美元指数成功: {result}")
+                        logger.info(f"[GoldService] 获取实时美元指数成功: {result}")
                         return result
         except requests.exceptions.Timeout:
-            print("[GoldService] 美元指数API超时")
+            logger.error("[GoldService] 美元指数API超时")
         except Exception as e:
-            print(f"[GoldService] 获取实时美元指数失败: {e}")
+            logger.error(f"[GoldService] 获取实时美元指数失败: {e}")
 
         return None
     

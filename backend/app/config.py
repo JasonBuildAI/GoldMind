@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
     DEBUG: bool = True
+    # 日志级别：DEBUG / INFO / WARNING / ERROR。
+    # .env.example 里一直写着这一项，但此前没有任何代码读它 —— 设了也不生效。
+    LOG_LEVEL: str = "INFO"
     SECRET_KEY: str = "your-secret-key-change-in-production"
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"

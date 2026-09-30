@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.news import GoldNews, SentimentType
+from loguru import logger
 
 # 内置默认 RSS 源，格式 "名称|URL"。
 # 这些 URL 都是实测能返回条目与发布时间的；原实现里的
@@ -120,7 +121,7 @@ class NewsService:
                 )
             return news_list
         except Exception as e:
-            print(f"RSS获取失败 {source}: {e}")
+            logger.error(f"RSS获取失败 {source}: {e}")
             return []
 
     def fetch_all_rss_news(self, limit_per_source: int = 10) -> List[Dict]:
@@ -177,5 +178,5 @@ class NewsService:
             return news
         except Exception as e:
             self.db.rollback()
-            print(f"保存新闻失败: {e}")
+            logger.error(f"保存新闻失败: {e}")
             return None

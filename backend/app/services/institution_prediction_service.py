@@ -14,6 +14,7 @@ from app.services.single_flight import single_flight
 from app.services.llm_provider import get_chat_llm
 from app.services.web_search_service import get_web_search_service
 import json
+from loguru import logger
 
 # 全局线程池
 _executor = ThreadPoolExecutor(max_workers=2)
@@ -160,7 +161,7 @@ class InstitutionPredictionAnalyzer:
                         'published_at': datetime.now()
                     })
             except Exception as e:
-                print(f"获取 {source} 新闻失败: {e}")
+                logger.error(f"获取 {source} 新闻失败: {e}")
 
         return all_news
 
@@ -168,21 +169,21 @@ class InstitutionPredictionAnalyzer:
         """执行分析 - 使用 MiMo 联网搜索"""
         # 使用MiMo 联网搜索获取最新机构预测
         try:
-            print("[InstitutionPrediction] 使用 MiMo 联网搜索机构预测...")
+            logger.info("[InstitutionPrediction] 使用 MiMo 联网搜索机构预测...")
             search_result = self.web_search_service.search_institution_predictions()
             
             # 必须同时确认搜索真的可用，否则「搜到空结果」与「搜索不可用」
             # 会被混为一谈，上层就无法决定是否该回退。
             if search_result.get("available") and search_result.get("institutions"):
-                print(f"[InstitutionPrediction] 成功获取 {len(search_result['institutions'])} 家机构预测")
+                logger.info(f"[InstitutionPrediction] 成功获取 {len(search_result['institutions'])} 家机构预测")
                 search_result["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 search_result["data_source"] = "MiMo 联网搜索"
                 return search_result
             else:
-                print("[InstitutionPrediction] 搜索结果为空，使用备用方案")
+                logger.warning("[InstitutionPrediction] 搜索结果为空，使用备用方案")
                 
         except Exception as e:
-            print(f"[InstitutionPrediction] MiMo 搜索失败: {e}")
+            logger.error(f"[InstitutionPrediction] MiMo 搜索失败: {e}")
         
         # 备用方案：使用传统方式分析
         return self._analyze_with_traditional_llm(db)
@@ -237,7 +238,7 @@ class InstitutionPredictionAnalyzer:
 
             return result
         except Exception as e:
-            print(f"LLM调用失败: {e}")
+            logger.error(f"LLM调用失败: {e}")
             return self._get_default_predictions()
 
     def _get_default_predictions(self) -> Dict[str, Any]:
@@ -366,7 +367,7 @@ class InstitutionPredictionService:
         """
         # 如果强制刷新，直接执行实时搜索
         if not use_cache:
-            print("[InstitutionPrediction] 强制刷新，执行实时搜索...")
+            logger.info("[InstitutionPrediction] 强制刷新，执行实时搜索...")
             try:
                 result = self.analyzer.analyze(self.db)
                 self.analyzer.save_to_database(self.db, result)
@@ -379,7 +380,7 @@ class InstitutionPredictionService:
                 }
                 return result
             except Exception as e:
-                print(f"[InstitutionPrediction] 实时搜索失败: {e}")
+                logger.error(f"[InstitutionPrediction] 实时搜索失败: {e}")
                 # 如果实时搜索失败，返回缓存数据
                 pass
         
@@ -491,7 +492,7 @@ class InstitutionPredictionService:
             _executor.submit(self._guarded_background_task)
         except Exception as e:
             single_flight.end(self._ANALYSIS_KEY)
-            print(f"[InstitutionPrediction] 触发后台分析失败: {e}")
+            logger.error(f"[InstitutionPrediction] 触发后台分析失败: {e}")
 
     def _guarded_background_task(self) -> None:
         """执行后台任务，结束后释放单飞占位。"""
@@ -511,11 +512,11 @@ class InstitutionPredictionService:
                 self.analyzer.save_to_database(db, result)
                 # 更新文件缓存
                 self.cache.set(result)
-                print(f"[InstitutionPrediction] 后台分析完成，时间: {datetime.now()}")
+                logger.info(f"[InstitutionPrediction] 后台分析完成，时间: {datetime.now()}")
             finally:
                 db.close()
         except Exception as e:
-            print(f"[InstitutionPrediction] 后台分析失败: {e}")
+            logger.error(f"[InstitutionPrediction] 后台分析失败: {e}")
 
     def refresh_analysis_sync(self) -> Dict[str, Any]:
         """同步刷新分析（阻塞，仅用于定时任务）。
@@ -524,7 +525,7 @@ class InstitutionPredictionService:
         它产出的就是同一份结果，重复执行只是多花一次 LLM 费用。
         """
         if not single_flight.try_begin(self._ANALYSIS_KEY):
-            print("[InstitutionPrediction] 已有分析在执行，跳过本次刷新")
+            logger.warning("[InstitutionPrediction] 已有分析在执行，跳过本次刷新")
             return self.cache.get() or {}
         try:
             result = self.analyzer.analyze(self.db)

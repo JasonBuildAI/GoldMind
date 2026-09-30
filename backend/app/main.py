@@ -1,5 +1,6 @@
 """FastAPI 主应用入口"""
 import os
+import sys
 import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -13,6 +14,30 @@ from app.database import engine, Base
 from app.routers import gold_prices, analysis, news, predictions
 from app.scheduler import init_scheduler, shutdown_scheduler
 from app.utils.rate_limit import SlidingWindowRateLimiter
+
+
+# --------------------------------------------------------------------------- #
+# 日志
+# --------------------------------------------------------------------------- #
+# loguru 的默认 handler 固定 DEBUG 级别、格式也写死。这里按 LOG_LEVEL 重新配置，
+# 让 .env 里那一项真正生效（此前没有任何代码读它）。
+# diagnose=False：异常回溯里不带局部变量值，避免把密钥之类的东西打进日志。
+def _configure_logging() -> None:
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level=(settings.LOG_LEVEL or "INFO").upper(),
+        format=(
+            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+        ),
+        backtrace=False,
+        diagnose=False,
+    )
+
+
+_configure_logging()
 
 
 async def warmup_cache():
