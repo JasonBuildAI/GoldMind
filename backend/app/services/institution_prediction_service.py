@@ -184,7 +184,12 @@ class InstitutionPredictionAnalyzer:
             if web_news:
                 news_content = format_news_for_prompt(web_news, limit=15)
             else:
-                news_content = "暂无最新新闻数据，将基于当前市场状况进行分析。"
+                # 没有任何新闻可依据 —— 不调 LLM，直接返回空（红线第 1 条）
+                logger.warning(
+                    "[InstitutionPrediction] 24 小时内没有任何新闻，"
+                    "不调用 LLM（没有依据可分析）"
+                )
+                return self.get_default_predictions()
         else:
             news_content = format_news_for_prompt(news, limit=15)
 

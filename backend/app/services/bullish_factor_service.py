@@ -280,7 +280,19 @@ class BullishFactorAnalyzer:
             if web_news:
                 news_content = format_news_for_prompt(web_news, limit=15)
             else:
-                news_content = "暂无最新新闻数据，将基于当前市场状况进行分析。"
+                # **一点新闻都没有 —— 不调 LLM。**
+                #
+                # 原实现这时塞一句「暂无最新新闻数据，将基于当前市场状况进行分析」，
+                # 等于请模型用自己的记忆去补 —— 红线第 1 条明确禁止
+                #（docs/00-产品方向.md 第四节）。产出的因子与真实分析长得一模一样，
+                # 用户无从分辨。
+                #
+                # 而且这也省下一次没有依据的付费调用。
+                logger.warning(
+                    f"[{self.__class__.__name__}] 24 小时内没有任何新闻，"
+                    "不调用 LLM（没有依据可分析）"
+                )
+                return self._get_default_factors()
         else:
             news_content = format_news_for_prompt(news, limit=15)
         
@@ -325,77 +337,23 @@ class BullishFactorAnalyzer:
             return self._get_default_factors()
     
     def _get_default_factors(self) -> Dict[str, Any]:
-        """获取默认看涨因子（当LLM调用失败时使用）"""
+        """LLM 不可用 / 输出无法解析时返回的结构 —— **内容为空**。
+
+        这里以前返回一组写死的看涨因子（「美联储降息周期」「美联储升息预期」…），
+        每条都带具体描述与 impact。第 2 轮清掉的是**Service 类**里那份
+        `_get_default_response()`，**Analyzer 类里这份漏掉了** —— 而它才是
+        LLM 调用失败、JSON 解析失败、返回空内容这三条路径的落点。
+
+        也就是说：模型一旦出问题，页面照样会显示一份看起来完整的分析，
+        用户完全无从分辨。那违反红线第 1 条
+        （「不为了好看而展示编造的数据 —— 宁可显示「数据不可用」」）。
+
+        现在返回空列表 + 状态，由前端显示「正在分析中」或「暂不可用」。
+        """
         return {
-            "bullish_factors": [
-                {
-                    "id": "fed-policy",
-                    "title": "美联储降息周期",
-                    "subtitle": "货币政策转向宽松",
-                    "description": "美联储持续降息推动实际利率下行，黄金作为非孳息资产的吸引力增强。",
-                    "details": [
-                        "美联储维持宽松货币政策",
-                        "实际利率处于低位",
-                        "市场预期继续降息",
-                        "持有黄金机会成本降低"
-                    ],
-                    "impact": "high"
-                },
-                {
-                    "id": "central-bank",
-                    "title": "全球央行持续购金",
-                    "subtitle": "去美元化趋势加速",
-                    "description": "全球央行持续增持黄金储备，推动黄金需求增长。",
-                    "details": [
-                        "新兴市场央行大幅增持",
-                        "储备多元化需求强劲",
-                        "年度购金量创新高",
-                        "长期支撑金价走势"
-                    ],
-                    "impact": "high"
-                },
-                {
-                    "id": "dollar-credit",
-                    "title": "美元信用动摇",
-                    "subtitle": "美债规模持续攀升",
-                    "description": "美国债务规模不断扩大，市场对美元信用产生担忧。",
-                    "details": [
-                        "美债规模突破历史新高",
-                        "债务占GDP比重上升",
-                        "财政可持续性受质疑",
-                        "避险资金流入黄金"
-                    ],
-                    "impact": "high"
-                },
-                {
-                    "id": "geopolitical",
-                    "title": "地缘政治风险",
-                    "subtitle": "避险需求持续升温",
-                    "description": "全球地缘政治局势紧张，推动避险资金流入黄金市场。",
-                    "details": [
-                        "地区冲突持续",
-                        "贸易摩擦加剧",
-                        "政治不确定性增加",
-                        "避险需求支撑金价"
-                    ],
-                    "impact": "medium"
-                },
-                {
-                    "id": "supply-demand",
-                    "title": "供需失衡支撑",
-                    "subtitle": "矿产金产量见顶",
-                    "description": "黄金供应增长受限，而需求持续强劲，供需缺口支撑价格。",
-                    "details": [
-                        "矿产金产量增长缓慢",
-                        "生产成本持续上升",
-                        "投资需求保持旺盛",
-                        "供需基本面偏紧"
-                    ],
-                    "impact": "medium"
-                }
-            ],
-            "analysis_summary": "基于当前市场状况的综合分析",
-            "last_updated": timeutil.now_str()
+            "bullish_factors": [],
+            "analysis_summary": "",
+            "last_updated": timeutil.now_str(),
         }
     
     def save_to_database(self, db: Session, analysis_result: Dict[str, Any]) -> None:

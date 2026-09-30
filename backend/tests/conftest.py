@@ -319,8 +319,10 @@ def seed_news(db_session):
 
     def _seed(count: int = 3, hours_ago: int = 1):
         from app.models.news import GoldNews, SentimentType
+        from app.utils import timeutil
 
-        now = datetime.now()
+        # 用与代码同一个时钟（项目时区），别用 datetime.now()
+        now = timeutil.now_naive()
         for i in range(count):
             db_session.add(
                 GoldNews(

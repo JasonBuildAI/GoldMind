@@ -281,9 +281,16 @@ def test_full_user_journey(client, seed_gold_prices, seed_news, smart_llm):
 
 
 @pytest.mark.e2e
-def test_refresh_cycle_produces_data_for_every_analysis(client, seed_gold_prices, smart_llm):
-    """POST /refresh 全轮跑一遍：每个服务都必须产出内容，且写回缓存。"""
+def test_refresh_cycle_produces_data_for_every_analysis(
+    client, seed_gold_prices, seed_news, smart_llm
+):
+    """POST /refresh 全轮跑一遍：每个服务都必须产出内容，且写回缓存。
+
+    必须同时种新闻：分析以「最近 24 小时新闻」为依据，一条新闻都没有时
+    服务会**拒绝调用 LLM**（红线第 1 条 —— 没有依据就不许让模型编）。
+    """
     seed_gold_prices(days=5)
+    seed_news(count=5)
 
     endpoints = {
         "bullish": ("/api/gold/bullish-factors-ai/refresh", "bullish_factors"),
@@ -301,9 +308,12 @@ def test_refresh_cycle_produces_data_for_every_analysis(client, seed_gold_prices
 
 
 @pytest.mark.e2e
-def test_cached_read_after_refresh_is_consistent(client, seed_gold_prices, smart_llm):
+def test_cached_read_after_refresh_is_consistent(
+    client, seed_gold_prices, seed_news, smart_llm
+):
     """刷新后立刻读缓存：两次响应应描述同一份分析（不是又回退到默认值）。"""
     seed_gold_prices(days=5)
+    seed_news(count=5)
 
     refreshed = client.post("/api/gold/bullish-factors-ai/refresh").json()["data"]
     cached = client.get("/api/gold/bullish-factors-ai").json()
@@ -336,7 +346,7 @@ def test_get_without_cache_returns_no_content_and_a_status(client, seed_gold_pri
 
 @pytest.mark.e2e
 def test_llm_client_is_constructed_from_config_not_hardcoded(
-    client, seed_gold_prices, smart_llm
+    client, seed_gold_prices, seed_news, smart_llm
 ):
     """LLM 必须以「配置里的 MiMo 端点」构造，而不是任何遗留供应商的硬编码地址。
 
@@ -346,6 +356,7 @@ def test_llm_client_is_constructed_from_config_not_hardcoded(
     from app.config import settings
 
     seed_gold_prices(days=5)
+    seed_news(count=5)
     assert client.post("/api/gold/bullish-factors-ai/refresh").status_code == 200
 
     assert smart_llm.last_kwargs, "没有捕获到 LLM 构造参数"

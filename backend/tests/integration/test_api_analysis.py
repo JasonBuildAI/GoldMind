@@ -152,10 +152,36 @@ def test_investment_advice_market_status_uses_real_stat_keys(
 
 @pytest.mark.integration
 def test_investment_advice_refresh_also_receives_factors(
-    client, stub_stats, capture_advice
+    client, stub_stats, capture_advice, monkeypatch
 ):
-    """POST 刷新端点走的是另一段代码，同样要传对因子。"""
-    _seed_factor_caches()
+    """POST 刷新端点走的是另一段代码，同样要传对因子。
+
+    这里必须**显式替掉**两个因子服务：刷新路径用的是 `use_cache=False`，
+    会真的去跑分析；而测试环境不出网、也没有真 LLM。
+
+    注意这条测试此前是**靠编造的兜底内容通过的** —— LLM 失败时
+    `_get_default_factors()` 会返回一组写死的因子，于是「因子传下去了」
+    看起来成立。第 22 轮把那份兜底清空之后它才暴露出来。
+    """
+    from app.services.bearish_factor_service import BearishFactorService
+    from app.services.bullish_factor_service import BullishFactorService
+
+    monkeypatch.setattr(
+        BullishFactorService,
+        "get_bullish_factors",
+        lambda self, use_cache=True: {
+            "bullish_factors": [{"id": "fed-policy", "title": BULLISH_TITLE, "impact": "high"}],
+            "analysis_summary": "s",
+        },
+    )
+    monkeypatch.setattr(
+        BearishFactorService,
+        "get_bearish_factors",
+        lambda self, use_cache=True: {
+            "bearish_factors": [{"id": "dollar-strength", "title": BEARISH_TITLE, "impact": "medium"}],
+            "analysis_summary": "s",
+        },
+    )
     stub_stats()
 
     resp = client.post("/api/gold/investment-advice-ai/refresh")

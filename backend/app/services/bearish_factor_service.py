@@ -287,7 +287,19 @@ class BearishFactorAnalyzer:
             if web_news:
                 news_content = format_news_for_prompt(web_news, limit=15)
             else:
-                news_content = "暂无最新新闻数据，将基于当前市场状况进行分析。"
+                # **一点新闻都没有 —— 不调 LLM。**
+                #
+                # 原实现这时塞一句「暂无最新新闻数据，将基于当前市场状况进行分析」，
+                # 等于请模型用自己的记忆去补 —— 红线第 1 条明确禁止
+                #（docs/00-产品方向.md 第四节）。产出的因子与真实分析长得一模一样，
+                # 用户无从分辨。
+                #
+                # 而且这也省下一次没有依据的付费调用。
+                logger.warning(
+                    f"[{self.__class__.__name__}] 24 小时内没有任何新闻，"
+                    "不调用 LLM（没有依据可分析）"
+                )
+                return self._get_default_factors()
         else:
             news_content = format_news_for_prompt(news, limit=15)
 
@@ -332,77 +344,23 @@ class BearishFactorAnalyzer:
             return self._get_default_factors()
 
     def _get_default_factors(self) -> Dict[str, Any]:
-        """获取默认看空因子（当LLM调用失败时使用）"""
+        """LLM 不可用 / 输出无法解析时返回的结构 —— **内容为空**。
+
+        这里以前返回一组写死的看跌因子（「美联储降息周期」「美联储升息预期」…），
+        每条都带具体描述与 impact。第 2 轮清掉的是**Service 类**里那份
+        `_get_default_response()`，**Analyzer 类里这份漏掉了** —— 而它才是
+        LLM 调用失败、JSON 解析失败、返回空内容这三条路径的落点。
+
+        也就是说：模型一旦出问题，页面照样会显示一份看起来完整的分析，
+        用户完全无从分辨。那违反红线第 1 条
+        （「不为了好看而展示编造的数据 —— 宁可显示「数据不可用」」）。
+
+        现在返回空列表 + 状态，由前端显示「正在分析中」或「暂不可用」。
+        """
         return {
-            "bearish_factors": [
-                {
-                    "id": "rate-hike",
-                    "title": "美联储升息预期",
-                    "subtitle": "降息时点可能推迟",
-                    "description": "若美国通胀持续高位运行，美联储可能推迟降息甚至重新升息。升息将提高持有黄金的机会成本，对金价形成压制。",
-                    "details": [
-                        "关税政策带来的成本传导可能使通胀持续高位",
-                        "摩根士丹利预计降息时点推迟至6月和9月",
-                        "升息预期升温导致美元走强，压制金价",
-                        "实际利率上升降低黄金吸引力"
-                    ],
-                    "impact": "high"
-                },
-                {
-                    "id": "profit-taking",
-                    "title": "获利了结压力",
-                    "subtitle": "投机性头寸平仓",
-                    "description": "金价快速上涨后积累大量获利盘，技术性回调需求增加。投机性头寸平仓可能引发连锁反应，导致短期剧烈波动。",
-                    "details": [
-                        "2025年10月金价曾单日暴跌6%",
-                        "ETF市场结构失衡放大波动",
-                        "散户与机构行为分化加剧震荡",
-                        "高价位吸引获利盘出逃"
-                    ],
-                    "impact": "medium"
-                },
-                {
-                    "id": "geopolitical-ease",
-                    "title": "地缘风险缓和",
-                    "subtitle": "避险溢价回落",
-                    "description": "若俄乌冲突出现停火进展、中美关系缓和等地缘风险降温，黄金的避险溢价将显著回落，可能导致价格调整。",
-                    "details": [
-                        "俄乌停火谈判若取得进展将降低避险需求",
-                        "中美高层互动释放缓和信号",
-                        "地缘风险溢价回落导致金价调整",
-                        "避险需求常态化程度有限"
-                    ],
-                    "impact": "medium"
-                },
-                {
-                    "id": "dollar-strength",
-                    "title": "美元阶段性走强",
-                    "subtitle": "汇率效应压制金价",
-                    "description": "美元指数阶段性反弹对金价形成直接压制。美元与黄金通常呈现负相关关系，美元走强时金价往往承压。",
-                    "details": [
-                        "2025年10月美元指数上涨3.6%压制金价",
-                        "美国经济韧性支撑美元",
-                        "美元升值使黄金对其他货币持有者更贵",
-                        "汇率效应直接影响黄金计价"
-                    ],
-                    "impact": "medium"
-                },
-                {
-                    "id": "economic-growth",
-                    "title": "全球经济改善",
-                    "subtitle": "避险需求减弱",
-                    "description": "若全球经济回到'金发女孩'状态（适度增长、低通胀），风险资产吸引力上升，黄金避险需求将相应减弱。",
-                    "details": [
-                        "花旗预计2026年美国经济回到适中成长状态",
-                        "全球经济增长预期改善降低避险需求",
-                        "风险资产吸引力上升分流资金",
-                        "经济向好时黄金配置价值相对下降"
-                    ],
-                    "impact": "low"
-                }
-            ],
-            "analysis_summary": "基于当前市场状况的综合分析",
-            "last_updated": timeutil.now_str()
+            "bearish_factors": [],
+            "analysis_summary": "",
+            "last_updated": timeutil.now_str(),
         }
 
     def save_to_database(self, db: Session, analysis_result: Dict[str, Any]) -> None:
