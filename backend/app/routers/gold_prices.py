@@ -219,15 +219,22 @@ async def get_latest_price():
     def fetch_latest():
         with get_db_context() as db:
             service = GoldService(db)
-            return service.get_latest_price()
-    
+            latest = service.get_latest_price()
+            if not latest:
+                return None
+            # 必须在会话仍然打开时把字段取出来。
+            # 原实现直接 return ORM 对象，等到 with 块退出、会话关闭之后
+            # 再访问 latest.date 就抛 DetachedInstanceError ——
+            # 结果是「数据库里有数据时这个接口必然 500」，空库反而正常。
+            return {
+                "date": latest.date.strftime("%Y-%m-%d"),
+                "price": latest.close_price,
+                "change": latest.change_percent,
+            }
+
     latest = await to_thread.run_sync(fetch_latest)
-    
+
     if not latest:
         raise HTTPException(status_code=404, detail="暂无数据")
-    
-    return {
-        "date": latest.date.strftime("%Y-%m-%d"),
-        "price": latest.close_price,
-        "change": latest.change_percent
-    }
+
+    return latest

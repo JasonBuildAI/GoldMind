@@ -1,6 +1,6 @@
 """新闻 API 路由"""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.news_service import NewsService
@@ -43,7 +43,9 @@ async def get_news_detail(news_id: int, db: Session = Depends(get_db)):
     news = service.get_news_by_id(news_id)
     
     if not news:
-        return {"error": "新闻不存在"}
+        # 资源不存在就该是 404。原实现返回 200 + {"error": ...}，
+        # 调用方无法用状态码判断成败，只能去猜响应体。
+        raise HTTPException(status_code=404, detail="新闻不存在")
     
     return {
         "id": news.id,
