@@ -86,56 +86,6 @@ export interface GoldStats {
   updated_at: string;
 }
 
-export interface NewsItem {
-  id: number;
-  title: string;
-  summary: string;
-  source: string;
-  url: string;
-  published_at: string;
-  sentiment: 'bullish' | 'bearish' | 'neutral';
-  created_at: string;
-}
-
-export interface MarketAnalysis {
-  id: number;
-  analysis_date: string;
-  overall_sentiment: string;
-  bullish_factors: string[];
-  bearish_factors: string[];
-  key_levels: {
-    support: number[];
-    resistance: number[];
-  };
-  short_term_outlook: string;
-  long_term_outlook: string;
-  generated_at: string;
-  created_at: string;
-}
-
-export interface PricePrediction {
-  id: number;
-  prediction_date: string;
-  target_date: string;
-  predicted_price: number;
-  confidence_level: string;
-  prediction_type: string;
-  factors_considered: string[];
-  generated_at: string;
-  created_at: string;
-}
-
-export interface LatestPrice {
-  date: string;
-  price: number;
-  open_price: number;
-  high_price: number;
-  low_price: number;
-  change_percent: number;
-  volume: number;
-  updated_at: string;
-}
-
 export interface GoldPriceResponse {
   daily: DailyPrice[];
   correlation: CorrelationData[];
@@ -164,11 +114,6 @@ export const goldApi = {
     return response.data;
   },
 
-  getLatestPrice: async (): Promise<LatestPrice> => {
-    const response = await api.get<LatestPrice>('/api/gold/prices/latest');
-    return response.data;
-  },
-
   getStats: async (): Promise<GoldStats> => {
     const response = await api.get<GoldStats>('/api/gold/stats');
     return response.data;
@@ -184,18 +129,6 @@ export const goldApi = {
 
   getDollarRealtime: async (): Promise<DollarRealtime> => {
     const response = await api.get<DollarRealtime>('/api/gold/dollar-realtime');
-    return response.data;
-  },
-};
-
-export const newsApi = {
-  getNews: async (limit: number = 20, offset: number = 0): Promise<NewsItem[]> => {
-    const response = await api.get<NewsItem[]>(`/api/news?limit=${limit}&offset=${offset}`);
-    return response.data;
-  },
-
-  getLatestNews: async (limit: number = 10): Promise<NewsItem[]> => {
-    const response = await api.get<NewsItem[]>(`/api/news/latest?limit=${limit}`);
     return response.data;
   },
 };
@@ -231,11 +164,6 @@ export interface BearishFactorsResponse {
 }
 
 export const analysisApi = {
-  getLatestAnalysis: async (): Promise<MarketAnalysis> => {
-    const response = await api.get<MarketAnalysis>('/api/analysis/latest');
-    return response.data;
-  },
-
   getBullishFactors: async (refresh: boolean = false): Promise<BullishFactorsResponse> => {
     // AI 分析可能需要较长时间，设置 120 秒超时
     const response = await api.get<BullishFactorsResponse>(`/api/gold/bullish-factors-ai?refresh=${refresh}`, {
@@ -299,18 +227,6 @@ export const institutionApi = {
     const response = await api.post('/api/gold/institution-predictions-ai/refresh', null, {
       timeout: 120000,
     });
-    return response.data;
-  },
-};
-
-export const predictionApi = {
-  getPredictions: async (): Promise<PricePrediction[]> => {
-    const response = await api.get<PricePrediction[]>('/api/predictions');
-    return response.data;
-  },
-
-  getLatestPrediction: async (): Promise<PricePrediction> => {
-    const response = await api.get<PricePrediction>('/api/predictions/latest');
     return response.data;
   },
 };
@@ -428,13 +344,6 @@ export const marketSummaryApi = {
     const response = await api.post('/api/gold/market-summary-ai/refresh', null, {
       timeout: 120000,
     });
-    return response.data;
-  },
-};
-
-export const healthApi = {
-  checkHealth: async (): Promise<{ status: string; database: string }> => {
-    const response = await api.get('/health');
     return response.data;
   },
 };
