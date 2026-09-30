@@ -29,6 +29,8 @@ const STATS = {
   market_status: '上涨',
   market_status_desc: '趋势向好',
   updated_at: '2026-02-03T10:00:00',
+  data_source: '腾讯财经-纽约黄金',
+  is_realtime: true,
 }
 
 const DAILY = [

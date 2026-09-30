@@ -13,7 +13,11 @@ const fallbackStats = {
   volatility: 0,
   market_status: '震荡',
   market_status_desc: '等待数据',
-  updated_at: new Date().toISOString()
+  updated_at: new Date().toISOString(),
+  // 兜底数据不是实时价，必须如实标注 ——
+  // 否则页面会拿兜底值闪着「实时」绿点。
+  data_source: '兜底数据',
+  is_realtime: false,
 };
 
 export default function Hero() {
@@ -240,14 +244,23 @@ export default function Hero() {
           {(hasInitialData || !statsLoading) && (
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mt-8">
               <div className="card-glass rounded-2xl p-6 min-w-[280px] relative overflow-hidden group hover:border-amber-500/30 transition-colors">
-                {/* 实时标识 */}
-                <div className="absolute top-3 right-3 flex items-center gap-1.5">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                  </span>
-                  <span className="text-xs text-green-400 font-medium">实时</span>
-                </div>
+                {/* 数据新鲜度标识：只有真的取到实时价才显示绿色的「实时」。
+                    原先是无条件显示的 —— 即使价格来自数据库里的历史记录，
+                    页面照样闪着绿点说「实时」。 */}
+                {stats.is_realtime ? (
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5" title={stats.data_source}>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    <span className="text-xs text-green-400 font-medium">实时</span>
+                  </div>
+                ) : (
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5" title={stats.data_source}>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-gray-500" />
+                    <span className="text-xs text-gray-400 font-medium">历史数据</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-3 mb-2">
                   <DollarSign className="w-5 h-5 text-amber-400" />
                   <span className="text-gray-400 text-sm">纽约黄金期货</span>
@@ -259,14 +272,23 @@ export default function Hero() {
               </div>
 
               <div className="card-glass rounded-2xl p-6 min-w-[280px] relative overflow-hidden group hover:border-green-500/30 transition-colors">
-                {/* 实时标识 */}
-                <div className="absolute top-3 right-3 flex items-center gap-1.5">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                  </span>
-                  <span className="text-xs text-green-400 font-medium">实时</span>
-                </div>
+                {/* 数据新鲜度标识：只有真的取到实时价才显示绿色的「实时」。
+                    原先是无条件显示的 —— 即使价格来自数据库里的历史记录，
+                    页面照样闪着绿点说「实时」。 */}
+                {stats.is_realtime ? (
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5" title={stats.data_source}>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    <span className="text-xs text-green-400 font-medium">实时</span>
+                  </div>
+                ) : (
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5" title={stats.data_source}>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-gray-500" />
+                    <span className="text-xs text-gray-400 font-medium">历史数据</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-3 mb-2">
                   <TrendingUp className="w-5 h-5 text-green-400" />
                   <span className="text-gray-400 text-sm">2025年至今涨幅</span>
@@ -317,14 +339,22 @@ export default function Hero() {
                 <div className="text-xs text-gray-500">最大振幅</div>
               </div>
               <div className="card-glass rounded-xl p-4 relative overflow-hidden">
-                {/* 实时标识 - 动态闪烁 */}
-                <div className="absolute top-2 right-2 flex items-center gap-1">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
-                  </span>
-                  <span className="text-[10px] text-green-400 font-medium">实时</span>
-                </div>
+                {/* 数据新鲜度标识 —— 市场状态由「当前价 vs 昨收」推出，
+                    当前价不是实时值时它同样不是实时的。 */}
+                {stats.is_realtime ? (
+                  <div className="absolute top-2 right-2 flex items-center gap-1" title={stats.data_source}>
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
+                    </span>
+                    <span className="text-[10px] text-green-400 font-medium">实时</span>
+                  </div>
+                ) : (
+                  <div className="absolute top-2 right-2 flex items-center gap-1" title={stats.data_source}>
+                    <span className="inline-flex rounded-full h-1.5 w-1.5 bg-gray-500" />
+                    <span className="text-[10px] text-gray-400 font-medium">历史数据</span>
+                  </div>
+                )}
                 <div className="text-gray-400 text-xs mb-1">市场状态</div>
                 <div className={`text-lg font-semibold ${getMarketStatusColor(stats.market_status)}`}>
                   {stats.market_status}

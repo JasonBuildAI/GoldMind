@@ -99,3 +99,59 @@ def test_predictions_endpoints_are_consistently_empty(client):
     latest = client.get("/api/gold/predictions/latest")
     assert latest.status_code == 200
     assert "message" in latest.json()
+
+
+@pytest.mark.integration
+def test_stats_data_source_is_human_readable(client, seed_gold_prices, monkeypatch):
+    """回归：`data_source` 是给人看的字段，不能退化成 "tencent" 这类短 id。
+
+    实时价统一入口同时提供 source（短 id）与 source_name（中文名）。
+    合并时如果这里取错字段，前端/接口文档上看到的来源就会变成英文标识。
+    """
+    import app.services.realtime_price as realtime_price
+
+    monkeypatch.setattr(
+        realtime_price,
+        "get_realtime_gold_price",
+        lambda **kwargs: {
+            "price": 2700.0,
+            "previous_close": 2690.0,
+            "change": 10.0,
+            "change_percent": 0.37,
+            "open": 2695.0,
+            "high": 2705.0,
+            "low": 2690.0,
+            "updated_at": "2026-02-03T10:00:00",
+            "date": "2026-02-03",
+            "update_time": "2026-02-03 10:00:00",
+            "source": "tencent",
+            "source_name": "腾讯财经-纽约黄金",
+            "symbol": "XAU/USD",
+            "unit": "美元/盎司",
+        },
+    )
+    seed_gold_prices(days=5)
+
+    body = client.get("/api/gold/stats").json()
+
+    assert body["data_source"] == "腾讯财经-纽约黄金"
+    assert body["is_realtime"] is True
+    assert body["current_price"] == 2700.0
+
+
+@pytest.mark.integration
+def test_stats_marks_database_fallback_as_not_realtime(client, seed_gold_prices, monkeypatch):
+    """实时源全挂时必须如实标注 is_realtime=False。
+
+    前端据此决定显示「实时」还是「历史数据」——原先那个绿色「实时」徽标是
+    无条件渲染的，价格来自数据库历史记录时也照闪。
+    """
+    import app.services.realtime_price as realtime_price
+
+    monkeypatch.setattr(realtime_price, "get_realtime_gold_price", lambda **kwargs: None)
+    seed_gold_prices(days=5)
+
+    body = client.get("/api/gold/stats").json()
+
+    assert body["is_realtime"] is False
+    assert body["data_source"] == "数据库历史数据"

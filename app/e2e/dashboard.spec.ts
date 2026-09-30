@@ -63,7 +63,7 @@ test.describe('GoldMind 看板端到端', () => {
     await expect(page.getByText('黄金市场智能分析')).toBeVisible()
     await expect(page.getByRole('link', { name: '分析' })).toBeVisible()
     await expect(page.getByRole('link', { name: '因素' })).toBeVisible()
-    await expect(page.getByText('纽约黄金期货')).toBeVisible()
+    await expect(page.getByText('纽约黄金期货', { exact: true })).toBeVisible()
 
     expect(errors).toEqual([])
   })

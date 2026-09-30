@@ -84,6 +84,10 @@ export interface GoldStats {
   market_status: string;
   market_status_desc: string;
   updated_at: string;
+  /** 数据来源（人类可读），例如「腾讯财经-纽约黄金」或「数据库历史数据」 */
+  data_source: string;
+  /** 是否真的取到了实时价；false 表示价格来自数据库里的历史记录 */
+  is_realtime: boolean;
 }
 
 export interface GoldPriceResponse {

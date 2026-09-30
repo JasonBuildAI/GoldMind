@@ -28,5 +28,10 @@ class GoldStatsResponse(BaseModel):
     market_status: str
     market_status_desc: str
     updated_at: str
+    # 数据来源（人类可读）与是否真的拿到了实时价。
+    # 前端用 is_realtime 决定显示「实时」还是「历史数据」——
+    # 缺了这两个字段时，服务里算出来的来源信息会被响应模型直接丢掉。
+    data_source: str
+    is_realtime: bool
 
 
