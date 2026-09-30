@@ -19,7 +19,7 @@ def test_snapshot_covers_every_factor_and_contributions_sum_to_the_score(panel):
     contributions = [state.contribution for state in snapshot.states if state.available]
     assert len(contributions) == len(FACTORS)
     assert sum(contributions) == pytest.approx(snapshot.score, abs=1e-12)
-    assert snapshot.weight_used == pytest.approx(sum(f.weight for f in FACTORS))
+    assert snapshot.weight_used == pytest.approx(sum(f.weight_for(5) for f in FACTORS))
 
 
 def test_direction_follows_the_sign_of_the_score(panel):

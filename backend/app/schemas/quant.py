@@ -84,6 +84,9 @@ class FactorContribution(BaseModel):
 
 class QuantPredictionItem(BaseModel):
     horizon_days: int
+    scale_label: Optional[str] = None
+    scale: Optional[str] = None
+    scale_description: Optional[str] = None
     status: str
     reason: Optional[str] = None
     direction: Optional[str] = None

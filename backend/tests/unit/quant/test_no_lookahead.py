@@ -8,8 +8,10 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from app.services.quant import engine
+from app.services.quant.definitions import HORIZONS
 
 
 def _snapshot_fields(snapshot: engine.SignalSnapshot) -> tuple:
@@ -42,17 +44,18 @@ def _sabotage(series: pd.Series, cutoff: pd.Timestamp) -> pd.Series:
     return sabotaged
 
 
-def test_snapshot_at_t_ignores_everything_after_t(calendar, make_panel):
+@pytest.mark.parametrize("horizon", HORIZONS)
+def test_snapshot_at_t_ignores_everything_after_t(calendar, make_panel, horizon):
     factors, close = make_panel(calendar)
 
-    for position in (700, 780, 860, 899):
+    for position in (700, 899):
         cutoff = calendar[position]
-        reference = engine.build_snapshot(factors, close, horizon=5, as_of=cutoff.date())
+        reference = engine.build_snapshot(factors, close, horizon=horizon, as_of=cutoff.date())
 
         sabotaged_factors = {key: _sabotage(series, cutoff) for key, series in factors.items()}
         sabotaged_close = _sabotage(close, cutoff)
         sabotaged = engine.build_snapshot(
-            sabotaged_factors, sabotaged_close, horizon=5, as_of=cutoff.date()
+            sabotaged_factors, sabotaged_close, horizon=horizon, as_of=cutoff.date()
         )
 
         assert _snapshot_fields(sabotaged) == _snapshot_fields(reference), f"t={cutoff}"

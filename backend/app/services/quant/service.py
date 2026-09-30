@@ -21,6 +21,7 @@ from app.services.quant.definitions import (
     HORIZONS,
     MODEL_VERSION,
     factor_by_key,
+    horizon_spec,
 )
 from app.utils import timeutil
 
@@ -70,8 +71,12 @@ def live_predictions(
 
 
 def _prediction_payload(snapshot: engine.SignalSnapshot) -> dict:
+    spec = horizon_spec.get(snapshot.horizon_days)
     return {
         "horizon_days": snapshot.horizon_days,
+        "scale_label": spec.label if spec else None,
+        "scale": spec.scale if spec else None,
+        "scale_description": spec.description if spec else None,
         "status": snapshot.status,
         "reason": snapshot.reason,
         "direction": snapshot.direction,

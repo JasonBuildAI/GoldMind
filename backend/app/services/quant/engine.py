@@ -13,7 +13,7 @@
 三段式（与 spec 一致）::
 
     signed_z_i = sign_i × z(x_i)                逐因子方向对齐
-    score      = Σ w_i × signed_z_i / Σ w_i      只用当日可用的因子归一
+    score_h    = Σ w_i(h) × signed_z_i / Σ w_i(h)  按尺度取权重（缺省=基础权重）
     p_up       = Φ(score / σ_expanding)          σ 只用 t 之前的历史得分
     r̂          = α + β · score                   扩展窗口 OLS，样本不足时 β=0
 """
@@ -114,12 +114,20 @@ def build_signals(
     return pd.DataFrame(columns, index=calendar)
 
 
-def composite_score(signals: pd.DataFrame) -> pd.Series:
-    """加权合成得分，权重按当日**可用**因子归一（缺因子不等于该因子为 0）。"""
+def composite_score(signals: pd.DataFrame, *, horizon: Optional[int] = None) -> pd.Series:
+    """加权合成得分，权重按当日**可用**因子归一（缺因子不等于该因子为 0）。
+
+    ``horizon`` 决定用哪一组权重：不同时间尺度主导项不同（见 definitions 的
+    ``horizon_weights``）；``None`` 表示基础权重。
+    """
     if signals.empty:
         return pd.Series(dtype="float64", index=signals.index)
     weights = pd.Series(
-        {key: factor_by_key[key].weight for key in signals.columns if key in factor_by_key}
+        {
+            key: factor_by_key[key].weight_for(horizon)
+            for key in signals.columns
+            if key in factor_by_key
+        }
     )
     if weights.empty:
         return pd.Series(np.nan, index=signals.index)
@@ -291,12 +299,14 @@ def factor_states(
     signals: pd.DataFrame,
     *,
     as_of: pd.Timestamp,
+    horizon: Optional[int] = None,
 ) -> tuple[FactorState, ...]:
-    """t 时刻每个因子的状态：最新值、新鲜度、z、贡献。"""
+    """t 时刻每个因子的状态：最新值、新鲜度、z、贡献（权重取该尺度下的）。"""
     total_weight = 0.0
     prepared: list[dict] = []
 
     for definition in FACTORS:
+        weight = definition.weight_for(horizon)
         series = factors.get(definition.key)
         value = None
         obs_date = None
@@ -329,11 +339,12 @@ def factor_states(
             status, reason = STATUS_OK, None
 
         if status == STATUS_OK and signed_z is not None:
-            total_weight += definition.weight
+            total_weight += weight
 
         prepared.append(
             {
                 "definition": definition,
+                "weight": weight,
                 "value": value,
                 "obs_date": obs_date,
                 "age_days": age_days,
@@ -349,7 +360,7 @@ def factor_states(
         definition = item["definition"]
         contribution = None
         if item["status"] == STATUS_OK and item["signed_z"] is not None and total_weight > EPS:
-            contribution = definition.weight * item["signed_z"] / total_weight
+            contribution = item["weight"] * item["signed_z"] / total_weight
         states.append(
             FactorState(
                 key=definition.key,
@@ -359,7 +370,7 @@ def factor_states(
                 source=definition.source,
                 description=definition.description,
                 sign=definition.sign,
-                weight=definition.weight,
+                weight=item["weight"],
                 value=item["value"],
                 obs_date=item["obs_date"],
                 age_days=item["age_days"],
@@ -394,9 +405,9 @@ def build_snapshot(
 
     aligned = align_factors({key: value for key, value in factors.items()}, calendar)
     signals = build_signals(aligned, calendar)
-    frame = build_prediction_frame(composite_score(signals), close, horizon)
+    frame = build_prediction_frame(composite_score(signals, horizon=horizon), close, horizon)
     # 新鲜度看的是原始序列（对齐后的序列尾部全是前向填充，会永远显示「今天刚更新」）
-    states = factor_states(factors, signals, as_of=effective)
+    states = factor_states(factors, signals, as_of=effective, horizon=horizon)
 
     available = [state for state in states if state.available]
     weight_used = sum(state.weight for state in available)

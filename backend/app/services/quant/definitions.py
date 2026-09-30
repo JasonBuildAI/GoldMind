@@ -14,10 +14,16 @@
 ``transform``
     因子值 → 平稳信号的变换方式（见 ``engine.build_signals``）。
     ``change_Nd`` 取 N 个交易日的变化再做滚动 z 分数；``level`` 直接对水平值做 z。
+
+``horizon_weights``
+    分尺度权重覆盖：不同时间尺度上主导项不同（短尺度看资金流与技术面，
+    中尺度看政策预期与美元，长尺度看央行购金与需求结构），因此每个因子
+    给出 1 / 5 / 20 / 60 / 250 个交易日的权重；未列出的尺度回落到 ``weight``。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 # 四类因素（与产品文档、前端分区一一对应）
 CATEGORY_MONETARY = "monetary"
@@ -34,13 +40,38 @@ CATEGORY_NAMES = {
 
 # 模型版本：改动因子集合、权重或变换方式时必须同时修改它 ——
 # 预测与回测记录都带着版本号，改口径不会污染历史评估。
-MODEL_VERSION = "quant-v1"
+# v2：分尺度权重（同一因子在不同周期的权重不同），得分按周期取权重。
+MODEL_VERSION = "quant-v2"
 
 # 用于计算收益与目标价的基准价格序列（COMEX 主力期货日收盘）
 BENCHMARK_KEY = "gold_close"
 
-# 预测周期（交易日）。三档覆盖短线情绪、一周资金流与一个月的宏观定价。
-HORIZONS: tuple[int, ...] = (1, 5, 20)
+@dataclass(frozen=True)
+class HorizonSpec:
+    """一个预测尺度的元数据：方法论的「先选尺度，再选变量」。"""
+
+    horizon: int
+    label: str
+    scale: str
+    description: str
+    dominant_layers: tuple[str, ...]
+
+
+# 预测周期（交易日）与方法论第一步的时间尺度一一对应：
+#   日内～一周：资金流、技术面、仓位拥挤度主导；
+#   1～3 个月：政策预期、经济数据、美元指数主导；
+#   6～18 个月：实际利率周期、降息路径、央行购金趋势主导。
+HORIZON_SPECS: tuple[HorizonSpec, ...] = (
+    HorizonSpec(1, "1 日", "日内～一周", "资金流、技术面、仓位拥挤度主导，宏观基本面权重最低", ("市场与技术面", "供需结构")),
+    HorizonSpec(5, "1 周", "日内～一周", "一周资金流与事件脉冲主导，宏观仍居次席", ("市场与技术面", "避险与信用")),
+    HorizonSpec(20, "1 月", "1～3 个月", "政策预期、经济数据、美元指数主导", ("货币政策与利率", "供需结构")),
+    HorizonSpec(60, "1 季", "1～3 个月", "政策路径与需求结构并重", ("货币政策与利率", "供需结构")),
+    HorizonSpec(250, "1 年", "6～18 个月", "实际利率周期、降息路径、央行购金趋势主导", ("供需结构", "货币政策与利率")),
+)
+
+HORIZONS: tuple[int, ...] = tuple(spec.horizon for spec in HORIZON_SPECS)
+
+horizon_spec = {spec.horizon: spec for spec in HORIZON_SPECS}
 
 
 @dataclass(frozen=True)
@@ -53,10 +84,19 @@ class FactorDefinition:
     transform: str
     sign: int
     weight: float
+    horizon_weights: tuple[tuple[int, float], ...]
     # 该因子的新鲜度上限（天）：超过就把状态标成「陈旧」而不是继续用旧值。
     # 取值按各源的发布节奏留出余量（日频 7 天覆盖长假，月度 62 天覆盖发布推迟）。
     max_age_days: int
     description: str
+
+    def weight_for(self, horizon: Optional[int]) -> float:
+        """该尺度下的权重；未列出的尺度（或 horizon=None）回落到基础权重。"""
+        if horizon is not None:
+            for declared, weight in self.horizon_weights:
+                if declared == horizon:
+                    return weight
+        return self.weight
 
 
 FACTORS: tuple[FactorDefinition, ...] = (
@@ -69,6 +109,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=1.0,
+        horizon_weights=((1, 0.25), (5, 0.5), (20, 1.0), (60, 1.0), (250, 0.8)),
         max_age_days=7,
         description="持有黄金的机会成本，实际利率下行通常利多金价。",
     ),
@@ -81,6 +122,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=0.8,
+        horizon_weights=((1, 0.2), (5, 0.4), (20, 1.0), (60, 0.8), (250, 0.6)),
         max_age_days=7,
         description="2 年期收益率相对有效联邦基金利率的溢价，上行代表市场预期更紧。",
     ),
@@ -93,6 +135,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=1,
         weight=0.6,
+        horizon_weights=((1, 0.1), (5, 0.2), (20, 0.5), (60, 0.5), (250, 0.4)),
         max_age_days=7,
         description="盈亏平衡通胀率，反映市场对未来通胀的定价。",
     ),
@@ -105,6 +148,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=0.7,
+        horizon_weights=((1, 0.3), (5, 0.5), (20, 0.9), (60, 0.7), (250, 0.5)),
         max_age_days=7,
         description="美元走强通常压制以美元计价的黄金。",
     ),
@@ -117,6 +161,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=1,
         weight=0.4,
+        horizon_weights=((1, 0.6), (5, 0.5), (20, 0.4), (60, 0.3), (250, 0.2)),
         max_age_days=7,
         description="市场恐慌程度，避险情绪升温时黄金通常受益。",
     ),
@@ -129,6 +174,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=-1,
         weight=0.3,
+        horizon_weights=((1, 0.5), (5, 0.4), (20, 0.3), (60, 0.2), (250, 0.2)),
         max_age_days=7,
         description="高收益债相对国债的 20 日表现，改善代表风险偏好回升、避险需求下降。",
     ),
@@ -141,6 +187,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=1,
         weight=0.4,
+        horizon_weights=((1, 0.5), (5, 0.5), (20, 0.4), (60, 0.3), (250, 0.3)),
         max_age_days=3,
         description="最近新闻中地缘冲突相关报道占比，相对历史水平的 z 分数；"
         "这是语料代理指标，不是 GPR 官方指数。",
@@ -154,6 +201,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_63d",
         sign=1,
         weight=0.7,
+        horizon_weights=((1, 0.2), (5, 0.4), (20, 0.7), (60, 1.0), (250, 1.0)),
         max_age_days=62,
         description="央行持续增持是近年金价最重要的边际需求，按月更新、按发布滞后生效。",
     ),
@@ -166,6 +214,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=1,
         weight=0.4,
+        horizon_weights=((1, 0.8), (5, 0.7), (20, 0.4), (60, 0.3), (250, 0.2)),
         max_age_days=14,
         description="非商业净头寸，反映期货市场的投机资金方向。",
     ),
@@ -178,6 +227,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=1,
         weight=0.4,
+        horizon_weights=((1, 0.3), (5, 0.4), (20, 0.5), (60, 0.7), (250, 0.8)),
         max_age_days=7,
         description="份额申赎即资金进出，是投资需求的高频写照。",
     ),
@@ -190,6 +240,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=1,
         weight=0.6,
+        horizon_weights=((1, 1.0), (5, 1.0), (20, 0.4), (60, 0.3), (250, 0.2)),
         max_age_days=7,
         description="过去 60 个交易日的累计收益，趋势跟踪资金的基本输入。",
     ),
@@ -202,6 +253,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=1,
         weight=0.2,
+        horizon_weights=((1, 0.2), (5, 0.3), (20, 0.2), (60, 0.2), (250, 0.2)),
         max_age_days=7,
         description="印度婚季、中国春节等实物需求带来的月度效应，按往年同月收益估计。",
     ),
@@ -214,6 +266,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=0.2,
+        horizon_weights=((1, 0.2), (5, 0.2), (20, 0.2), (60, 0.2), (250, 0.3)),
         max_age_days=7,
         description="替代品竞争：比特币走强可能分流部分黄金配置资金，方向先验较弱，以回测为准。",
     ),
@@ -226,6 +279,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=0.3,
+        horizon_weights=((1, 0.5), (5, 0.4), (20, 0.3), (60, 0.2), (250, 0.2)),
         max_age_days=7,
         description="资金在风险资产与黄金之间的配置摆动。",
     ),

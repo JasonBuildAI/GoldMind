@@ -36,12 +36,12 @@ async def get_quant_factors(
 
 @router.get("/quant/predictions", response_model=QuantPredictionsResponse)
 async def get_quant_predictions(
-    horizon_days: Optional[int] = Query(default=None, ge=1, le=60),
+    horizon_days: Optional[int] = Query(default=None, ge=1, le=250),
     db: Session = Depends(get_db),
 ):
     """量化预测：方向、上行概率、目标价与逐因子贡献。
 
-    不传 `horizon_days` 返回 1 / 5 / 20 三个周期；算不出来的周期给出原因，
+    不传 `horizon_days` 返回 1 / 5 / 20 / 60 / 250 五个尺度；算不出来的尺度给出原因，
     不返回方向与数字。
     """
     return service.live_predictions(db, horizon=horizon_days)

@@ -8,7 +8,7 @@ from app.services.quant.definitions import HORIZONS
 
 
 @pytest.mark.integration
-def test_predictions_endpoint_returns_three_horizons_with_numbers(client, db_session, seed_quant_panel):
+def test_predictions_endpoint_returns_every_horizon_with_numbers(client, db_session, seed_quant_panel):
     seed_quant_panel()
 
     body = client.get("/api/gold/quant/predictions").json()

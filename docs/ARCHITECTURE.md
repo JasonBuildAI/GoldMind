@@ -266,7 +266,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 更新新闻 | 偶数整点 | RSS 抓取 |
 | 更新 AI 分析 | 偶数整点 | 依次跑 4 个分析服务 |
 | 同步量化因子 | `15 */2 * * *` | 各源按自身节奏跳过未到期的抓取（`QUANT_ENABLED=false` 可整体关闭） |
-| 重算量化预测 | `45 */2 * * *` | 重算 1 / 5 / 20 个交易日预测；回测按 24 小时节流 |
+| 重算量化预测 | `45 */2 * * *` | 重算 1 / 5 / 20 / 60 / 250 个交易日预测；回测按 24 小时节流 |
 
 ---
 
@@ -309,7 +309,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 派生 | `derive.py` | 原始序列 → 因子值，单位与口径只在这一层固定 |
 | 落库 | `storage.py` | `factor_observations`，唯一约束 `(factor_key, obs_date)`，幂等 |
 | 同步 | `sync.py` | 按源节流（6h ~ 24h）、增量抓取、逐源降级并写入同步报告 |
-| 信号 | `engine.py` | 滚动 z → 方向对齐 → 加权合成 → 上行概率与期望收益 |
+| 信号 | `engine.py` | 滚动 z → 方向对齐 → 按尺度取权重（`definitions.horizon_weights`）合成 → 上行概率与期望收益 |
 | 回测 | `backtest.py` | 走查式命中率 + 三个基准 + 逐因子命中率与 IC |
 | 出口 | `service.py` | 调度任务与 `POST /api/gold/quant/refresh` 共用同一条链路 |
 

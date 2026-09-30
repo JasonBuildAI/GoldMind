@@ -76,7 +76,7 @@ def evaluate_horizon(
     calendar = close.index
     aligned = engine.align_factors(factors, calendar)
     signals = engine.build_signals(aligned, calendar)
-    score = engine.composite_score(signals)
+    score = engine.composite_score(signals, horizon=horizon)
     frame = engine.build_prediction_frame(score, close, horizon)
 
     forward = close.shift(-horizon) / close - 1.0
