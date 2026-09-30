@@ -113,7 +113,7 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
         setDailyLastFetch(now);
       }
       if (shouldFetchCorrelation) {
-        let correlation = results[resultIndex++];
+        const correlation = results[resultIndex++];
 
         // 获取实时美元指数并更新到最后一个数据点
         try {

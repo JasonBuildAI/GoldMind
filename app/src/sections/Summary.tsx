@@ -7,7 +7,6 @@ import {
   Target,
   ArrowRight,
   Sparkles,
-  RefreshCw,
   Loader2,
   AlertTriangle,
   Brain,

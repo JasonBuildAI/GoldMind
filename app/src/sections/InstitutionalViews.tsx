@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Building2, TrendingUp, TrendingDown, Minus, Target, Calendar, RefreshCw, Loader2, Brain, Sparkles, Bot } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Target, Calendar, Brain, Sparkles, Bot } from 'lucide-react';
 import { institutionApi, type InstitutionPrediction } from '../services/api';
 
 // 默认机构预测（当API不可用时使用）
@@ -214,11 +214,11 @@ export default function InstitutionalViews() {
                 <div className="space-y-2 text-xs">
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">技术栈:</span>
-                    <span className="text-gray-300">LangChain + 智谱AI GLM-4-Plus</span>
+                    <span className="text-gray-300">MiMo 单轮结构化推理</span>
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">大模型:</span>
-                    <span className="text-gray-300">智谱AI GLM-4-Plus (支持实时搜索)</span>
+                    <span className="text-gray-300">MiMo mimo-v2.6-flash</span>
                   </div>
                   <div className="flex gap-2">
                     <span className="text-gray-500 shrink-0">架构:</span>

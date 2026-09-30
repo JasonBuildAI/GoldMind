@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { TrendingUp, DollarSign, Activity, Loader2, Brain, Sparkles, Bot, Zap, Target, Layers } from 'lucide-react';
+import { TrendingUp, DollarSign, Loader2, Brain, Sparkles, Bot, Zap, Target, Layers } from 'lucide-react';
 import { useGoldData } from '@/contexts/GoldDataContext';
 
 const fallbackStats = {
@@ -109,8 +109,8 @@ export default function Hero() {
                 bg: 'bg-purple-500/10',
                 border: 'border-purple-500/30',
                 details: {
-                  techStack: 'LangChain + 智谱AI GLM-4-Plus',
-                  model: '智谱AI GLM-4-Plus (支持实时搜索)',
+                  techStack: 'MiMo 单轮结构化推理',
+                  model: 'MiMo mimo-v2.6-flash',
                   architecture: 'ReAct推理架构 + 实时搜索插件',
                   logic: '基于24小时新闻与市场数据，智能提取看涨/看空因子',
                   dataSource: '智谱AI实时搜索 + 腾讯财经API + MySQL历史数据'
@@ -123,8 +123,8 @@ export default function Hero() {
                 bg: 'bg-blue-500/10',
                 border: 'border-blue-500/30',
                 details: {
-                  techStack: 'LangChain + 智谱AI GLM-4-Plus',
-                  model: '智谱AI GLM-4-Plus (支持实时搜索)',
+                  techStack: 'MiMo 单轮结构化推理',
+                  model: 'MiMo mimo-v2.6-flash',
                   architecture: '专用Agent架构 + 定向实时搜索',
                   logic: '实时抓取高盛、瑞银、摩根士丹利、花旗最新预测',
                   dataSource: '智谱AI实时搜索 + 机构官方报告 + 财经新闻'
@@ -137,8 +137,8 @@ export default function Hero() {
                 bg: 'bg-amber-500/10',
                 border: 'border-amber-500/30',
                 details: {
-                  techStack: 'LangChain + 智谱AI GLM-4-Plus',
-                  model: '智谱AI GLM-4-Plus (支持实时搜索)',
+                  techStack: 'MiMo 单轮结构化推理',
+                  model: 'MiMo mimo-v2.6-flash',
                   architecture: '实时搜索 + 情感分析 + 实体识别',
                   logic: '24小时滚动抓取新闻，分析情感倾向与市场影响',
                   dataSource: '智谱AI实时搜索 + 新浪财经 + 腾讯财经'

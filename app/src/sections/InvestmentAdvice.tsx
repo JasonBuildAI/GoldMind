@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Lightbulb,
   Shield,
   AlertTriangle,
   CheckCircle2,
@@ -8,7 +7,6 @@ import {
   Clock,
   Wallet,
   PieChart,
-  RefreshCw,
   TrendingUp,
   Target,
   ArrowRight,

@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// 默认走相对路径：
+//   - 开发期由 vite 的 server.proxy 把 /api 转发到后端
+//   - 生产期（Docker）由 nginx 的 location /api/ 反代到 backend:8000
+// 不要硬编码 http://localhost:8000：Docker 部署时浏览器解析不了容器主机名，
+// 而且 Vite 是在构建期内联 VITE_API_URL 的，运行时注入无效。
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Dot } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { TrendingUp, BarChart3, Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useGoldData } from '@/contexts/GoldDataContext';
 import type { GoldPriceResponse } from '@/services/api';
 
 // 闪烁的实时数据点组件
+// recharts 的 dot 类型要求返回 ReactElement，而这里对「非末点」返回 null 表示不画点，
+// 类型上不兼容；下面三处 dot 渲染函数因此断言为 any，运行时行为不变。
 const RealtimeDot = (props: any) => {
-  const { cx, cy, index, ...restProps } = props;
+  const { cx, cy } = props;
   if (cx == null || cy == null) return null;
   
   return (
@@ -345,14 +347,14 @@ export default function PriceChart() {
                         stroke="#D4AF37" 
                         strokeWidth={2}
                         fill="url(#goldGradient)"
-                        dot={(props: any) => {
+                        dot={((props: any) => {
                           const { index, key, ...restProps } = props;
                           // 只显示最后一个点的闪烁效果
                           if (dailyData.length > 0 && index === dailyData.length - 1) {
                             return <RealtimeDot key={`dot-${index}`} {...restProps} index={index} />;
                           }
                           return null;
-                        }}
+                        }) as any}
                         activeDot={{ r: 6, fill: '#D4AF37', stroke: '#fff', strokeWidth: 2 }}
                       />
                     </AreaChart>
@@ -404,14 +406,14 @@ export default function PriceChart() {
                         dataKey="gold_price" 
                         stroke="#D4AF37" 
                         strokeWidth={2}
-                        dot={(props: any) => {
+                        dot={((props: any) => {
                           const { index, key, ...restProps } = props;
                           // 只显示最后一个点的闪烁效果
                           if (correlationData.length > 0 && index === correlationData.length - 1) {
                             return <RealtimeDot key={`dot-${index}`} {...restProps} index={index} />;
                           }
                           return null;
-                        }}
+                        }) as any}
                         activeDot={{ r: 6, fill: '#D4AF37', stroke: '#fff', strokeWidth: 2 }}
                         name="黄金价格"
                       />
@@ -421,8 +423,8 @@ export default function PriceChart() {
                         dataKey="dollar_index" 
                         stroke="#3B82F6" 
                         strokeWidth={2}
-                        dot={(props: any) => {
-                          const { index, key, cx, cy, ...restProps } = props;
+                        dot={((props: any) => {
+                          const { index, cx, cy } = props;
                           // 只显示最后一个点的闪烁效果（蓝色版本）
                           if (correlationData.length > 0 && index === correlationData.length - 1) {
                             return (
@@ -440,7 +442,7 @@ export default function PriceChart() {
                             );
                           }
                           return null;
-                        }}
+                        }) as any}
                         activeDot={{ r: 6, fill: '#3B82F6', stroke: '#fff', strokeWidth: 2 }}
                         name="美元指数"
                       />
