@@ -220,6 +220,36 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 
 ---
 
+### 查询参数的契约
+
+前后端之间**没有任何机制保证参数名一致**：类型系统管不到 URL 字符串，
+FastAPI 也会**静默忽略**未声明的查询参数。第 19 轮就是这样漏掉了一个：
+
+```ts
+`/api/gold/prices/correlation?days=${days}`   // 前端一直在传
+```
+
+```python
+async def get_correlation_data(limit: int = Query(...), include_realtime: bool = Query(...))
+#                                            ^ days 从未被声明
+```
+
+结果 `days=30` / `days=5` / `days=365` / 不传，返回的完全一样。
+同一处理函数此前还修过 `limit`（声明了、校验了、从未使用）——
+两次都是「参数的契约两端各写各的」，而且两边都不报错。
+
+因此两条规矩：
+
+| 方向 | 要求 | 谁守 |
+|---|---|---|
+| 前端传的 | 端点必须声明 | `tests/unit/test_api_params_contract.py` |
+| 端点声明的 | 函数体必须真的用到 | 同上 |
+
+这条守卫只保证**名字对得上**；「参数真的改变了行为」由各端点自己的行为测试负责
+（如 `test_correlation_days_actually_filters`）。
+
+---
+
 ## 八、定时任务
 
 `app/scheduler.py`，APScheduler，时区 `Asia/Shanghai`：
