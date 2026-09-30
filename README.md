@@ -413,9 +413,33 @@ npm run lint
 # 单元 + 集成测试（vitest + Testing Library）
 npm test
 
+# 浏览器端到端测试（Playwright）—— 需要先 npm run build
+npm run test:e2e
+
 # 本地开发
 npm run dev
 ```
+
+### 浏览器端到端测试
+
+`npm run test:e2e` 会真的把三个服务拉起来，再由真实浏览器访问：
+
+1. 假 LLM 服务（`backend/scripts/dev_mock_llm.py`，OpenAI 协议兼容，不消耗额度）
+2. 真后端（uvicorn + SQLite，数据由 `backend/scripts/dev_seed_sqlite.py` 准备）
+3. 构建产物（`vite preview`，经代理把 `/api` 转发给后端）
+
+它复用本机已安装的 Chrome，**不下载** Playwright 自带浏览器。若你的 Python
+不在 `PATH` 上，用 `E2E_PYTHON` 指定解释器：
+
+```powershell
+$env:E2E_PYTHON = "path\to\python.exe"
+cd app
+npm run build
+npm run test:e2e
+```
+
+> 端到端测试用独立的数据库与缓存目录（`backend/e2e.db`、`backend/e2e-cache/`），
+> 不会碰你的开发数据；两者都已被 `.gitignore` 忽略。
 
 ### 端到端冒烟（真实调用 LLM）
 

@@ -83,4 +83,12 @@ docker-compose.override.yml
 # Misc
 *.pid
 *.seed
+
+# 端到端测试的产物（Playwright）
+backend/e2e.db
+backend/e2e-cache/
+app/test-results/
+app/playwright-report/
+app/blob-report/
+app/.playwright/
 *.pid.lock

@@ -19,4 +19,11 @@ export default defineConfig({
       '/health': { target: 'http://localhost:8000', changeOrigin: true },
     },
   },
+  preview: {
+    // 端到端测试用 `vite preview` 提供构建产物，同样需要把 API 代理到后端
+    proxy: {
+      '/api': { target: 'http://localhost:8000', changeOrigin: true },
+      '/health': { target: 'http://localhost:8000', changeOrigin: true },
+    },
+  },
 });
