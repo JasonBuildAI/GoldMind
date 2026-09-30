@@ -312,7 +312,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 信号 | `engine.py` | 滚动 z → 方向对齐 → 按尺度取权重（`definitions.horizon_weights`）合成 → 上行概率与期望收益 |
 | 公允价 | `decompose.py` | 走查式扩展窗口 OLS（`log 金价 ~ 实际利率 + log 美元指数 + log 央行储备 + VIX`）把金价拆成 宏观锚＋需求溢价＋风险溢价＋情绪残差；偏离度 = 市场价 / 公允价 − 1 |
 | 情景 | `scenarios.py` | 预测分布 N(μ, σ²) 的分位数 → Base [q25, q75]（50%）/ Bull 上 25% / Bear 下 25%；触发与失效条件由该尺度最重因子＋200 日均线生成 |
-| 回测 | `backtest.py` | 走查式命中率 + 三个基准 + 逐因子命中率与 IC |
+| 回测 | `backtest.py` | 走查式命中率 + 三个基准 + 80% 区间覆盖率 + 2022-01-01 前后分段 + 逐因子命中率与 IC |
 | 出口 | `service.py` | 调度任务与 `POST /api/gold/quant/refresh` 共用同一条链路 |
 
 三条不能破的口径：
@@ -336,6 +336,11 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 情景（`scenarios.py`）把同一份 μ/σ 变成 Base / Bull / Bear 与可核对的触发、失效条件；
 σ 非正、基准价缺失或没有可用因子时返回「不可用 + 原因」，不阻塞预测主输出。
 守卫：`backend/tests/unit/quant/test_scenarios.py`。
+
+回测（`backtest.py`）在命中率之外报告 80% 名义区间的实际覆盖率
+（`metrics.interval_coverage_80`）与以 2022-01-01 为界的 `metrics.regimes`
+分段成绩；某段样本不足时只给样本数与原因，不凑数字。
+守卫：`backend/tests/unit/quant/test_backtest_metrics.py`。
 
 ---
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from statistics import NormalDist
 from typing import Optional
 
 import numpy as np
@@ -33,6 +34,11 @@ MIN_EVALUATION_SAMPLES = 30
 MIN_FACTOR_SAMPLES = 60
 # 动量基准的回看长度（交易日）
 MOMENTUM_LOOKBACK = 60
+# 80% 名义区间的双侧分位点：Φ⁻¹(0.90)；区间 = 期望收益 ± z·不确定度
+INTERVAL_Z_80 = NormalDist().inv_cdf(0.90)
+INTERVAL_NOMINAL_80 = 0.80
+# 「2022 年后定价函数变了」的分段口径（央行购金放量）
+REGIME_SPLIT = date(2022, 1, 1)
 
 
 @dataclass(frozen=True)
@@ -121,6 +127,17 @@ def evaluate_horizon(
     window_start = mask[mask].index[0].date()
     window_end = mask[mask].index[-1].date()
 
+    interval_coverage = interval_coverage_80(
+        forward[mask], frame["expected_return"][mask], frame["uncertainty"][mask]
+    )
+    in_pre = realized.index < pd.Timestamp(REGIME_SPLIT)
+    regimes = {
+        "split_date": REGIME_SPLIT.isoformat(),
+        "note": "以 2022-01-01 分界：2022 年后央行购金放量，定价函数可能改变",
+        "pre": _regime_block("2022-01-01 之前", direction, realized, momentum, in_pre),
+        "post": _regime_block("2022-01-01 起", direction, realized, momentum, ~in_pre),
+    }
+
     metrics = {
         "coin_flip_accuracy": 0.5,
         "horizon_days": horizon,
@@ -129,6 +146,9 @@ def evaluate_horizon(
         "mean_absolute_score": float(score[mask].abs().mean()),
         "momentum_lookback": MOMENTUM_LOOKBACK,
         "probability_coverage": float(probability_mask.mean()),
+        "interval_nominal_80": INTERVAL_NOMINAL_80,
+        "interval_coverage_80": interval_coverage,
+        "regimes": regimes,
         "per_factor": _per_factor_metrics(signals, forward, mask),
     }
 
@@ -190,6 +210,66 @@ def _per_factor_metrics(
     return result
 
 
+def interval_coverage_80(
+    forward: pd.Series,
+    expected: pd.Series,
+    sigma: pd.Series,
+) -> Optional[float]:
+    """80% 名义区间的实际覆盖率：已实现收益落在 μ ± 1.2816σ 内的比例。
+
+    样本不足时返回 None —— 覆盖率低于名义值说明不确定性被低估，
+    要让页面能看见，而不是用一个数字掩盖。
+    """
+    frame = pd.DataFrame({"forward": forward, "expected": expected, "sigma": sigma}).dropna()
+    if len(frame) < MIN_EVALUATION_SAMPLES:
+        return None
+    lower = frame["expected"] - INTERVAL_Z_80 * frame["sigma"]
+    upper = frame["expected"] + INTERVAL_Z_80 * frame["sigma"]
+    return float(((frame["forward"] >= lower) & (frame["forward"] <= upper)).mean())
+
+
+def _regime_block(
+    label: str,
+    direction: pd.Series,
+    realized: pd.Series,
+    momentum: pd.Series,
+    segment,
+) -> dict:
+    """一个分段的命中率与基准；样本不足时只给样本数与原因。"""
+    count = int(segment.sum())
+    block = {
+        "label": label,
+        "window_start": None,
+        "window_end": None,
+        "sample_size": count,
+        "accuracy": None,
+        "baseline_up_accuracy": None,
+        "baseline_momentum_accuracy": None,
+        "reason": None,
+    }
+    if count == 0:
+        block["reason"] = "该区间没有可评估样本"
+        return block
+    block["window_start"] = realized.index[segment][0].date().isoformat()
+    block["window_end"] = realized.index[segment][-1].date().isoformat()
+    if count < MIN_EVALUATION_SAMPLES:
+        block["reason"] = f"可评估样本只有 {count} 个（至少需要 {MIN_EVALUATION_SAMPLES} 个）"
+        return block
+
+    segment_direction = direction[segment]
+    segment_realized = realized[segment]
+    block["accuracy"] = float((segment_direction == segment_realized).mean())
+    block["baseline_up_accuracy"] = float((segment_realized > 0).mean())
+
+    segment_momentum = momentum[segment]
+    momentum_mask = segment_momentum.notna()
+    if int(momentum_mask.sum()) >= MIN_EVALUATION_SAMPLES:
+        block["baseline_momentum_accuracy"] = float(
+            (np.sign(segment_momentum[momentum_mask]) == segment_realized[momentum_mask]).mean()
+        )
+    return block
+
+
 def _safe_corr(left: pd.Series, right: pd.Series, *, method: str = "pearson") -> Optional[float]:
     correlation = left.corr(right, method=method)
     if correlation is None or pd.isna(correlation):
@@ -236,8 +316,11 @@ def factor_summary(evaluation: HorizonEvaluation) -> list[dict]:
 
 __all__ = [
     "HorizonEvaluation",
+    "INTERVAL_NOMINAL_80",
+    "REGIME_SPLIT",
     "evaluate_all",
     "evaluate_horizon",
     "factor_summary",
+    "interval_coverage_80",
     "FACTORS",
 ]
