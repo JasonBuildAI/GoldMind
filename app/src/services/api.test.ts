@@ -132,6 +132,39 @@ describe('响应重试拦截器', () => {
     expect(attempts).toBe(1)
   })
 
+  it('POST 一律不重试 —— 它可能触发一次付费的 LLM 分析', async () => {
+    // 回归：拦截器原本不看方法，POST /refresh 在超时/网络错误时也会重试。
+    // 那次请求会真实触发一次付费分析；重试可能在服务端其实已经跑完的情况下
+    // 再跑一次，费用翻倍。后端那层 single_flight 只挡得住「同时进行」的那一次。
+    vi.useFakeTimers()
+    let attempts = 0
+    api.defaults.adapter = async (config) => {
+      attempts += 1
+      return networkError(config)
+    }
+
+    const pending = analysisApi.refreshBullishFactors().catch((e: Error) => e)
+    await vi.advanceTimersByTimeAsync(5000)
+    await pending
+
+    expect(attempts).toBe(1)
+  })
+
+  it('GET 仍然会重试（幂等，安全）', async () => {
+    vi.useFakeTimers()
+    let attempts = 0
+    api.defaults.adapter = async (config) => {
+      attempts += 1
+      return networkError(config)
+    }
+
+    const pending = goldApi.getStats().catch(() => undefined)
+    await vi.advanceTimersByTimeAsync(5000)
+    await pending
+
+    expect(attempts).toBe(3)
+  })
+
   it('error.config 缺失时不抛 TypeError，原样 reject', async () => {
     // 回归：原实现无条件执行 `config.retry = 0`，
     // 当 error.config 为 undefined 时会抛

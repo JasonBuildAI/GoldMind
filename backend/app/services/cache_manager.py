@@ -4,6 +4,7 @@
 """
 import json
 import os
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -60,6 +61,40 @@ CACHE_DIR = _resolve_cache_dir()
 _memory_cache = {}
 _memory_cache_lock = threading.Lock()
 
+# 每个缓存键一把写入锁。
+#
+# 为什么需要：`os.replace` 是原子的，但**同一个目标文件**被并发替换时，
+# Windows 会直接报 WinError 5（拒绝访问）—— 原子性保证的是「不会读到半成品」，
+# 不保证「并发替换都能成功」。实测 8 线程写同一个键会稳定失败一批。
+# 锁把同一个键的写入串行化；不同键之间仍然并行。
+#
+# 跨进程（多 uvicorn worker）靠 _replace_with_retry 的重试兜底。
+_file_write_locks: Dict[str, threading.Lock] = {}
+_file_write_locks_guard = threading.Lock()
+
+
+def _write_lock_for(cache_key: str) -> threading.Lock:
+    with _file_write_locks_guard:
+        return _file_write_locks.setdefault(cache_key, threading.Lock())
+
+
+def _replace_with_retry(source: Path, target: Path, attempts: int = 5) -> None:
+    """把 source 原子地替换成 target，遇到瞬时占用就重试。
+
+    Windows 上若目标文件正被另一个进程打开（多 worker 同时写同一个键），
+    os.replace 会抛 PermissionError。短暂重试通常就过去了。
+    """
+    last: Optional[PermissionError] = None
+    for i in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError as exc:      # Windows 的占用 / 拒绝访问
+            last = exc
+            time.sleep(0.02 * (i + 1))
+    if last is not None:
+        raise last
+
 
 class CacheManager:
     """缓存管理器"""
@@ -110,33 +145,46 @@ class CacheManager:
         with _memory_cache_lock:
             _memory_cache[self.cache_key] = (data, timestamp)
         
-        # 2. 更新文件缓存（使用原子写入避免并发冲突和文件损坏）
+        # 2. 更新文件缓存（原子写入）
         if not _FILE_CACHE_ENABLED:
             return
+        temp_path: Optional[Path] = None
         try:
             cache_data = {
                 'data': data,
                 '_timestamp': timestamp,
                 '_created_at': datetime.now().isoformat()
             }
-            
-            # 使用临时文件+原子重命名，避免写入中断导致文件损坏
-            temp_file = self.file_path.with_suffix('.tmp')
-            with open(temp_file, 'w', encoding='utf-8') as f:
+
+            # 每次写入用**独立的**临时文件名。
+            #
+            # 原实现固定用 `<key>.tmp`，同一个键被并发写时会争抢同一个临时文件 ——
+            # 多线程（刷新接口 + 后台分析）与多 worker 进程都会撞上：
+            #   Windows：表现为 WinError 32 / 5，写入直接失败；
+            #   Linux：没有那个文件锁，会写出交错的内容，或把半成品 rename 成正式文件。
+            # 实测 8 线程 × 25 轮写同一个键，稳定复现一批写入失败。
+            fd, temp_name = tempfile.mkstemp(
+                dir=str(self.file_path.parent),
+                prefix=f".{self.cache_key}.",
+                suffix=".tmp",
+            )
+            temp_path = Path(temp_name)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, ensure_ascii=False, indent=2)
-            
-            # 原子重命名（Windows/Linux都安全，保证文件完整性）
-            temp_file.replace(self.file_path)
-            
+
+            # 同一个键的写入串行化：os.replace 原子，但并发替换同一目标在
+            # Windows 上会报 WinError 5。不同键之间不受影响。
+            with _write_lock_for(self.cache_key):
+                _replace_with_retry(temp_path, self.file_path)
+            temp_path = None      # 已成功替换，不用再清理
+
         except Exception as e:
             logger.error(f"[CacheManager] 写入文件缓存失败: {e}")
-            # 清理临时文件（如果存在）
-            try:
-                temp_file = self.file_path.with_suffix('.tmp')
-                if temp_file.exists():
-                    temp_file.unlink()
-            except:
-                pass
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
     
     def exists(self) -> bool:
         """检查缓存是否存在且有效"""

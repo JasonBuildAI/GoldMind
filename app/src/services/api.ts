@@ -41,7 +41,17 @@ api.interceptors.response.use(
     }
     
     // 检查是否应该重试
-    const shouldRetry = config.retry < MAX_RETRIES && 
+    //
+    // **只重试幂等请求。** POST 不重试：
+    // `POST /api/gold/*/refresh` 会真实触发一次**付费**的 LLM 分析，
+    // 超时后重试可能在服务端其实已经跑完的情况下再跑一次，费用直接翻倍。
+    // 后端那层 single_flight 只挡得住「同时进行」的那一次，
+    // 挡不住「第一次已完成、第二次随后到达」。
+    const method = (config.method || 'get').toLowerCase();
+    const isIdempotent = method === 'get' || method === 'head' || method === 'options';
+
+    const shouldRetry = isIdempotent &&
+      config.retry < MAX_RETRIES && 
       (!error.response || error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK');
     
     if (shouldRetry) {

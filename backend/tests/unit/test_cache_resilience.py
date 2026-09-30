@@ -149,3 +149,73 @@ def test_corrupt_cache_files_do_not_break_endpoints(client, seed_gold_prices, mo
                  "/api/gold/market-summary-ai", "/api/gold/investment-advice-ai"):
         response = client.get(path)
         assert response.status_code < 500, f"{path} 遇到损坏缓存时返回 {response.status_code}"
+
+
+# --------------------------------------------------------------------------- #
+# 并发写入
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_concurrent_writes_to_the_same_key_all_succeed(monkeypatch):
+    """回归：同一个缓存键被并发写时，写入会失败。
+
+    原实现固定用 `<key>.tmp` 作临时文件名，于是并发写会争抢同一个文件：
+    Windows 上稳定报 WinError 32 / 5（写入直接失败），
+    Linux 上没有那个文件锁，会写出交错的内容或把半成品 rename 成正式文件。
+    实测 8 线程 × 25 轮即可复现一批失败。
+
+    现在每次写入用独立临时文件，并按 key 串行化替换。
+    """
+    import json
+    import threading
+
+    from app.services import cache_manager
+
+    failures: list[str] = []
+    monkeypatch.setattr(
+        cache_manager.logger, "error", lambda msg, *a, **k: failures.append(str(msg))
+    )
+
+    cache = cache_manager.CacheManager("concurrent_probe", ttl=3600)
+    payload = "x" * 50_000
+
+    def worker(n: int) -> None:
+        for r in range(10):
+            cache.set({"writer": n, "round": r, "blob": payload})
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not failures, f"并发写入出现失败：{failures[:3]}"
+
+    # 最终文件必须是完整合法的 JSON，而不是交错出来的半成品
+    parsed = json.loads(cache.file_path.read_text(encoding="utf-8"))
+    assert len(parsed["data"]["blob"]) == len(payload)
+    assert not list(cache.file_path.parent.glob("*.tmp")), "留下了临时文件"
+
+
+@pytest.mark.unit
+def test_cache_write_does_not_use_a_shared_temp_name(monkeypatch):
+    """临时文件名必须每次唯一 —— 固定名字正是竞态的根源。"""
+    import tempfile
+
+    from app.services import cache_manager
+
+    cache = cache_manager.CacheManager("temp_name_probe", ttl=3600)
+    seen: list[str] = []
+    real_mkstemp = tempfile.mkstemp
+
+    def spy(*args, **kwargs):
+        result = real_mkstemp(*args, **kwargs)
+        seen.append(result[1])
+        return result
+
+    monkeypatch.setattr(cache_manager.tempfile, "mkstemp", spy)
+
+    cache.set({"a": 1})
+    cache.set({"a": 2})
+
+    assert len(seen) == 2
+    assert seen[0] != seen[1], "两次写入用了同一个临时文件名"
