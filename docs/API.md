@@ -503,7 +503,7 @@ GET /analysis/investment-advice-ai
 
 #### 11. 获取市场综合分析
 
-基于DeepSeek LLM生成全面的市场总结和综合判断。
+基于 MiMo LLM 生成全面的市场总结和综合判断。
 
 ```http
 GET /analysis/market-summary-ai

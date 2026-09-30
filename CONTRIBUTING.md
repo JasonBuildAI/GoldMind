@@ -48,9 +48,8 @@ git checkout -b fix/bug描述
 - Tailwind CSS
 
 **AI**
-- LangChain
-- DeepSeek API
-- 智谱AI (Zhipu AI)
+- 小米 MiMo（OpenAI 兼容协议）
+- 小米 MiMo API
 
 ### 代码风格
 
@@ -102,7 +101,7 @@ GoldMind/
 
 **重要**：永远不要提交以下敏感信息
 
-- API 密钥（DeepSeek、Zhipu AI 等）
+- API 密钥（小米 MiMo 等）
 - 数据库密码
 - 私钥或证书
 

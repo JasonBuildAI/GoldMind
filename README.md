@@ -163,13 +163,13 @@ DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
 # ============================================
 # AI API 密钥配置
 # ============================================
-# 智谱AI (Zhipu AI) - 用于实时搜索、新闻分析、机构预测
-# 获取地址: https://open.bigmodel.cn/
-ZHIPU_API_KEY=your_zhipu_api_key_here
-
-# DeepSeek - 用于深度推理、投资建议生成
-# 获取地址: https://www.deepseek.com/
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
+# 小米 MiMo - 推理与联网搜索统一使用同一个 key
+# 获取地址: https://platform.xiaomimimo.com/
+# 注意：Token Plan 条款限定仅可用于编程工具，用于本项目后端属于条款外用法，
+# 详见 docs/00-产品方向.md 第四节。
+MIMO_API_KEY=your_mimo_api_key_here
+MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+MIMO_MODEL=mimo-v2.6-flash
 ```
 
 #### 2. 安装依赖
@@ -296,13 +296,13 @@ DATABASE_URL=mysql+pymysql://root:your_secure_password@mysql:3306/gold_analysis
 # ============================================
 # AI API 密钥配置
 # ============================================
-# 智谱AI (Zhipu AI) - 用于实时搜索、新闻分析、机构预测
-# 获取地址: https://open.bigmodel.cn/
-ZHIPU_API_KEY=your_zhipu_api_key_here
-
-# DeepSeek - 用于深度推理、投资建议生成
-# 获取地址: https://www.deepseek.com/
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
+# 小米 MiMo - 推理与联网搜索统一使用同一个 key
+# 获取地址: https://platform.xiaomimimo.com/
+# 注意：Token Plan 条款限定仅可用于编程工具，用于本项目后端属于条款外用法，
+# 详见 docs/00-产品方向.md 第四节。
+MIMO_API_KEY=your_mimo_api_key_here
+MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+MIMO_MODEL=mimo-v2.6-flash
 ```
 
 > 💡 **注意**：`docker-compose.yml` 已配置自动加载 `backend/.env` 文件，无需手动设置环境变量。
@@ -512,8 +512,7 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 
 ## 🙏 致谢
 
-- [DeepSeek](https://deepseek.com/) - 提供AI模型支持
-- [智谱AI](https://www.zhipuai.cn/) - 提供大语言模型API
+- [小米 MiMo](https://platform.xiaomimimo.com/) - 提供大语言模型与联网搜索能力
 - [FastAPI](https://fastapi.tiangolo.com/) - 高性能Web框架
 - [React](https://react.dev/) - 前端UI框架
 

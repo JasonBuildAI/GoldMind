@@ -1,5 +1,11 @@
 # GoldMind 系统架构白皮书
 
+> ⚠️ **本文档是早期版本，尚未与当前实现对齐。**
+> 它仍描述 Redis、认证/日志中间件、消息总线、WebSocket、K8s、
+> `/api/analysis/*` 前缀等**并不存在**的能力，也仍以 DeepSeek / 智谱AI 为例。
+> 当前实现以代码与 [`00-产品方向.md`](./00-产品方向.md) 为准；
+> 本文档待后续逐节校正。
+
 <p align="center">
   <img src="https://img.shields.io/badge/Architecture-Enterprise-blue?style=for-the-badge" alt="Architecture">
   <img src="https://img.shields.io/badge/AI-Multi--Agent-orange?style=for-the-badge" alt="AI">
@@ -560,14 +566,14 @@ class SecureConfig:
     """
     
     @property
-    def zhipu_api_key(self) -> str:
-        """智谱AI API密钥"""
-        return os.getenv('ZHIPU_API_KEY')
+    def mimo_api_key(self) -> str:
+        """小米 MiMo API 密钥"""
+        return os.getenv('MIMO_API_KEY')
     
     @property
-    def deepseek_api_key(self) -> str:
-        """DeepSeek API密钥"""
-        return os.getenv('DEEPSEEK_API_KEY')
+    def mimo_base_url(self) -> str:
+        """小米 MiMo 接口地址"""
+        return os.getenv('MIMO_BASE_URL')
     
     @property
     def database_url(self) -> str:
@@ -576,7 +582,7 @@ class SecureConfig:
     
     def validate(self):
         """验证必要配置是否完整"""
-        required = ['ZHIPU_API_KEY', 'DEEPSEEK_API_KEY', 'DATABASE_URL']
+        required = ['MIMO_API_KEY', 'MIMO_BASE_URL', 'DATABASE_URL']
         missing = [key for key in required if not os.getenv(key)]
         if missing:
             raise ValueError(f"Missing required environment variables: {missing}")
@@ -622,8 +628,8 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=mysql+pymysql://goldmind:${DB_PASSWORD}@mysql:3306/goldmind
-      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - MIMO_API_KEY=${MIMO_API_KEY}
+      - MIMO_BASE_URL=${MIMO_BASE_URL:-https://token-plan-cn.xiaomimimo.com/v1}
     depends_on:
       - mysql
     volumes:

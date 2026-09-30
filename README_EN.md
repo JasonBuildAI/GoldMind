@@ -35,26 +35,33 @@
 
 ## ⚡ Overview
 
-**GoldMind** is an intelligent gold market analysis platform based on **LangChain Multi-Agent Architecture**, integrating **ReAct reasoning framework**, **RAG (Retrieval-Augmented Generation)**, and **multi-model collaboration** technologies to provide investors with deep market insights.
+**GoldMind** is a gold market analysis dashboard: it collects gold and dollar-index prices
+automatically, uses an LLM to turn recent news into bullish/bearish factors, institutional
+views, investment advice and a market summary, and presents all of it on a single page.
 
-The system is powered by dual engines: **GLM-4-Plus** (Zhipu AI) and **DeepSeek-V3**, with specialized Agents collaborating through division of labor: **Market Analysis Agent** handles technical quantitative analysis, **News Intelligence Agent** performs sentiment analysis based on real-time search, **Institution Research Agent** tracks mainstream institutional views, and **Investment Advisory Agent** generates strategic recommendations by integrating multi-source information. Each Agent achieves result fusion through structured output, forming a panoramic understanding of the gold market.
+It is currently driven by a single model, **Xiaomi MiMo** (`mimo-v2.6-flash`). Every LLM
+client is constructed through `backend/app/services/llm_provider.py`.
 
-> You only need to: Follow gold market dynamics, the system automatically collects data and analyzes  
-> GoldMind will return: Comprehensive analysis reports integrating price trends, market sentiment, and institutional views
+> You only need to: open the page
+> GoldMind returns: today's gold price, the dollar index, and bullish/bearish analysis generated from the last 24 hours of news
 
-### 🎯 Core Technical Architecture
+> 📌 Product boundaries and known limitations live in [`docs/00-产品方向.md`](docs/00-产品方向.md) (Chinese). **Anything marked as planned there is not implemented — do not treat it as a feature.**
 
-**🚀 LangChain Multi-Agent Framework**  
-A modular Agent system built on LangChain, with each Agent encapsulating independent analysis logic and toolchains. Through the `BaseAgent` abstract base class, unified LLM calling interfaces are supported, enabling flexible switching between DeepSeek and Zhipu AI dual-model backends. Agents collaborate through structured data transfer, avoiding single points of failure and enhancing system robustness.
+### 🎯 How it is actually implemented
 
-**🌐 GLM-4-Plus Real-time Search Enhancement**  
-Integrates Zhipu AI's **GLM-4-Plus** model's **Web Search** capability, enabling real-time retrieval and understanding of institutional research reports, financial news, and market dynamics. Compared to traditional static data sources, the system can capture the latest market changes, providing timely information support for analysis.
+These four points correct technical claims made by earlier versions of this document:
 
-**🧠 DeepSeek Deep Reasoning & Multi-Agent Fusion**  
-Adopts **DeepSeek-V3** as the core reasoning engine, leveraging its powerful long-text understanding and logical reasoning capabilities to fuse multi-Agent outputs. Through specially designed fusion Prompts, four-dimensional information (technical, fundamental, sentiment, and institutional views) is integrated to generate investment judgments with logical consistency.
+**"Multi-agent"**
+Analysis is performed by four **independent single-turn LLM calls**, not agent collaboration: each service assembles a prompt, calls `llm.invoke(prompt)` once, and parses the JSON it returns. There is no tool-calling loop and no inter-agent communication. Nothing instantiates the `backend/app/agents/` package.
 
-**📊 ReAct Reasoning + RAG Retrieval Augmentation**  
-Implements the **ReAct (Reasoning + Acting)** reasoning pattern within Agents: Thought (analyze current state) → Action (call tools to fetch data) → Observation (integrate observation results) → Final Answer (output conclusion). Combined with RAG technology to retrieve historical prices, news sentiment, and other contextual information from local databases, enhancing LLM factuality and accuracy.
+**"Real-time search"**
+The design uses MiMo's `web_search` tool to retrieve institutional research and news. The Token Plan `tp-` key currently returns `HTTP 400` for that tool (measured; see `backend/scripts/smoke_mimo.py`). When search is unavailable the system falls back to database and RSS news and does **not** invent institutional price targets.
+
+**"RAG"**
+There is no vector store, no embeddings and no retrieval step. Historical prices and news are pasted straight into the prompt as context.
+
+**"ReAct"**
+Not implemented. There is no Thought / Action / Observation loop.
 
 ---
 
@@ -142,13 +149,13 @@ DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
 # ============================================
 # AI API Key Configuration
 # ============================================
-# Zhipu AI - For real-time search, news analysis, institutional forecasts
-# Get it at: https://open.bigmodel.cn/
-ZHIPU_API_KEY=your_zhipu_api_key_here
-
-# DeepSeek - For deep reasoning and investment advice generation
-# Get it at: https://www.deepseek.com/
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
+# Xiaomi MiMo - one key for both reasoning and web search
+# Get it at: https://platform.xiaomimimo.com/
+# NOTE: the Token Plan terms restrict usage to coding tools; using it as this
+# project's backend falls outside those terms. See docs/00-产品方向.md section 4.
+MIMO_API_KEY=your_mimo_api_key_here
+MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+MIMO_MODEL=mimo-v2.6-flash
 ```
 
 #### 2. Install Dependencies
@@ -255,13 +262,13 @@ DATABASE_URL=mysql+pymysql://root:your_secure_password@mysql:3306/gold_analysis
 # ============================================
 # AI API Key Configuration
 # ============================================
-# Zhipu AI (Zhipu AI) - For real-time search, news analysis, institutional forecasts
-# Get it at: https://open.bigmodel.cn/
-ZHIPU_API_KEY=your_zhipu_api_key_here
-
-# DeepSeek - For deep reasoning and investment advice generation
-# Get it at: https://www.deepseek.com/
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
+# Xiaomi MiMo - one key for both reasoning and web search
+# Get it at: https://platform.xiaomimimo.com/
+# NOTE: the Token Plan terms restrict usage to coding tools; using it as this
+# project's backend falls outside those terms. See docs/00-产品方向.md section 4.
+MIMO_API_KEY=your_mimo_api_key_here
+MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+MIMO_MODEL=mimo-v2.6-flash
 ```
 
 > 💡 **Note**: `docker-compose.yml` is configured to automatically load `backend/.env` file, no need to manually set environment variables.
@@ -326,7 +333,7 @@ The data fetching process may take 1-3 minutes, please observe the logs and wait
      ┌──────▼───────┐     ┌──────────────────────────────────────────────────┐
      │ Data Sources  │────▶│ • Gold Price API (Yahoo Finance)                │
      │               │     │ • US Dollar Index API                            │
-     │               │     │ • Web Search (Zhipu AI)                          │
+     │               │     │ • Web Search (MiMo)                          │
      │               │     │ • News Websites                                  │
      └──────┬───────┘     └──────────────────────────────────────────────────┘
             │
@@ -356,7 +363,7 @@ The data fetching process may take 1-3 minutes, please observe the logs and wait
                                      │
                                      ▼
      ┌──────────────────────────────────────────────────────────────────────┐
-     │                     DeepSeek Fusion Layer                             │
+     │                     MiMo Fusion Layer                             │
      │                                                                       │
      │  ┌─────────────────────────────────────────────────────────────────┐  │
      │  │              Investment Advisory Agent                           │  │
@@ -421,7 +428,7 @@ GoldMind adopts a **"Divide and Conquer, then Fuse"** design philosophy, with ea
 **Responsibilities**: Real-time search and sentiment analysis of market news
 
 **Core Capabilities**:
-- Real-time Web search (Zhipu AI GLM-4-Plus Web Search)
+- Web search via Xiaomi MiMo (currently unavailable with the Token Plan key)
 - Financial news collection and filtering
 - Sentiment analysis (bullish/bearish/neutral)
 - Event extraction and impact assessment
@@ -571,8 +578,7 @@ This project is licensed under the [MIT License](./LICENSE).
 ## 🙏 Acknowledgements
 
 - [LangChain](https://github.com/langchain-ai/langchain) - LLM application development framework
-- [DeepSeek](https://www.deepseek.com/) - Deep reasoning model
-- [Zhipu AI](https://open.bigmodel.cn/) - GLM-4-Plus model and Web Search capability
+- [Xiaomi MiMo](https://platform.xiaomimimo.com/) - LLM inference and web search
 - [FastAPI](https://fastapi.tiangolo.com/) - High-performance Python web framework
 - [React](https://react.dev/) - Frontend UI library
 - [Recharts](https://recharts.org/) - React charting library
