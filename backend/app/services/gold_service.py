@@ -433,6 +433,7 @@ class GoldService:
     def fetch_and_save_prices(self):
         """从Yahoo Finance获取历史价格数据（备用方案）"""
         try:
+            import pandas as pd
             import yfinance as yf
             ticker = yf.Ticker("GC=F")
             hist = ticker.history(period="1y")
