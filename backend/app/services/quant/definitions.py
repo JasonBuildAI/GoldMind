@@ -50,6 +50,9 @@ class FactorDefinition:
     transform: str
     sign: int
     weight: float
+    # 该因子的新鲜度上限（天）：超过就把状态标成「陈旧」而不是继续用旧值。
+    # 取值按各源的发布节奏留出余量（日频 7 天覆盖长假，月度 62 天覆盖发布推迟）。
+    max_age_days: int
     description: str
 
 
@@ -63,6 +66,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=1.0,
+        max_age_days=7,
         description="持有黄金的机会成本，实际利率下行通常利多金价。",
     ),
     FactorDefinition(
@@ -74,6 +78,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=0.8,
+        max_age_days=7,
         description="2 年期收益率相对有效联邦基金利率的溢价，上行代表市场预期更紧。",
     ),
     FactorDefinition(
@@ -85,6 +90,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=1,
         weight=0.6,
+        max_age_days=7,
         description="盈亏平衡通胀率，反映市场对未来通胀的定价。",
     ),
     FactorDefinition(
@@ -96,6 +102,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=0.7,
+        max_age_days=7,
         description="美元走强通常压制以美元计价的黄金。",
     ),
     FactorDefinition(
@@ -107,6 +114,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=1,
         weight=0.4,
+        max_age_days=7,
         description="市场恐慌程度，避险情绪升温时黄金通常受益。",
     ),
     FactorDefinition(
@@ -118,6 +126,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=-1,
         weight=0.3,
+        max_age_days=7,
         description="高收益债相对国债的 20 日表现，改善代表风险偏好回升、避险需求下降。",
     ),
     FactorDefinition(
@@ -129,6 +138,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=1,
         weight=0.4,
+        max_age_days=3,
         description="最近新闻中地缘冲突相关报道占比，相对历史水平的 z 分数；"
         "这是语料代理指标，不是 GPR 官方指数。",
     ),
@@ -141,6 +151,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_63d",
         sign=1,
         weight=0.7,
+        max_age_days=62,
         description="央行持续增持是近年金价最重要的边际需求，按月更新、按发布滞后生效。",
     ),
     FactorDefinition(
@@ -152,6 +163,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=1,
         weight=0.4,
+        max_age_days=14,
         description="非商业净头寸，反映期货市场的投机资金方向。",
     ),
     FactorDefinition(
@@ -163,6 +175,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=1,
         weight=0.4,
+        max_age_days=7,
         description="份额申赎即资金进出，是投资需求的高频写照。",
     ),
     FactorDefinition(
@@ -174,6 +187,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=1,
         weight=0.6,
+        max_age_days=7,
         description="过去 60 个交易日的累计收益，趋势跟踪资金的基本输入。",
     ),
     FactorDefinition(
@@ -185,6 +199,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="level",
         sign=1,
         weight=0.2,
+        max_age_days=7,
         description="印度婚季、中国春节等实物需求带来的月度效应，按往年同月收益估计。",
     ),
     FactorDefinition(
@@ -196,6 +211,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=0.2,
+        max_age_days=7,
         description="替代品竞争：比特币走强可能分流部分黄金配置资金，方向先验较弱，以回测为准。",
     ),
     FactorDefinition(
@@ -207,6 +223,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         transform="change_20d",
         sign=-1,
         weight=0.3,
+        max_age_days=7,
         description="资金在风险资产与黄金之间的配置摆动。",
     ),
 )
