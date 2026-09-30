@@ -14,6 +14,11 @@ describe('formatUsd', () => {
   it('千分位加两位小数', () => {
     expect(formatUsd(4702.2)).toBe('$4,702.20')
   })
+
+  it('没有值时给「—」，绝不把 null 渲染成 $0.00', () => {
+    expect(formatUsd(null)).toBe('—')
+    expect(formatUsd(undefined)).toBe('—')
+  })
 })
 
 describe('formatUsdCompact', () => {

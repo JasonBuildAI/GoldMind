@@ -11,8 +11,13 @@ const USD = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 })
 
-/** 美元金额 4702.2 -> "$4,702.20" */
-export function formatUsd(value: number): string {
+/**
+ * 美元金额 4702.2 -> "$4,702.20"。
+ * 没有值（目标价这类可为 null 的字段）时给「—」——
+ * Intl 会把 null 当 0 渲染成 "$0.00"，那是一个并不存在的价格。
+ */
+export function formatUsd(value?: number | null): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
   return `$${USD.format(value)}`
 }
 
