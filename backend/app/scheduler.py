@@ -8,6 +8,47 @@ from app.config import settings
 scheduler = AsyncIOScheduler(timezone=settings.SCHEDULER_TIMEZONE)
 
 
+def scheduler_now() -> datetime:
+    """**调度器时区**下的当前时间。
+
+    不能直接用 `datetime.now()` —— 它取的是服务器本地时间，而 cron 用的是
+    `settings.SCHEDULER_TIMEZONE`。容器默认 UTC，两者不一致时「今天是哪天」
+    会算错：同一个「北京时间 06:30」的任务，在 UTC 容器里算出的是前一天，
+    在东八区机器上算出的又是当天，同一份行情被记到相差一天的日期上。
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo(settings.SCHEDULER_TIMEZONE))
+    except Exception:       # 缺 tzdata 时退回本地时间，至少不崩
+        logger.warning(
+            f"[调度器] 无法加载时区 {settings.SCHEDULER_TIMEZONE}（缺 tzdata？），"
+            "退回服务器本地时间"
+        )
+        return datetime.now()
+
+
+def scheduler_today():
+    """调度器时区下的「今天」。"""
+    return scheduler_now().date()
+
+
+def parse_source_date(value) -> date | None:
+    """把数据源报的日期字符串解析成 date。
+
+    数据源自己就带 `date` 字段（见 realtime_price），它才是「这条行情属于哪个
+    交易日」的权威来源 —— 比拿服务器时钟推算可靠得多。
+    """
+    if not value:
+        return None
+    text = str(value).strip()[:10]
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def init_scheduler():
     logger.info(f"[调度器] SCHEDULER_ENABLED={settings.SCHEDULER_ENABLED}, 时区={settings.SCHEDULER_TIMEZONE}")
     
@@ -86,9 +127,8 @@ def is_trading_day(date=None) -> bool:
     Returns:
         True如果是交易日，False如果是周末
     """
-    from datetime import datetime
     if date is None:
-        date = datetime.now().date()
+        date = scheduler_today()
     
     # 0=周一, 6=周日
     weekday = date.weekday()
@@ -163,29 +203,44 @@ async def update_prices_job():
     4. 重新计算期间统计（期间最高、期间最低、波动区间）
     """
     from datetime import datetime, date
-    
-    today = datetime.now().date()
-    
-    # 1. 检查是否为交易日
-    if not is_trading_day(today):
-        logger.info(f"{today} 是周末，黄金市场休市，跳过数据更新")
+
+    # 「今天」按**调度器时区**算，而不是服务器本地时钟 —— 见 scheduler_now 的说明
+    run_date = scheduler_today()
+
+    # 1. 检查是否为交易日（周末休市）
+    if not is_trading_day(run_date):
+        logger.info(f"{run_date} 是周末，黄金市场休市，跳过数据更新")
         return
-    
-    logger.info(f"开始更新黄金价格数据 - 交易日: {today}")
-    
+
+    logger.info(f"开始更新黄金价格数据 - 运行日: {run_date}")
+
     try:
         from app.services.realtime_price import get_realtime_gold_price
         from app.services.gold_service import GoldService
         from app.database import SessionLocal
         from app.models.gold_price import GoldPrice
-        
+
         # 2. 获取伦敦金实时价格（包含完整OHLC数据）
         realtime_data = get_realtime_gold_price()
-        
+
         if not realtime_data:
             logger.warning("未能获取实时金价，尝试使用备用数据源...")
             # 这里可以添加备用数据源逻辑
             return
+
+        # 记录到哪一天，以**数据源报的交易日**为准。
+        #
+        # 原实现用 datetime.now().date()：cron 配的是 Asia/Shanghai，容器却默认
+        # UTC，于是同一个「北京时间 06:30」的任务，在 UTC 容器里算出的是前一天，
+        # 在东八区机器上算出的又是当天 —— 同一份行情被记到相差一天的日期上。
+        # 数据源自带 date 字段，它才是「这条行情属于哪个交易日」的权威来源。
+        source_date = parse_source_date(realtime_data.get('date'))
+        today = source_date or run_date
+        if source_date and source_date != run_date:
+            logger.info(
+                f"[金价] 数据源报的交易日是 {source_date}，与运行日 {run_date} 不同，"
+                f"按数据源记录"
+            )
         
         # 3. 提取完整OHLC数据
         price = realtime_data.get('price', 0)
@@ -353,8 +408,8 @@ async def update_dollar_index_job():
     与黄金价格更新同步执行，确保数据一致性
     """
     from datetime import datetime, date
-    
-    today = datetime.now().date()
+
+    today = scheduler_today()
     
     # 1. 检查是否为交易日
     if not is_trading_day(today):

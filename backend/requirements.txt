@@ -44,6 +44,9 @@ feedparser==6.0.14
 
 # Scheduler
 apscheduler==3.11.3
+# zoneinfo 需要时区库：slim 镜像里没有系统 tzdata，缺了会加载不到 Asia/Shanghai。
+# 本地是 pandas/tzlocal 顺带带进来的，生产容器只装这份文件，所以必须显式写。
+tzdata==2026.4
 
 # Utilities
 python-dotenv==1.2.3
