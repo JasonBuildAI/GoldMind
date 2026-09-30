@@ -139,3 +139,23 @@ def test_unknown_origin_is_not_allowed(client):
     resp = client.get("/health", headers={"Origin": "https://evil.example"})
 
     assert resp.headers.get("access-control-allow-origin") is None
+
+@pytest.mark.integration
+def test_429_carries_the_standard_retry_after_header(client, monkeypatch):
+    """429 必须带标准的 `Retry-After` 头。
+
+    只把等待时间放在 body 里的话，通用客户端（浏览器、curl、反向代理、
+    axios 的重试逻辑）看不到「还要等多久」—— 它们认的是这个头。
+    前端的 `describeApiError` 两种都会读，但头是给通用工具用的。
+    """
+    _install_limiters(monkeypatch, general=1, ai=10)
+
+    # 用 /factors：它在空库上也返回 200（/stats 没有数据时会 404）
+    assert client.get("/api/gold/factors").status_code == 200
+    blocked = client.get("/api/gold/factors")
+
+    assert blocked.status_code == 429
+    assert "retry-after" in {k.lower() for k in blocked.headers}
+    assert int(blocked.headers["retry-after"]) >= 1
+    # body 里也保留一份（前端与脚本都可能读它）
+    assert blocked.json()["retry_after"] >= 1

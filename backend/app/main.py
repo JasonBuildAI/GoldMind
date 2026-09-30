@@ -173,6 +173,9 @@ async def rate_limit_middleware(request, call_next):
                     "error": "请求过于频繁，请稍后再试",
                     "retry_after": retry_after,
                 },
+                # 标准头。客户端（含浏览器、curl、反代）都认这个；
+                # 只放在 body 里的话，通用工具看不到「还要等多久」。
+                headers={"Retry-After": str(retry_after)},
             )
 
     return await call_next(request)

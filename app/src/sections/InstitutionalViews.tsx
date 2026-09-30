@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { modelLabel, useAiConfig } from '@/hooks/useAiConfig';
 import PlaceholderNotice from '@/components/PlaceholderNotice';
+import { describeApiError } from '@/lib/apiError';
 import { isPlaceholder } from '@/lib/placeholder';
 import { TrendingUp, TrendingDown, Minus, Target, Calendar, Brain, Sparkles, Bot } from 'lucide-react';
 import { institutionApi, type InstitutionPrediction } from '../services/api';
@@ -42,11 +43,14 @@ export default function InstitutionalViews() {
     } catch (err: any) {
       console.error('获取机构预测失败:', err);
       // 判断是否是超时错误
-      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        setError('AI 分析耗时较长，请稍后重试刷新。');
-      } else {
-        setError('获取最新分析失败。');
-      }
+      // 统一翻译：429 会说清等多久，503 会用后端给的原因，
+      // 而不是一律「获取最新分析失败」—— 那对限流既不准也不可操作。
+      setError(
+        describeApiError(err, {
+          fallback: '获取最新分析失败。',
+          timeout: 'AI 分析耗时较长，请稍后重试刷新。',
+        }),
+      );
       // 不填充任何编造的机构目标价：保持为空，由下面的空状态如实说明。
     } finally {
       setLoading(false);

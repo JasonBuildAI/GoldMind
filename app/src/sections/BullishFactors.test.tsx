@@ -66,7 +66,7 @@ describe('BullishFactors', () => {
     expect(screen.queryByTestId('bullish-summary')).not.toBeInTheDocument()
     // 同时要说明失败原因
     await waitFor(() => {
-      expect(screen.getByText(/获取最新分析失败/)).toBeInTheDocument()
+      expect(screen.getByText(/无法连接后端/)).toBeInTheDocument()
     })
   })
 

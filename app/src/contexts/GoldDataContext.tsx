@@ -1,3 +1,4 @@
+import { describeApiError } from '@/lib/apiError';
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { goldApi, type GoldStats, type DailyPrice, type CorrelationData, type DollarRealtime } from '@/services/api';
 
@@ -73,7 +74,9 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
       setStatsLastFetch(now);
       setLastUpdated(new Date());
     } catch (err) {
-      setStatsError('获取统计数据失败');
+      // 统一翻译：原先固定写「获取统计数据失败」，把 429 限流、后端 503、
+      // 断网都显示成同一句，用户既不知道发生了什么，也不知道该做什么。
+      setStatsError(describeApiError(err, { fallback: '获取统计数据失败。' }));
       console.error('Failed to fetch stats:', err);
     } finally {
       setStatsLoading(false);
@@ -148,8 +151,9 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
 
       setLastUpdated(new Date());
     } catch (err) {
-      setDailyError('获取图表数据失败');
-      setCorrelationError('获取图表数据失败');
+      const message = describeApiError(err, { fallback: '获取图表数据失败。' });
+      setDailyError(message);
+      setCorrelationError(message);
       console.error('Failed to fetch chart data:', err);
     } finally {
       setDailyLoading(false);

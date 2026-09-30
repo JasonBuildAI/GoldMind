@@ -114,11 +114,13 @@ describe('GoldDataProvider', () => {
   })
 
   it('统计接口失败时给出错误，而不是抛异常', async () => {
+    // 夹具抛的是没有 `response` 的错误 —— 语义上就是「没拿到响应」，
+    // 也就是连不上后端。文案应当说明这一点，而不是笼统的「获取失败」。
     mocked.getStats.mockRejectedValue(new Error('boom'))
     renderProvider()
 
     await waitFor(() => {
-      expect(screen.getByTestId('stats-error')).toHaveTextContent('获取统计数据失败')
+      expect(screen.getByTestId('stats-error')).toHaveTextContent('无法连接后端')
     })
     expect(screen.getByTestId('price')).toHaveTextContent('none')
   })
@@ -129,7 +131,7 @@ describe('GoldDataProvider', () => {
     renderProvider()
 
     await waitFor(() => {
-      expect(screen.getByTestId('daily-error')).toHaveTextContent('获取图表数据失败')
+      expect(screen.getByTestId('daily-error')).toHaveTextContent('无法连接后端')
     })
   })
 
