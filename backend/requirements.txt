@@ -32,4 +32,7 @@ apscheduler>=3.10.0
 python-dotenv>=1.0.0
 tenacity>=8.2.0
 loguru>=0.7.0
-httpx>=0.26.0
+# [socks] 带上 socksio：宿主若设置了 SOCKS 代理，缺少它会让 httpx
+# 在构造客户端时直接抛异常，进而让所有 LLM 调用失败（见 MIMO_TRUST_ENV）
+httpx[socks]>=0.26.0
+openai>=1.0.0

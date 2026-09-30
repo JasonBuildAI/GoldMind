@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     MIMO_SEARCH_MODEL: str = "mimo-v2.6-flash"
     # 单次搜索最大关键词数（每轮搜索会并发展开为多次插件调用，按次计费）
     MIMO_SEARCH_MAX_KEYWORD: int = 2
+    # 是否让 httpx 读取宿主的代理环境变量（ALL_PROXY / HTTP_PROXY / NO_PROXY 等）。
+    #
+    # 默认 False。宿主环境里一个写坏的代理配置就足以让整个 AI 功能失效：
+    #   - ALL_PROXY=socks5://... 但未安装 socksio → httpx 构造客户端即抛异常
+    #   - NO_PROXY 里含 `[::1]` 这类写法          → httpx 解析时报
+    #                                               Invalid port: ':1]'
+    # 两者都会让所有 LLM 调用失败；而失败会被上层吞掉并回退到硬编码默认值，
+    # 表现成「页面上有分析内容，其实一次模型都没调用」。
+    #
+    # 如果你的网络确实必须经代理才能访问 MiMo，设为 true，
+    # 并确保已安装 httpx[socks]（见 requirements.txt）。
+    MIMO_TRUST_ENV: bool = False
 
     # ------------------------------------------------------------------
     # 迁移前的旧供应商配置（DeepSeek / 智谱AI）已全部移除。
@@ -40,6 +52,9 @@ class Settings(BaseSettings):
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
     # 新闻 RSS 源，格式 "名称|URL,名称|URL"；留空则使用 news_service 内置默认源
     NEWS_RSS_SOURCES: str = ""
+    # 文件缓存目录；留空则用默认的 backend/cache。
+    # 可配置是为了让测试用独立目录，避免与开发时的缓存互相污染。
+    CACHE_DIR: str = ""
     # 实时数据更新（黄金价格、美元指数）- 保持原有频率
     UPDATE_PRICE_CRON: str = "30 6 * * *"   # 每天早上6:30更新前一日收盘价
     # Agent更新配置 - 偶数整点更新

@@ -5,15 +5,11 @@ import threading
 import json
 from datetime import datetime, date
 from typing import List, Dict, Optional, Tuple
-from pathlib import Path
 from sqlalchemy.orm import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from app.models.gold_price import GoldPrice, DollarIndex
-
-# 缓存目录
-CACHE_DIR = Path(__file__).parent.parent.parent / "cache"
-CACHE_DIR.mkdir(exist_ok=True)
+from app.services.cache_manager import CACHE_DIR
 
 # 内存缓存（进程内）
 _price_cache = {}

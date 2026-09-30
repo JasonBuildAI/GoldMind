@@ -10,9 +10,24 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from pathlib import Path
 
+from app.config import settings
+
+
 # 缓存目录
-CACHE_DIR = Path(__file__).parent.parent.parent / "cache"
-CACHE_DIR.mkdir(exist_ok=True)
+def _resolve_cache_dir() -> Path:
+    """解析缓存目录。
+
+    可用 ``CACHE_DIR`` 覆盖，默认 ``backend/cache``。
+    可配置的意义在于让测试使用独立目录 —— 否则测试会读写开发时的缓存，
+    既让结果依赖历史状态，也可能把开发缓存改坏。
+    """
+    configured = (settings.CACHE_DIR or "").strip()
+    base = Path(configured) if configured else Path(__file__).parent.parent.parent / "cache"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+CACHE_DIR = _resolve_cache_dir()
 
 # 内存缓存（进程内）
 _memory_cache = {}

@@ -97,3 +97,39 @@ def test_is_configured_follows_api_key(monkeypatch):
 
     monkeypatch.setattr(settings, "MIMO_API_KEY", "tp-fake")
     assert llm_provider.is_configured() is True
+
+
+# --------------------------------------------------------------------------- #
+# 宿主代理环境
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_http_clients_do_not_read_host_proxy_env(monkeypatch):
+    """两个 httpx 客户端都必须显式关闭 trust_env。"""
+    monkeypatch.setattr(llm_provider, "_http_client", None)
+    monkeypatch.setattr(llm_provider, "_async_http_client", None)
+
+    assert llm_provider.get_http_client().trust_env is False
+    assert llm_provider.get_async_http_client().trust_env is False
+
+
+@pytest.mark.unit
+def test_llm_clients_construct_under_hostile_proxy_env(monkeypatch):
+    """回归：宿主环境里一个坏代理配置曾让整个 AI 功能静默失效。
+
+    两种写法都会让 httpx 在**构造客户端**时抛异常：
+      - ALL_PROXY 指向 SOCKS 代理
+      - NO_PROXY 里含 ``[::1]``（httpx 解析不了这个写法）
+
+    而 `ChatOpenAI` 会同时准备同步与异步两个客户端；只显式提供同步的那个，
+    它仍会去创建默认的异步客户端并读环境，于是照样抛异常。
+    异常随后被各分析服务吞掉并回退到硬编码默认值 ——
+    表现为「页面上有分析内容，其实一次模型都没调用」。
+    """
+    monkeypatch.setattr(llm_provider, "_http_client", None)
+    monkeypatch.setattr(llm_provider, "_async_http_client", None)
+    monkeypatch.setenv("ALL_PROXY", "socks5://127.0.0.1:9")
+    monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1,::1,[::1]")
+
+    # 构造阶段必须不抛异常
+    assert llm_provider.get_chat_llm() is not None
+    assert llm_provider.get_search_client() is not None

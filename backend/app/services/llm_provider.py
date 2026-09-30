@@ -50,6 +50,52 @@ def _openai_class() -> Any:
     return _OpenAIClient
 
 
+# 共享的 httpx 客户端（复用连接；trust_env 由配置决定）
+_http_client: Any = None
+_async_http_client: Any = None
+
+
+def get_http_client() -> Any:
+    """返回所有 LLM 客户端共用的同步 httpx 客户端。
+
+    显式传入该客户端的目的，是把「是否读取宿主代理环境变量」这件事握在自己手里：
+
+    宿主若设置了 ``ALL_PROXY=socks5://...`` 而未安装 socksio，或 ``NO_PROXY`` 里含
+    ``[::1]`` 这类 httpx 无法解析的写法，构造 httpx 客户端时会直接抛异常。
+    由于上层把 LLM 异常吞掉并回退到硬编码默认值，最终表现成
+    「页面有分析内容，其实一次模型都没调用」—— 极难排查。
+
+    默认 ``trust_env=False``（见 ``MIMO_TRUST_ENV``），需要走代理时再打开。
+    """
+    global _http_client
+    if _http_client is None:
+        import httpx
+
+        _http_client = httpx.Client(
+            trust_env=settings.MIMO_TRUST_ENV,
+            timeout=httpx.Timeout(120.0, connect=10.0),
+        )
+    return _http_client
+
+
+def get_async_http_client() -> Any:
+    """返回异步 httpx 客户端。
+
+    **必须与同步客户端一起提供**：`ChatOpenAI` 在构造时会同时准备同步与异步
+    两个客户端，只给同步的那个，它仍会去创建默认的异步客户端 ——
+    而默认客户端会读取宿主代理配置，于是照样抛异常。
+    """
+    global _async_http_client
+    if _async_http_client is None:
+        import httpx
+
+        _async_http_client = httpx.AsyncClient(
+            trust_env=settings.MIMO_TRUST_ENV,
+            timeout=httpx.Timeout(120.0, connect=10.0),
+        )
+    return _async_http_client
+
+
 # --------------------------------------------------------------------------- #
 # 模型名
 # --------------------------------------------------------------------------- #
@@ -84,6 +130,8 @@ def get_chat_llm(*, temperature: float = 0.7, max_tokens: int = 4096) -> Any:
         base_url=settings.MIMO_BASE_URL,
         temperature=temperature,
         max_tokens=max_tokens,
+        http_client=get_http_client(),
+        http_async_client=get_async_http_client(),
     )
 
 
@@ -92,6 +140,7 @@ def get_search_client() -> Any:
     return _openai_class()(
         api_key=settings.MIMO_API_KEY,
         base_url=settings.MIMO_BASE_URL,
+        http_client=get_http_client(),
     )
 
 
