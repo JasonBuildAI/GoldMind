@@ -1,6 +1,7 @@
 """FastAPI 主应用入口"""
 import os
 import sys
+import time
 import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -124,12 +125,31 @@ _ai_limiter = SlidingWindowRateLimiter(settings.RATE_LIMIT_AI_PER_MINUTE)
 # 健康检查不参与限流：它是给探针用的，被限流会被误判成服务不可用
 _RATE_LIMIT_EXEMPT_PATHS = frozenset({"/health"})
 
-# 这些后缀的路径会真实调用 LLM（消耗额度），使用更严的上限
+# 上游探测结果的短缓存（见 health_check 里的说明）
+_UPSTREAM_PROBE_TTL = 60.0
+_upstream_probe: dict = {"at": 0.0, "payload": None}
+
+# 会真实调用 LLM（消耗额度）的请求，使用更严的上限。
+#
+# 判据有两类，缺一不可：
+#   1. 路径以 `/refresh` 结尾（POST 强制刷新）
+#   2. 查询串里带 `refresh=true`（GET 同样会走 use_cache=False → 真实调 LLM）
+#
+# 只按第 1 条判断会漏掉第 2 条：`GET .../bullish-factors-ai?refresh=true`
+# 和 POST /refresh 一样花钱，却只受通用上限约束 ——
+# 也就是把 6 次/分 的额度放大成 60 次/分。
 _AI_PATH_SUFFIXES = ("/refresh",)
+_AI_QUERY_FLAGS = ("refresh=true", "refresh=1")
 
 
-def _is_ai_path(path: str) -> bool:
-    return path.endswith(_AI_PATH_SUFFIXES)
+def _is_ai_path(path: str, query: str = "") -> bool:
+    if path.endswith(_AI_PATH_SUFFIXES):
+        return True
+    # 只对 AI 分析接口看查询串，普通接口带个同名参数不该被误伤
+    if "-ai" not in path:
+        return False
+    lowered = (query or "").lower()
+    return any(flag in lowered for flag in _AI_QUERY_FLAGS)
 
 
 @app.middleware("http")
@@ -146,7 +166,9 @@ async def rate_limit_middleware(request, call_next):
 
     if path not in _RATE_LIMIT_EXEMPT_PATHS:
         client_ip = request.client.host if request.client else "unknown"
-        limiter = _ai_limiter if _is_ai_path(path) else _general_limiter
+        limiter = (
+            _ai_limiter if _is_ai_path(path, request.url.query) else _general_limiter
+        )
 
         allowed, retry_after = limiter.allow(client_ip)
         if not allowed:
@@ -225,23 +247,39 @@ async def health_check():
         has_error = True
     
     # 2. 检查腾讯财经API（轻量级）
+    #
+    # 结果缓存 60 秒。原因：/health 是**公开**且**不限流**的接口（负载均衡需要它
+    # 随时可调），而这里每次都会同步请求一次上游 —— 也就是说任何人都能让服务器
+    # 按请求量去打腾讯，同时把自己的 /health 拖慢到 3 秒。
+    # 实测：20 次调用 = 20 次出网（1:1 放大）。
+    # 缓存之后出网次数被钉在「每分钟一次」，而探测结果对运维依然足够新鲜。
     try:
-        import requests
-        response = requests.get(
-            "https://qt.gtimg.cn/q=hf_GC",
-            timeout=3,
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        health_status["services"]["tencent_api"] = {
-            "status": "available" if response.status_code == 200 else "degraded",
-            "response_code": response.status_code
-        }
+        now = time.monotonic()
+        cached = _upstream_probe.get("payload")
+        if cached is not None and now - _upstream_probe.get("at", 0.0) < _UPSTREAM_PROBE_TTL:
+            health_status["services"]["tencent_api"] = cached
+        else:
+            import requests
+            response = requests.get(
+                "https://qt.gtimg.cn/q=hf_GC",
+                timeout=3,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            payload = {
+                "status": "available" if response.status_code == 200 else "degraded",
+                "response_code": response.status_code,
+            }
+            _upstream_probe.update(at=now, payload=payload)
+            health_status["services"]["tencent_api"] = payload
     except Exception as e:
         logger.error(f"[健康检查] 腾讯行情接口不可用: {e}")
-        health_status["services"]["tencent_api"] = {
+        payload = {
             "status": "unavailable",
             "error_type": type(e).__name__,
         }
+        # 失败也缓存：否则上游挂了的时候，每次 /health 都要等满 3 秒超时
+        _upstream_probe.update(at=time.monotonic(), payload=payload)
+        health_status["services"]["tencent_api"] = payload
     
     # 3. 检查缓存状态
     try:

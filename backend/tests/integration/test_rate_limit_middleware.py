@@ -71,6 +71,47 @@ def test_limiters_are_independent_between_reads_and_refreshes(client, monkeypatc
     assert client.post("/api/gold/bullish-factors-ai/refresh").status_code != 429
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "path,query,expected",
+    [
+        # POST 强制刷新
+        ("/api/gold/bullish-factors-ai/refresh", "", True),
+        # GET 带 refresh=true 同样会走 use_cache=False → 真实调 LLM
+        ("/api/gold/bullish-factors-ai", "refresh=true", True),
+        ("/api/gold/bullish-factors-ai", "refresh=1", True),
+        ("/api/gold/market-summary-ai", "refresh=True", True),
+        # 不刷新的读请求不该被算进付费额度
+        ("/api/gold/bullish-factors-ai", "refresh=false", False),
+        ("/api/gold/bullish-factors-ai", "", False),
+        # 普通接口带个同名参数不该被误伤
+        ("/api/gold/stats", "refresh=true", False),
+        ("/api/gold/prices/daily", "limit=5", False),
+    ],
+)
+def test_ai_path_detection_covers_the_query_flag(path, query, expected):
+    """回归：判定只看路径后缀，漏掉了 `?refresh=true`。
+
+    `GET .../bullish-factors-ai?refresh=true` 与 POST /refresh 一样会真实调用
+    LLM，却因为路径不以 /refresh 结尾而只受**通用**上限约束 ——
+    等于把 6 次/分 的额度放大成 60 次/分。
+    """
+    from app.main import _is_ai_path
+
+    assert _is_ai_path(path, query) is expected
+
+
+@pytest.mark.integration
+def test_get_with_refresh_flag_hits_the_stricter_limit(client, monkeypatch):
+    """端到端确认：带 ?refresh=true 的 GET 也受 AI 上限约束。"""
+    _install_limiters(monkeypatch, general=100, ai=2)
+
+    assert client.get("/api/gold/bullish-factors-ai?refresh=true").status_code != 429
+    assert client.get("/api/gold/bullish-factors-ai?refresh=true").status_code != 429
+
+    assert client.get("/api/gold/bullish-factors-ai?refresh=true").status_code == 429
+
+
 # --------------------------------------------------------------------------- #
 # CORS
 # --------------------------------------------------------------------------- #

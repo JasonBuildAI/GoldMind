@@ -100,3 +100,64 @@ def test_health_does_not_expose_server_paths(client):
     assert not re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", raw), "响应里出现了盘符绝对路径"
     # POSIX 形式
     assert not re.search(r"(?:^|[\"' ])/(?:home|Users|var|opt|srv|root)/", raw), "响应里出现了 POSIX 绝对路径"
+
+
+# --------------------------------------------------------------------------- #
+# 上游探测的放大
+# --------------------------------------------------------------------------- #
+@pytest.mark.integration
+def test_health_does_not_amplify_upstream_requests(client, monkeypatch):
+    """回归：/health 是**公开且不限流**的接口，却每次调用都同步请求一次上游。
+
+    也就是说任何人都能让服务器按请求量去打腾讯行情接口，同时把自己的
+    /health 拖慢到 3 秒超时。实测 20 次调用 = 20 次出网（1:1 放大）。
+    现在探测结果缓存 60 秒。
+    """
+    import requests
+
+    from app import main
+
+    calls: list[str] = []
+
+    class _Response:
+        status_code = 200
+
+    def counting_get(url, *args, **kwargs):
+        calls.append(url)
+        return _Response()
+
+    monkeypatch.setattr(requests, "get", counting_get)
+    # 清掉缓存，保证第一次是真实探测
+    monkeypatch.setattr(main, "_upstream_probe", {"at": 0.0, "payload": None})
+
+    for _ in range(20):
+        assert client.get("/health").status_code == 200
+
+    assert len(calls) == 1, f"20 次 /health 触发了 {len(calls)} 次出网"
+
+
+@pytest.mark.integration
+def test_health_caches_a_failed_probe_too(client, monkeypatch):
+    """上游挂掉时也要缓存结果。
+
+    否则上游不可用期间，每次 /health 都要等满 3 秒超时 —— 探测越慢，
+    被刷的代价越高。
+    """
+    import requests
+
+    from app import main
+
+    calls: list[str] = []
+
+    def failing_get(url, *args, **kwargs):
+        calls.append(url)
+        raise requests.ConnectionError("upstream down")
+
+    monkeypatch.setattr(requests, "get", failing_get)
+    monkeypatch.setattr(main, "_upstream_probe", {"at": 0.0, "payload": None})
+
+    for _ in range(10):
+        body = client.get("/health").json()
+
+    assert len(calls) == 1, f"10 次 /health 触发了 {len(calls)} 次出网"
+    assert body["services"]["tencent_api"]["status"] == "unavailable"
