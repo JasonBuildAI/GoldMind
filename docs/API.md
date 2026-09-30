@@ -31,7 +31,7 @@
 | `POST` | `/api/gold/bearish-factors-ai/refresh` | 手动刷新看空因子分析（**会调用 LLM**，限流更严） |
 | `GET` | `/api/gold/bullish-factors-ai` | 获取AI分析的看涨因子 - 优化版（快速响应） |
 | `POST` | `/api/gold/bullish-factors-ai/refresh` | 手动刷新看涨因子分析（**会调用 LLM**，限流更严） |
-| `GET` | `/api/gold/dollar-realtime` | 获取实时美元指数（直接调用东方财富API） |
+| `GET` | `/api/gold/dollar-realtime` | 获取实时美元指数（数据源：新浪财经 ICE 美元指数 DINIW；带 30 秒缓存）。 |
 | `GET` | `/api/gold/factors` | 获取已入库的市场因子，可按类型过滤。 |
 | `GET` | `/api/gold/factors/bearish` | 获取看跌因子（直接读数据库，不做 AI 分析）。 |
 | `GET` | `/api/gold/factors/bullish` | 获取看涨因子（直接读数据库，不做 AI 分析）。 |

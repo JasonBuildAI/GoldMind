@@ -188,7 +188,7 @@ async def get_correlation_data(
 
 @router.get("/dollar-realtime")
 async def get_dollar_realtime():
-    """获取实时美元指数（直接调用东方财富API）"""
+    """获取实时美元指数（数据源：新浪财经 ICE 美元指数 DINIW；带 30 秒缓存）。"""
     def fetch_realtime():
         with get_db_context() as db:
             service = GoldService(db)

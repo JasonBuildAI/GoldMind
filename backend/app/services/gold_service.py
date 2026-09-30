@@ -7,6 +7,7 @@ from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from app.services.cache_manager import CacheManager, REALTIME_PRICE_CACHE_TTL
 from app.utils import timeutil
 from app.models.gold_price import GoldPrice, DollarIndex
 from loguru import logger
@@ -56,8 +57,22 @@ class GoldService:
     def __init__(self, db: Session):
         self.db = db
     
-    def get_realtime_dollar_index(self) -> Optional[Dict]:
-        """从新浪财经获取实时美元指数(DXY/DINIW) - 带超时和重试机制"""
+    def get_realtime_dollar_index(self, use_cache: bool = True) -> Optional[Dict]:
+        """获取实时美元指数（数据源：新浪财经 ICE 美元指数 DINIW）。
+
+        原实现**完全没有缓存**：每次调用都新建 session 去上游取一次。
+        而前端每 10 秒轮询一次 `/dollar-realtime` —— 一个浏览器标签页就是
+        每分钟 6 次外部请求，开三个标签页就是 18 次，且不限速地持续下去。
+        加一个与实时金价同级的短缓存（30 秒）之后，外部请求变成
+        **每个实例每 30 秒一次**，与标签页数量无关。
+        """
+        cache = CacheManager("realtime_dollar_index", ttl=REALTIME_PRICE_CACHE_TTL)
+
+        if use_cache:
+            cached = cache.get()
+            if cached:
+                return cached
+
         try:
             # 使用新浪财经的DINIW接口（ICE美元指数）
             url = "https://hq.sinajs.cn/list=DINIW"
@@ -119,6 +134,7 @@ class GoldService:
                             "source": "新浪财经-ICE美元指数(DXY)",
                         }
                         logger.info(f"[GoldService] 获取实时美元指数成功: {result}")
+                        cache.set(result)
                         return result
         except requests.exceptions.Timeout:
             logger.error("[GoldService] 美元指数API超时")
