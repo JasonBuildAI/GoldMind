@@ -60,18 +60,18 @@ describe('Hero 的数据新鲜度标识', () => {
     expect(screen.getAllByText('历史数据').length).toBeGreaterThan(0)
   })
 
-  it('兜底数据也不声称自己是实时的', () => {
-    // statsLoading=false + stats=null：加载已结束但没有数据，此时页面展示的
-    // 就是 fallbackStats。
-    //
-    // 必须让这张卡片**真的渲染出来**：若 statsLoading 仍为 true，卡片整块不渲染，
-    // 「找不到实时」的断言会无条件通过 —— 那是假绿。
-    // 变异测试实测确认过：把 fallbackStats.is_realtime 改成 true，旧写法照样绿。
+  it('没有数据时如实说「暂不可用」，不摆一个编造的价格', () => {
+    // 回归：原实现在这里用一份 fallbackStats 顶着，其中 current_price 是
+    // 写死的 2823.0 —— 页面会显示一个根本不存在的金价。
+    // 项目红线：「不为了好看而展示编造的数据，宁可显示「数据不可用」」。
     renderHero(null, false)
 
-    expect(screen.getByText('纽约黄金期货', { exact: true })).toBeInTheDocument()
+    expect(screen.getByTestId('hero-unavailable')).toBeInTheDocument()
+    expect(screen.getByText('金价数据暂不可用')).toBeInTheDocument()
+    // 不能出现任何价格数字或「纽约黄金期货」那张卡
+    expect(screen.queryByText('纽约黄金期货', { exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByText('$2,823.00')).not.toBeInTheDocument()
     expect(screen.queryByText('实时')).not.toBeInTheDocument()
-    expect(screen.getAllByText('历史数据').length).toBeGreaterThan(0)
   })
 
   it('把数据来源放在 title 里，便于悬停确认', () => {

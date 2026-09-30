@@ -3,7 +3,6 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { TrendingUp, BarChart3, Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useGoldData } from '@/contexts/GoldDataContext';
-import type { GoldPriceResponse } from '@/services/api';
 
 // 闪烁的实时数据点组件
 // recharts 的 dot 类型要求返回 ReactElement，而这里对「非末点」返回 null 表示不画点，
@@ -40,40 +39,6 @@ interface CorrelationDataLocal {
   dollar_index: number;
 }
 
-const fallbackData: GoldPriceResponse = {
-  daily: [
-    { date: '2025-01-02', price: 2682, volume: 40141 },
-    { date: '2025-02-01', price: 2800, volume: 3443 },
-    { date: '2025-03-01', price: 3100, volume: 2649 },
-    { date: '2025-04-01', price: 3350, volume: 2187 },
-    { date: '2025-05-01', price: 3420, volume: 4519 },
-    { date: '2025-06-01', price: 3480, volume: 3116 },
-    { date: '2025-07-01', price: 3620, volume: 1822 },
-    { date: '2025-08-01', price: 3700, volume: 2237 },
-    { date: '2025-09-01', price: 3950, volume: 2554 },
-    { date: '2025-10-01', price: 4100, volume: 2504 },
-    { date: '2025-11-01', price: 4250, volume: 2800 },
-    { date: '2025-12-01', price: 4400, volume: 3000 },
-    { date: '2026-01-02', price: 4560, volume: 3500 },
-    { date: '2026-01-28', price: 5361, volume: 4000 },
-  ],
-  correlation: [
-    { date: '2025-01-15', gold_price: 2682, dollar_index: 108.2 },
-    { date: '2025-02-15', gold_price: 2900, dollar_index: 107.5 },
-    { date: '2025-03-15', gold_price: 3200, dollar_index: 105.8 },
-    { date: '2025-04-15', gold_price: 3380, dollar_index: 104.2 },
-    { date: '2025-05-15', gold_price: 3450, dollar_index: 103.5 },
-    { date: '2025-06-15', gold_price: 3550, dollar_index: 102.8 },
-    { date: '2025-07-15', gold_price: 3650, dollar_index: 101.5 },
-    { date: '2025-08-15', gold_price: 3820, dollar_index: 100.2 },
-    { date: '2025-09-15', gold_price: 4020, dollar_index: 99.5 },
-    { date: '2025-10-15', gold_price: 4170, dollar_index: 100.8 },
-    { date: '2025-11-15', gold_price: 4320, dollar_index: 101.5 },
-    { date: '2025-12-15', gold_price: 4480, dollar_index: 102.2 },
-    { date: '2026-01-15', gold_price: 4900, dollar_index: 101.8 },
-  ]
-};
-
 // 格式化日期标签
 const formatDateLabel = (dateStr: string) => {
   const date = new Date(dateStr);
@@ -95,7 +60,6 @@ export default function PriceChart() {
   const [activeTab, setActiveTab] = useState('daily');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [usingFallback, setUsingFallback] = useState(false);
 
   // 从上下文同步数据
   useEffect(() => {
@@ -108,7 +72,6 @@ export default function PriceChart() {
         }))
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setDailyData(dailyFormatted);
-      setUsingFallback(false);
     }
   }, [dailyPrices]);
 
@@ -142,17 +105,14 @@ export default function PriceChart() {
     // 如果有数据且正在加载，保持loading为false（不显示loading动画）
   }, [dailyLoading, correlationLoading, dailyData.length, correlationData.length]);
 
-  // 同步错误状态
+  // 同步错误状态。
+  //
+  // 这里原本会灌入一份内置的假价格序列（14 个点）与假相关性序列，让图表看起来
+  // 「有数据」。那违反项目红线：「不为了好看而展示编造的数据 —— 宁可显示
+  // 「数据不可用」」。现在只记错误，图表保持空，由下面的空状态如实说明。
   useEffect(() => {
     if (dailyError || correlationError) {
-      setError('加载数据失败，使用本地缓存数据');
-      // 使用备用数据
-      setDailyData(fallbackData.daily.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-      setCorrelationData(fallbackData.correlation.map(item => ({
-        ...item,
-        dateLabel: formatDateLabel(item.date)
-      })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-      setUsingFallback(true);
+      setError('没能从后端取到行情数据');
     }
   }, [dailyError, correlationError]);
 
@@ -217,7 +177,7 @@ export default function PriceChart() {
             黄金价格<span className="gold-text">历史走势</span>
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto">
-            从2025年初至今，黄金价格经历了波澜壮阔的上涨行情，年度涨幅接近80%
+            从 2025 年初至今的日线走势与金价／美元指数相关性。数值全部来自后端接口。
           </p>
         </div>
 
@@ -226,6 +186,20 @@ export default function PriceChart() {
           <div className="card-glass rounded-2xl p-12 flex flex-col items-center justify-center">
             <Loader2 className="w-10 h-10 text-amber-400 animate-spin mb-4" />
             <p className="text-gray-400">正在加载数据...</p>
+          </div>
+        )}
+
+        {/* 无数据状态：明确说「不可用」，不摆任何数字 */}
+        {!loading && dailyData.length === 0 && correlationData.length === 0 && (
+          <div
+            data-testid="price-chart-unavailable"
+            className="card-glass rounded-2xl p-12 text-center"
+          >
+            <p className="text-gray-300 font-medium mb-2">价格数据暂不可用</p>
+            <p className="text-gray-500 text-sm max-w-xl mx-auto">
+              没能从后端取到行情数据。这里不显示任何价格 ——
+              与其摆一组编造的数字，不如如实说明取不到。
+            </p>
           </div>
         )}
 
@@ -238,39 +212,25 @@ export default function PriceChart() {
               </div>
               <div>
                 <p className="text-amber-400 font-medium">{error}</p>
-                <p className="text-gray-500 text-sm">已切换到本地缓存数据，数据可能不是最新的</p>
+                <p className="text-gray-500 text-sm">请稍后重试；页面不会用编造的数据填充</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Data Source Badge - 显示实时数据状态，包括刷新指示器 */}
+        {/* 数据来源徽标 —— 只有真的拿到后端数据才显示「实时数据」 */}
         {(dailyData.length > 0 || correlationData.length > 0) && (
           <div className="flex justify-end mb-6">
-            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs ${
-              usingFallback 
-                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                : 'bg-green-500/10 text-green-400 border border-green-500/30'
-            }`}>
-              {usingFallback ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-amber-400" />
-                  <span>本地缓存数据</span>
-                </>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs bg-green-500/10 text-green-400 border border-green-500/30">
+              {(dailyLoading || correlationLoading) ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
               ) : (
-                <>
-                  {/* 数据刷新时显示旋转动画 */}
-                  {(dailyLoading || correlationLoading) ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                    </span>
-                  )}
-                  <span>{(dailyLoading || correlationLoading) ? '更新中...' : '实时数据'}</span>
-                </>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
               )}
+              <span>{(dailyLoading || correlationLoading) ? '更新中...' : '后端数据'}</span>
             </div>
           </div>
         )}

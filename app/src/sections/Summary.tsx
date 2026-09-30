@@ -24,56 +24,6 @@ interface SummaryPoint {
 }
 
 // 默认数据
-const defaultSummaryData: SummaryPoint[] = [
-  {
-    type: 'bullish',
-    title: '核心看涨逻辑',
-    points: [
-      '美联储降息周期降低持有黄金的机会成本',
-      '全球央行持续购金，去美元化趋势加速',
-      '美元信用动摇，美债规模突破38万亿美元',
-      '地缘政治风险支撑避险需求',
-      '供需失衡，矿产金产量增长有限'
-    ]
-  },
-  {
-    type: 'bearish',
-    title: '主要风险因素',
-    points: [
-      '美联储升息预期可能推迟降息时点',
-      '高价位积累大量获利盘，回调压力增加',
-      '地缘风险缓和可能导致避险溢价回落',
-      '美元阶段性走强压制金价',
-      '全球经济改善可能减弱避险需求'
-    ]
-  },
-  {
-    type: 'neutral',
-    title: '市场共识',
-    points: [
-      '多数机构看好长期走势，目标4500-5400美元',
-      '短期可能因政策预期变化而震荡',
-      '结构性买盘为金价提供坚实支撑',
-      '2026年或呈现高位震荡偏强格局'
-    ]
-  }
-];
-
-const defaultPriceTargets = [
-  { institution: '高盛', target: 5400, probability: '高', timeframe: '2026年底' },
-  { institution: '瑞银', target: 5000, probability: '高', timeframe: '2026年9月' },
-  { institution: '摩根士丹利', target: 4500, probability: '中', timeframe: '2026年中' },
-  { institution: '当前价格', target: 5067, probability: '-', timeframe: '实时' }
-];
-
-const defaultComprehensiveJudgment = {
-  bullish_summary: '从基本面来看，黄金上涨的逻辑更为坚实。美联储降息周期、全球央行持续购金、美元信用动摇等结构性因素形成共振，为金价提供长期支撑。机构普遍看好2026年金价走势，目标价集中在4500-5400美元区间。',
-  bearish_summary: '尽管长期趋势向好，但短期波动风险不容忽视。美联储政策预期变化、获利了结压力、地缘风险缓和等因素可能导致金价回调。建议采用分批建仓策略，控制仓位在总资产15%以内，做好风险管理。',
-  neutral_summary: '市场处于多空博弈阶段，建议保持谨慎乐观态度，关注关键技术水平。'
-};
-
-const defaultCoreView = '黄金处于长期牛市通道，2026年大概率维持高位震荡偏强格局。建议投资者根据自身风险偏好，适度配置黄金资产，分享本轮黄金牛市红利。';
-
 export default function Summary() {
   const [summary, setSummary] = useState<MarketSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,11 +75,11 @@ export default function Summary() {
     } catch (err: any) {
       console.error('获取市场综合分析失败:', err);
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        setError('AI分析耗时较长，已显示默认数据。请稍后重试刷新。');
+        setError('AI 分析耗时较长，请稍后重试刷新。');
       } else {
-        setError('获取最新分析失败，显示默认数据');
+        setError('获取最新分析失败。');
       }
-      // 使用默认数据
+      // 不填充任何编造的内容：保持为 null，由空状态如实说明。
       setSummary(null);
     } finally {
       setLoading(false);
@@ -141,45 +91,50 @@ export default function Summary() {
     await fetchSummary(true);
   };
 
-  // 使用API数据或默认数据
+  // 全部来自接口。没有数据时保持为空 —— 不摆任何编造的结论或数字。
   const summaryData: SummaryPoint[] = summary ? [
     {
       type: 'bullish',
       title: '核心看涨逻辑',
-      points: summary.core_bullish_logic || defaultSummaryData[0].points
+      points: summary.core_bullish_logic || []
     },
     {
       type: 'bearish',
       title: '主要风险因素',
-      points: summary.main_risks || defaultSummaryData[1].points
+      points: summary.main_risks || []
     },
     {
       type: 'neutral',
       title: '市场共识',
-      points: summary.market_consensus || defaultSummaryData[2].points
+      points: summary.market_consensus || []
     }
-  ] : defaultSummaryData;
+  ] : [];
 
-  // 使用 GoldDataContext 的实时价格，如果没有则使用 summary 的数据
-  const realtimePrice = goldStats?.current_price || summary?.current_price || 5067;
-  
-  const priceTargets = summary?.institution_targets ? [
-    ...summary.institution_targets.map(t => ({
-      institution: t.institution,
-      target: t.target,
-      probability: t.probability,
-      timeframe: t.timeframe
-    })),
-    { 
-      institution: '当前价格', 
-      target: realtimePrice, 
-      probability: '-', 
-      timeframe: '实时' 
-    }
-  ] : defaultPriceTargets;
+  // 取不到价格时就是 null。原实现在这里写死了 5067 ——
+  // 那是一个凭空的数字，会被当成「当前价格」展示在目标价表里。
+  const realtimePrice = goldStats?.current_price ?? summary?.current_price ?? null;
 
-  const comprehensiveJudgment = summary?.comprehensive_judgment || defaultComprehensiveJudgment;
-  const coreView = summary?.core_view || defaultCoreView;
+  const priceTargets = summary?.institution_targets
+    ? [
+        ...summary.institution_targets.map(t => ({
+          institution: t.institution,
+          target: t.target,
+          probability: t.probability,
+          timeframe: t.timeframe
+        })),
+        ...(realtimePrice === null
+          ? []
+          : [{
+              institution: '当前价格',
+              target: realtimePrice,
+              probability: '-',
+              timeframe: '实时'
+            }])
+      ]
+    : [];
+
+  const comprehensiveJudgment = summary?.comprehensive_judgment || null;
+  const coreView = summary?.core_view || '';
 
   const getTypeStyles = (type: string) => {
     switch (type) {
@@ -300,6 +255,17 @@ export default function Summary() {
           )}
         </div>
 
+        {/* 无数据状态：不摆任何编造的结论 */}
+        {!loading && !summary && (
+          <div data-testid="summary-unavailable" className="card-glass rounded-2xl p-12 text-center">
+            <p className="text-gray-300 font-medium mb-2">市场总结暂不可用</p>
+            <p className="text-gray-500 text-sm max-w-xl mx-auto">
+              没能取到分析结果。这里不显示任何内置文案 ——
+              与其摆一段编造的综合判断，不如如实说明取不到。
+            </p>
+          </div>
+        )}
+
         {/* Summary Cards */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
@@ -388,38 +354,44 @@ export default function Summary() {
                 <div className="w-20 h-1 gold-gradient mx-auto rounded-full" />
               </div>
 
+              {/* 逐段判空：接口没给哪一段就不渲染哪一段，不用写死的文案补位 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                  <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-green-400" />
-                    看多理由占优
-                  </h4>
-                  <p className="text-gray-400 text-sm leading-relaxed">
-                    {comprehensiveJudgment.bullish_summary}
-                  </p>
-                </div>
-                <div>
-                  <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <Scale className="w-5 h-5 text-amber-400" />
-                    短期波动难免
-                  </h4>
-                  <p className="text-gray-400 text-sm leading-relaxed">
-                    {comprehensiveJudgment.bearish_summary}
-                  </p>
-                </div>
+                {comprehensiveJudgment?.bullish_summary && (
+                  <div>
+                    <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <CheckCircle2 className="w-5 h-5 text-green-400" />
+                      看多理由占优
+                    </h4>
+                    <p className="text-gray-400 text-sm leading-relaxed">
+                      {comprehensiveJudgment.bullish_summary}
+                    </p>
+                  </div>
+                )}
+                {comprehensiveJudgment?.bearish_summary && (
+                  <div>
+                    <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <Scale className="w-5 h-5 text-amber-400" />
+                      短期波动难免
+                    </h4>
+                    <p className="text-gray-400 text-sm leading-relaxed">
+                      {comprehensiveJudgment.bearish_summary}
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <div className="mt-8 pt-6 border-t border-gray-800 text-center">
-                <p className="text-lg text-gray-300">
-                  <span className="gold-text font-semibold">核心观点：</span>
-                  {coreView}
-                </p>
+              {coreView && (
+                <div className="mt-8 pt-6 border-t border-gray-800 text-center">
+                  <p className="text-lg text-gray-300">
+                    <span className="gold-text font-semibold">核心观点：</span>
+                    {coreView}
+                  </p>
                 {summary?.investment_recommendation && (
                   <p className="text-gray-400 text-sm mt-3">
                     {summary.investment_recommendation}
                   </p>
                 )}
-                {summary?.confidence_level && (
+                  {summary?.confidence_level && (
                   <div className="mt-4 inline-flex items-center gap-2">
                     <span className="text-gray-500 text-xs">置信度:</span>
                     <span className={`text-xs px-2 py-1 rounded-full ${
@@ -439,7 +411,8 @@ export default function Summary() {
                     )}
                   </div>
                 )}
-              </div>
+                </div>
+              )}
             </div>
           </>
         )}

@@ -27,88 +27,18 @@ const iconMap: Record<string, React.ElementType> = {
 };
 
 // 默认看涨因子（当API不可用时使用）
-const defaultFactors: BullishFactor[] = [
-  {
-    id: 'fed-policy',
-    title: '美联储降息周期',
-    subtitle: '货币政策转向宽松',
-    description: '美联储从2024年9月开启降息周期，至今已累计降息六次。降息导致实际利率下行，黄金作为非孳息资产的吸引力大幅增强。',
-    details: [
-      '2024年9月启动本轮降息周期，已累计降息150个基点',
-      '实际利率下行降低持有黄金的机会成本',
-      '市场预计2026年将继续降息，支撑金价上行',
-      '美联储政策独立性受扰，加剧市场不确定性'
-    ],
-    impact: 'high'
-  },
-  {
-    id: 'central-bank',
-    title: '全球央行持续购金',
-    subtitle: '去美元化趋势加速',
-    description: '2025年全球央行购金量达1136吨，连续第二年突破千吨级规模。新兴市场央行是购金主力军，推动储备多元化。',
-    details: [
-      '2025年央行购金1136吨，连续第二年超千吨',
-      '波兰央行批准购买150吨黄金计划',
-      '哈萨克斯坦、巴西、土耳其等国大幅增持',
-      '全球央行外汇储备中美元占比降至58%'
-    ],
-    impact: 'high'
-  },
-  {
-    id: 'dollar-credit',
-    title: '美元信用动摇',
-    subtitle: '美债规模突破38万亿美元',
-    description: '美国政府债务规模超过38万亿美元，占GDP比重飙升至124%。每年需支付1.1万亿美元利息，引发对财政可持续性的担忧。',
-    details: [
-      '美国国债规模突破38万亿美元创历史新高',
-      '债务占GDP比重达124%，远超警戒线',
-      '年利息支出高达1.1万亿美元',
-      '美元在全球外汇储备中占比持续下降'
-    ],
-    impact: 'high'
-  },
-  {
-    id: 'geopolitical',
-    title: '地缘政治风险',
-    subtitle: '避险需求持续升温',
-    description: '俄乌冲突、中东局势紧张、美国关税战等地缘政治"黑天鹅"事件频发，避险资金疯狂涌入黄金市场。',
-    details: [
-      '俄乌冲突持续，停火谈判进展缓慢',
-      '中东局势紧张，伊朗核设施遇袭',
-      '美国发起大规模关税战，全球贸易局势紧张',
-      '美欧围绕格陵兰岛的博弈加剧'
-    ],
-    impact: 'medium'
-  },
-  {
-    id: 'supply-demand',
-    title: '供需失衡支撑',
-    subtitle: '矿产金产量见顶',
-    description: '2025年前三季度全球黄金总产量仅2717吨，同比仅增16吨。供需缺口达584吨，供应端刚性约束支撑价格。',
-    details: [
-      '2025年前三季度全球黄金产量2717吨，增幅极小',
-      '黄金生产成本上升至1536美元/盎司',
-      '供需缺口584吨，支撑价格上行',
-      '优质资源枯竭限制长期供应增长'
-    ],
-    impact: 'medium'
-  }
-];
-
 // 接口不可用时展示的兜底总结。真实数据到达后会被接口返回的
 // analysis_summary 替换 —— 原实现把总结写死在 JSX 里，接口返回的总结
 // 被取到后直接丢弃，导致无论分析结果是什么，页面永远显示同一段文案。
-const FALLBACK_SUMMARY =
-  '美联储降息周期、全球央行持续购金、美元信用动摇、地缘政治风险等多重因素形成共振，为黄金价格提供强劲的长期上涨动力。';
-
 export default function BullishFactors() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
-  const [factors, setFactors] = useState<BullishFactor[]>(defaultFactors);
+  // 初始为空：没有真实数据时宁可什么都不显示，也不摆一组编造的因子。
+  const [factors, setFactors] = useState<BullishFactor[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
-  const [summary, setSummary] = useState<string>(FALLBACK_SUMMARY);
+  const [summary, setSummary] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isPlaceholderData, setIsPlaceholderData] = useState(false);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -128,20 +58,18 @@ export default function BullishFactors() {
       if (response.bullish_factors && response.bullish_factors.length > 0) {
         setFactors(response.bullish_factors);
         setIsPlaceholderData(isPlaceholder(response.metadata));
-        setSummary(response.analysis_summary || FALLBACK_SUMMARY);
+        setSummary(response.analysis_summary || '');
         setLastUpdated(response.last_updated);
       }
     } catch (err: any) {
       console.error('获取看涨因子失败:', err);
       // 判断是否是超时错误
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        setError('AI分析耗时较长，已显示默认数据。请稍后重试刷新。');
+        setError('AI 分析耗时较长，请稍后重试刷新。');
       } else {
-        setError('获取最新分析失败，显示默认数据');
+        setError('获取最新分析失败。');
       }
-      // 使用默认数据
-      setFactors(defaultFactors);
-      setSummary(FALLBACK_SUMMARY);
+      // 不填充任何编造的内容：保持为空，由下面的空状态如实说明。
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -197,6 +125,26 @@ export default function BullishFactors() {
 
   // 计算高影响因子数量
   const highImpactCount = factors.filter(f => f.impact === 'high').length;
+
+  // 没有数据时明确说「不可用」，而不是拿内置文案冒充分析结论
+  if (!loading && factors.length === 0) {
+    return (
+      <section data-testid="bullish-factors" className="py-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="card-glass rounded-2xl p-12 text-center">
+            <p className="text-gray-300 font-medium mb-2">看涨因子暂不可用</p>
+            <p className="text-gray-500 text-sm max-w-xl mx-auto">
+              没能取到分析结果。这里不显示任何内置文案 ——
+              与其摆一段编造的结论，不如如实说明取不到。
+            </p>
+            {error && (
+              <p className="text-amber-400 text-sm mt-4">{error}</p>
+            )}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   if (loading) {
     return (

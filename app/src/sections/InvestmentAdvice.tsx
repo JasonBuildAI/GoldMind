@@ -177,85 +177,7 @@ export default function InvestmentAdvice() {
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // 默认策略数据
-  const defaultStrategies: InvestmentStrategy[] = [
-    {
-      type: 'conservative',
-      title: '保守配置策略',
-      description: '适合风险厌恶型投资者，追求资产保值和稳定收益',
-      allocation: '资产配置的5-10%',
-      timeframe: '1-3年',
-      risk_level: 'low',
-      entry_strategy: {
-        current_price_assessment: '建议等待回调后再入场',
-        recommended_entry_range: '等待金价回调至2700-2750美元区间',
-        entry_timing: '分批建仓，每次回调5%时加仓',
-        position_building: '分4批建仓，每批25%，间隔2-4周'
-      },
-      exit_strategy: {
-        profit_target: '年度收益目标8-12%',
-        stop_loss: '单笔亏损不超过本金的5%',
-        rebalancing_trigger: '金价涨幅超过20%时减仓一半'
-      },
-      pros: ['风险可控，适合保守投资者', '无需频繁操作', '长期对冲通胀'],
-      cons: ['短期收益有限', '资金占用时间长', '可能错过快速上涨机会'],
-      suitable_for: ['风险厌恶型投资者', '长期资产配置者', '退休规划人群'],
-      execution_steps: ['等待回调至目标区间', '分批建仓，控制仓位', '设置止盈止损', '定期评估调整']
-    },
-    {
-      type: 'balanced',
-      title: '均衡配置策略',
-      description: '适合有一定经验的投资者，在风险和收益之间寻求平衡',
-      allocation: '资产配置的8-12%',
-      timeframe: '6-12个月',
-      risk_level: 'medium',
-      entry_strategy: {
-        current_price_assessment: '可小仓位试水',
-        recommended_entry_range: '2750-2800美元区间',
-        entry_timing: '分批建仓，结合技术指标',
-        position_building: '分3批建仓，每批33%，根据技术信号调整'
-      },
-      exit_strategy: {
-        profit_target: '阶段收益目标15-20%',
-        stop_loss: '单笔亏损不超过本金的8%',
-        rebalancing_trigger: '达到目标收益或跌破关键支撑位'
-      },
-      pros: ['灵活应对市场变化', '收益潜力较好', '风险相对可控'],
-      cons: ['需要一定的市场判断能力', '需要关注市场动态', '可能面临短期波动'],
-      suitable_for: ['有一定经验的投资者', '能承受中等波动的投资者', '有时间的投资者'],
-      execution_steps: ['分析技术形态', '小仓位试探', '根据走势加仓或止损', '动态调整持仓']
-    },
-    {
-      type: 'opportunistic',
-      title: '机会型策略',
-      description: '适合风险承受能力强的投资者，捕捉短期机会（严格限制仓位）',
-      allocation: '资产配置的3-5%（严格限制）',
-      timeframe: '1-3个月',
-      risk_level: 'high',
-      entry_strategy: {
-        current_price_assessment: '仅适合极小部分资金参与',
-        recommended_entry_range: '严格等待明确突破信号',
-        entry_timing: '仅在关键技术位突破时',
-        position_building: '单笔投入，严格止损'
-      },
-      exit_strategy: {
-        profit_target: '短期目标10-15%',
-        stop_loss: '严格止损，亏损不超过5%',
-        rebalancing_trigger: '达到目标或触发止损立即离场'
-      },
-      pros: ['可能获得较高短期收益', '资金利用效率高'],
-      cons: ['风险极高', '需要专业知识和经验', '容易受情绪影响', '可能快速亏损'],
-      suitable_for: ['专业投资者', '风险承受能力极强', '有充足时间盯盘'],
-      execution_steps: ['严格筛选入场时机', '小仓位参与', '设置严格止损', '及时止盈离场']
-    }
-  ];
 
-  const defaultCorePrinciples = [
-    { title: '风险管理', description: '永远把风险控制放在第一位，不要投入无法承受损失的资金' },
-    { title: '仓位控制', description: '黄金配置不超过总资产的15%，单品种不超过10%' },
-    { title: '再平衡', description: '每季度评估一次，根据市场变化调整配置比例' },
-    { title: '长期视角', description: '黄金适合长期配置，避免频繁交易' }
-  ];
 
   useEffect(() => {
     fetchAdvice();
@@ -296,9 +218,9 @@ export default function InvestmentAdvice() {
     } catch (err: any) {
       console.error('获取投资建议失败:', err);
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        setError('AI分析耗时较长，已显示默认策略。请稍后重试刷新。');
+        setError('AI 分析耗时较长，请稍后重试刷新。');
       } else {
-        setError('获取最新分析失败，显示默认策略');
+        setError('获取最新分析失败。');
       }
       // 使用默认数据
       setAdvice(null);
@@ -312,9 +234,30 @@ export default function InvestmentAdvice() {
     await fetchAdvice(true);
   };
 
-  const strategies = advice?.strategies || defaultStrategies;
-  const corePrinciples = advice?.core_principles || defaultCorePrinciples;
+  // 全部来自接口。没有数据时保持为空 —— 不摆任何编造的策略。
+  const strategies = advice?.strategies || [];
+  const corePrinciples = advice?.core_principles || [];
   const marketAssessment = advice?.market_assessment;
+
+  // 没有数据时明确说「不可用」，而不是拿内置策略冒充分析结论
+  if (!loading && !advice) {
+    return (
+      <section className="py-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="card-glass rounded-2xl p-12 text-center">
+            <p className="text-gray-300 font-medium mb-2">投资建议暂不可用</p>
+            <p className="text-gray-500 text-sm max-w-xl mx-auto">
+              没能取到分析结果。这里不显示任何内置策略 ——
+              与其摆一套编造的建议，不如如实说明取不到。
+            </p>
+            {error && (
+              <p className="text-amber-400 text-sm mt-4">{error}</p>
+            )}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="py-20 px-4 sm:px-6 lg:px-8">

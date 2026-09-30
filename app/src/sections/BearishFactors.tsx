@@ -27,78 +27,11 @@ const iconMap: Record<string, React.ElementType> = {
 };
 
 // 默认看空因子（当API不可用时使用）
-const defaultFactors: BearishFactor[] = [
-  {
-    id: 'rate-hike',
-    title: '美联储升息预期',
-    subtitle: '降息时点可能推迟',
-    description: '若美国通胀持续高位运行，美联储可能推迟降息甚至重新升息。升息将提高持有黄金的机会成本，对金价形成压制。',
-    details: [
-      '关税政策带来的成本传导可能使通胀持续高位',
-      '摩根士丹利预计降息时点推迟至6月和9月',
-      '升息预期升温导致美元走强，压制金价',
-      '实际利率上升降低黄金吸引力'
-    ],
-    impact: 'high'
-  },
-  {
-    id: 'profit-taking',
-    title: '获利了结压力',
-    subtitle: '投机性头寸平仓',
-    description: '金价快速上涨后积累大量获利盘，技术性回调需求增加。投机性头寸平仓可能引发连锁反应，导致短期剧烈波动。',
-    details: [
-      '2025年10月金价曾单日暴跌6%',
-      'ETF市场结构失衡放大波动',
-      '散户与机构行为分化加剧震荡',
-      '高价位吸引获利盘出逃'
-    ],
-    impact: 'medium'
-  },
-  {
-    id: 'geopolitical-ease',
-    title: '地缘风险缓和',
-    subtitle: '避险溢价回落',
-    description: '若俄乌冲突出现停火进展、中美关系缓和等地缘风险降温，黄金的避险溢价将显著回落，可能导致价格调整。',
-    details: [
-      '俄乌停火谈判若取得进展将降低避险需求',
-      '中美高层互动释放缓和信号',
-      '地缘风险溢价回落导致金价调整',
-      '避险需求常态化程度有限'
-    ],
-    impact: 'medium'
-  },
-  {
-    id: 'dollar-strength',
-    title: '美元阶段性走强',
-    subtitle: '汇率效应压制金价',
-    description: '美元指数阶段性反弹对金价形成直接压制。美元与黄金通常呈现负相关关系，美元走强时金价往往承压。',
-    details: [
-      '2025年10月美元指数上涨3.6%压制金价',
-      '美国经济韧性支撑美元',
-      '美元升值使黄金对其他货币持有者更贵',
-      '汇率效应直接影响黄金计价'
-    ],
-    impact: 'medium'
-  },
-  {
-    id: 'economic-growth',
-    title: '全球经济改善',
-    subtitle: '避险需求减弱',
-    description: '若全球经济回到"金发女孩"状态（适度增长、低通胀），风险资产吸引力上升，黄金避险需求将相应减弱。',
-    details: [
-      '花旗预计2026年美国经济回到适中成长状态',
-      '全球经济增长预期改善降低避险需求',
-      '风险资产吸引力上升分流资金',
-      '经济向好时黄金配置价值相对下降'
-    ],
-    impact: 'low'
-  }
-];
-
 export default function BearishFactors() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
-  const [factors, setFactors] = useState<BearishFactor[]>(defaultFactors);
+  // 初始为空：没有真实数据时宁可什么都不显示，也不摆一组编造的因子。
+  const [factors, setFactors] = useState<BearishFactor[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
@@ -127,12 +60,11 @@ export default function BearishFactors() {
       console.error('获取看空因子失败:', err);
       // 判断是否是超时错误
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        setError('AI分析耗时较长，已显示默认数据。请稍后重试刷新。');
+        setError('AI 分析耗时较长，请稍后重试刷新。');
       } else {
-        setError('获取最新分析失败，显示默认数据');
+        setError('获取最新分析失败。');
       }
-      // 使用默认数据
-      setFactors(defaultFactors);
+      // 不填充任何编造的内容：保持为空，由下面的空状态如实说明。
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -188,6 +120,26 @@ export default function BearishFactors() {
 
   // 计算高影响因子数量
   const highImpactCount = factors.filter(f => f.impact === 'high').length;
+
+  // 没有数据时明确说「不可用」，而不是拿内置文案冒充分析结论
+  if (!loading && factors.length === 0) {
+    return (
+      <section className="py-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="card-glass rounded-2xl p-12 text-center">
+            <p className="text-gray-300 font-medium mb-2">看跌因子暂不可用</p>
+            <p className="text-gray-500 text-sm max-w-xl mx-auto">
+              没能取到分析结果。这里不显示任何内置文案 ——
+              与其摆一段编造的结论，不如如实说明取不到。
+            </p>
+            {error && (
+              <p className="text-amber-400 text-sm mt-4">{error}</p>
+            )}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   if (loading) {
     return (

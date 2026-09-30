@@ -1,38 +1,21 @@
 import { useEffect, useState } from 'react';
 import { TrendingUp, DollarSign, Loader2, Brain, Sparkles, Bot, Zap, Target, Layers } from 'lucide-react';
 import { useGoldData } from '@/contexts/GoldDataContext';
-
-const fallbackStats = {
-  current_price: 2823.0,
-  start_price: 2823.0,
-  ytd_return: 0,
-  max_price: 2823.0,
-  min_price: 2823.0,
-  max_date: '2025-01-02',
-  min_date: '2025-01-02',
-  volatility: 0,
-  market_status: '震荡',
-  market_status_desc: '等待数据',
-  updated_at: new Date().toISOString(),
-  // 兜底数据不是实时价，必须如实标注 ——
-  // 否则页面会拿兜底值闪着「实时」绿点。
-  data_source: '兜底数据',
-  is_realtime: false,
-};
+import type { GoldStats } from '@/services/api';
 
 export default function Hero() {
   const { stats: contextStats, statsLoading, statsError } = useGoldData();
-  const [stats, setStats] = useState(fallbackStats);
+  // null = 还没有拿到真实数据。绝不用一个编造的默认值顶着 ——
+  // 那会让页面显示一个根本不存在的金价。
+  const [stats, setStats] = useState<GoldStats | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hasInitialData, setHasInitialData] = useState(false);
 
   useEffect(() => {
     if (contextStats) {
       setStats(contextStats);
-      setHasInitialData(true);
     }
     if (statsError) {
-      setError('无法获取实时数据，显示默认数据');
+      setError('无法获取实时数据。');
     }
   }, [contextStats, statsError]);
 
@@ -224,12 +207,25 @@ export default function Hero() {
           </div>
 
           {/* Loading State - 只在初始加载时显示 */}
-          {statsLoading && !hasInitialData && (
+          {statsLoading && !stats && (
             <div className="flex justify-center py-8">
               <div className="flex items-center gap-3 text-amber-400">
                 <Loader2 className="w-6 h-6 animate-spin" />
                 <span>正在获取实时金价...</span>
               </div>
+            </div>
+          )}
+
+          {/* 无数据状态：不摆任何编造的数字 */}
+          {!stats && !statsLoading && (
+            <div
+              data-testid="hero-unavailable"
+              className="card-glass rounded-2xl p-10 max-w-xl mx-auto mt-8 text-center"
+            >
+              <p className="text-gray-300 font-medium mb-2">金价数据暂不可用</p>
+              <p className="text-gray-500 text-sm">
+                没能从后端取到行情。这里不显示价格 —— 与其摆一个编造的数字，不如如实说明。
+              </p>
             </div>
           )}
 
@@ -241,7 +237,7 @@ export default function Hero() {
           )}
 
           {/* Price Display - 有数据时一直显示 */}
-          {(hasInitialData || !statsLoading) && (
+          {stats && (
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mt-8">
               <div className="card-glass rounded-2xl p-6 min-w-[280px] relative overflow-hidden group hover:border-amber-500/30 transition-colors">
                 {/* 数据新鲜度标识：只有真的取到实时价才显示绿色的「实时」。
@@ -304,7 +300,7 @@ export default function Hero() {
           )}
 
           {/* Key Stats Grid - 有数据时一直显示 */}
-          {(hasInitialData || !statsLoading) && (
+          {stats && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-4xl mx-auto mt-8">
               <div className="card-glass rounded-xl p-4 relative overflow-hidden">
                 {/* 24h更新标识 - 静态显示，不闪烁 */}

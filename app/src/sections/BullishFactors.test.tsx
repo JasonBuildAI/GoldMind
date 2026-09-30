@@ -52,24 +52,19 @@ describe('BullishFactors', () => {
     expect(await screen.findByTestId('bullish-summary')).toHaveTextContent('接口总结')
   })
 
-  it('接口失败时总结回退到兜底文案', async () => {
+  it('接口失败时如实说「暂不可用」，而不是摆内置文案', async () => {
+    // 回归：原实现在接口失败时回退到一组内置因子与一段写死的总结，
+    // 并展示给用户。那违反项目红线 ——「不为了好看而展示编造的数据，
+    // 宁可显示「数据不可用」」。
     mocked.getBullishFactors.mockRejectedValue(new Error('boom'))
 
     render(<BullishFactors />)
 
-    await waitFor(() => {
-      expect(screen.getByTestId('bullish-summary')).toHaveTextContent(/美联储降息周期/)
-    })
-  })
-
-  it('接口失败时回退到内置默认因子，并给出提示', async () => {
-    mocked.getBullishFactors.mockRejectedValue(new Error('boom'))
-
-    render(<BullishFactors />)
-
-    // 默认因子仍然渲染（页面不至于空白）
-    expect(await screen.findByText('美联储降息周期')).toBeInTheDocument()
-    // 但必须明确告知用户这不是最新分析
+    expect(await screen.findByText('看涨因子暂不可用')).toBeInTheDocument()
+    // 不能出现任何内置的因子或总结文案
+    expect(screen.queryByText('美联储降息周期')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('bullish-summary')).not.toBeInTheDocument()
+    // 同时要说明失败原因
     await waitFor(() => {
       expect(screen.getByText(/获取最新分析失败/)).toBeInTheDocument()
     })
@@ -84,11 +79,11 @@ describe('BullishFactors', () => {
     render(<BullishFactors />)
 
     await waitFor(() => {
-      expect(screen.getByText(/AI分析耗时较长/)).toBeInTheDocument()
+      expect(screen.getByText(/AI 分析耗时较长/)).toBeInTheDocument()
     })
   })
 
-  it('接口返回空列表时保留默认因子而不是渲染空白', async () => {
+  it('接口返回空列表时也走「暂不可用」，不摆内置因子', async () => {
     mocked.getBullishFactors.mockResolvedValue({
       bullish_factors: [],
       analysis_summary: '',
@@ -97,7 +92,8 @@ describe('BullishFactors', () => {
 
     render(<BullishFactors />)
 
-    expect(await screen.findByText('美联储降息周期')).toBeInTheDocument()
+    expect(await screen.findByText('看涨因子暂不可用')).toBeInTheDocument()
+    expect(screen.queryByText('美联储降息周期')).not.toBeInTheDocument()
   })
 
   // ------------------------------------------------------------------ #

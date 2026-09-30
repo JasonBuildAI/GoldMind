@@ -5,68 +5,10 @@ import { TrendingUp, TrendingDown, Minus, Target, Calendar, Brain, Sparkles, Bot
 import { institutionApi, type InstitutionPrediction } from '../services/api';
 
 // 默认机构预测（当API不可用时使用）
-const defaultInstitutions: InstitutionPrediction[] = [
-  {
-    name: '高盛 (Goldman Sachs)',
-    logo: 'GS',
-    rating: 'bullish',
-    target_price: 5400,
-    timeframe: '2026年底',
-    reasoning: '坚定看涨，将目标价从4900美元上调至5400美元',
-    key_points: [
-      '私人投资者与央行需求持续增长',
-      '结构性买盘（央行、ETF）提供坚实支撑',
-      '预计2026年央行月均购金70吨',
-      '美联储降息周期将推动金价上行'
-    ]
-  },
-  {
-    name: '瑞银 (UBS)',
-    logo: 'UBS',
-    rating: 'bullish',
-    target_price: 5000,
-    timeframe: '2026年9月',
-    reasoning: '预计上半年触及5000美元，长期看好',
-    key_points: [
-      '去美元化需求支撑长期金价',
-      '地缘政治不确定性持续',
-      '上半年或触及5000美元关口',
-      '美联储降息趋缓后可能小幅回落'
-    ]
-  },
-  {
-    name: '摩根士丹利 (Morgan Stanley)',
-    logo: 'MS',
-    rating: 'neutral',
-    target_price: 4500,
-    timeframe: '2026年中',
-    reasoning: '预计降息推迟至年中，短期震荡',
-    key_points: [
-      '美国强劲消费推迟降息时点',
-      '预计6月和9月降息',
-      '关税传导效应支撑通胀',
-      '上半年美元可能维持强势'
-    ]
-  },
-  {
-    name: '花旗 (Citi)',
-    logo: 'C',
-    rating: 'bearish',
-    target_price: 2700,
-    timeframe: '长期展望',
-    reasoning: '若美国经济回到"金发女孩"状态，金价可能回落',
-    key_points: [
-      '2026年美国经济或回归适中成长',
-      '避险需求将随之减弱',
-      '基准预测与牛市观点相反',
-      '短期曾上调目标至4000美元'
-    ]
-  }
-];
-
 export default function InstitutionalViews() {
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
-  const [institutions, setInstitutions] = useState<InstitutionPrediction[]>(defaultInstitutions);
+  // 初始为空：没有真实数据时宁可什么都不显示，也不摆编造的机构目标价。
+  const [institutions, setInstitutions] = useState<InstitutionPrediction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
@@ -95,12 +37,11 @@ export default function InstitutionalViews() {
       console.error('获取机构预测失败:', err);
       // 判断是否是超时错误
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        setError('AI分析耗时较长，已显示默认数据。请稍后重试刷新。');
+        setError('AI 分析耗时较长，请稍后重试刷新。');
       } else {
-        setError('获取最新分析失败，显示默认数据');
+        setError('获取最新分析失败。');
       }
-      // 使用默认数据
-      setInstitutions(defaultInstitutions);
+      // 不填充任何编造的机构目标价：保持为空，由下面的空状态如实说明。
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -178,6 +119,27 @@ export default function InstitutionalViews() {
       .map(i => i.name.split(' ')[0])
       .join('、');
   };
+
+  // 没有数据时明确说「不可用」。机构目标价是最不能编的东西 ——
+  // 产品方向第四节明确写了「不得凭模型印象编造机构目标价」。
+  if (!loading && institutions.length === 0) {
+    return (
+      <section className="py-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="card-glass rounded-2xl p-12 text-center">
+            <p className="text-gray-300 font-medium mb-2">机构观点暂不可用</p>
+            <p className="text-gray-500 text-sm max-w-xl mx-auto">
+              没能取到机构观点。这里不显示任何目标价 ——
+              编造机构目标价比留空更糟。
+            </p>
+            {error && (
+              <p className="text-amber-400 text-sm mt-4">{error}</p>
+            )}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   if (loading) {
     return (
