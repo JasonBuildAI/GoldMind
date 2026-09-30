@@ -95,6 +95,49 @@ CREATE TABLE IF NOT EXISTS predictions (
     timeframe VARCHAR(50),
     reasoning TEXT,
     factors JSON,
+    -- 量化引擎列（services/quant）。全部可空：老库由 scripts/migrate_quant.py 补齐，
+    -- 不重建表、不动既有数据。
+    direction VARCHAR(20),
+    horizon_days INT,
+    as_of DATE,
+    base_price DECIMAL(10, 2),
+    score DECIMAL(10, 4),
+    expected_return DECIMAL(10, 6),
+    uncertainty DECIMAL(10, 6),
+    model_version VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 量化因子观测：一行 = 一个因子在一个交易日的原始值。
+-- 唯一约束保证重复抓取是幂等的（写入走 upsert）。
+CREATE TABLE IF NOT EXISTS factor_observations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    factor_key VARCHAR(64) NOT NULL,
+    obs_date DATE NOT NULL,
+    value DOUBLE NOT NULL,
+    source VARCHAR(120),
+    meta JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_factor_observation (factor_key, obs_date),
+    INDEX ix_factor_observations_factor_key (factor_key),
+    INDEX ix_factor_observations_obs_date (obs_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 走查式回测结果：每次评估追加一行，形成准确率的时间序列。
+CREATE TABLE IF NOT EXISTS model_evaluations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    model_version VARCHAR(50) NOT NULL,
+    horizon_days INT NOT NULL,
+    evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    window_start DATE,
+    window_end DATE,
+    sample_size INT,
+    accuracy DOUBLE,
+    baseline_up_accuracy DOUBLE,
+    baseline_momentum_accuracy DOUBLE,
+    brier_score DOUBLE,
+    metrics JSON,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
