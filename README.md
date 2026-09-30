@@ -496,6 +496,15 @@ python scripts/smoke_mimo.py
 - **测试报 `no such table`** —— 测试用的是内存 SQLite，正常不该出现；
   若出现，检查是否绕过了 `backend/tests/conftest.py` 的夹具。
 
+- **`git push` 报 `schannel: failed to receive handshake, SSL/TLS connection failed`**
+  —— Windows 上 git 默认用系统的 schannel 做 TLS，某些网络环境（尤其是走了本地
+  代理时）握手会失败，而 `curl` 访问同一地址却是通的。换成 OpenSSL 后端即可：
+
+  ```bash
+  git -c http.sslBackend=openssl push origin main
+  # 想长期生效：git config --global http.sslBackend openssl
+  ```
+
 ---
 
 ## 🗺️ 文档地图
