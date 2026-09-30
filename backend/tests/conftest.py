@@ -109,22 +109,53 @@ def fake_llm(monkeypatch: pytest.MonkeyPatch) -> FakeLLM:
 # --------------------------------------------------------------------------- #
 @pytest.fixture(autouse=True)
 def _block_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    """兜底：任何真实出网连接直接失败。
+    """兜底：任何**对外**连接直接失败；本机地址放行。
 
-    必须同时 patch 两处，只拦一处是无效的：
+    只 patch `socket.create_connection` 与 urllib3 是**不够的**。
+    实测（用能解析的地址验证，避免 DNS 失败掩盖问题）：
 
-    - ``socket.create_connection`` —— httpx / httpcore 走这里；
-    - ``urllib3.util.connection.create_connection`` —— requests 走这里。
-      urllib3 在导入时就把该函数绑定进了自己的模块命名空间，
-      所以仅 patch ``socket`` 拦不住 requests（曾因此让测试打到真实行情接口）。
+        requests（urllib3 路径）      -> 被拦住
+        异步 httpx（anyio 路径）      -> **没被拦**
+
+    异步客户端走 `loop.create_connection` → `sock.connect()`，不经过
+    `create_connection`。也就是说异步 HTTP 客户端的测试会**真的打到外网**，
+    而红线第 4 条要求测试不得访问真实外部服务。
+
+    拦截点选 `socket.getaddrinfo`：**任何按域名发起的连接都要先解析**，
+    所以它覆盖同步与异步两条路径，而且不像 patch `socket.socket.connect`
+    那样会弄坏 asyncio 在 Windows 上的 Proactor 事件循环
+    （实测：patch `connect` 后 asyncio 会报
+    `'ProactorEventLoop' object has no attribute '_ssock'`）。
+
+    **本机地址必须放行** —— 测试要连本机 MySQL（`localhost:3306`）。
     """
     import socket
+
+    _ALLOWED_HOSTS = {"127.0.0.1", "::1", "localhost", "", None}
 
     def _blocked(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError(
             "测试禁止真实网络访问：请 mock 掉发起该请求的服务方法"
         )
 
+    # 1) DNS：解析非本机域名即视为出网
+    _real_getaddrinfo = socket.getaddrinfo
+
+    def _guarded_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
+        # host 可能是 bytes（异步客户端就这么传，实测是 b'example.com'）——
+        # 不归一化的话，本机白名单会因为类型不同而失效。
+        if isinstance(host, bytes):
+            try:
+                host = host.decode("ascii")
+            except UnicodeDecodeError:
+                _blocked()
+        if host not in _ALLOWED_HOSTS:
+            _blocked()
+        return _real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", _guarded_getaddrinfo)
+
+    # 2) 两个高层入口：给出更直白的报错，并挡住直接给 IP 的调用
     monkeypatch.setattr(socket, "create_connection", _blocked)
 
     try:
