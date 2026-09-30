@@ -123,19 +123,17 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
             const lastIndex = correlation.length - 1;
 
             if (correlation[lastIndex].date === today) {
-              // 更新今天的数据
+              // 只有当最后一点确实是「今天」时，才用实时值更新它
               correlation[lastIndex] = {
                 ...correlation[lastIndex],
                 dollar_index: dollarRealtime.price
               };
-            } else {
-              // 添加今天的实时数据
-              correlation.push({
-                date: today,
-                gold_price: correlation[lastIndex].gold_price, // 保持金价不变
-                dollar_index: dollarRealtime.price
-              });
             }
+            // 否则不追加数据点。
+            // 原实现会 push 一个日期为「今天」、金价却取自上一个历史交易日的点，
+            // 等于在相关性图上凭空造出一个假数据点（旧金价配新美元指数），
+            // 会误导对金价/美元负相关关系的判断。实时美元指数已由
+            // dollarRealtime 单独暴露，不需要伪造历史序列。
           }
         } catch (dollarErr) {
           console.warn('获取实时美元指数失败，使用历史数据:', dollarErr);
@@ -183,27 +181,16 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
         const lastIndex = prevData.length - 1;
         const newData = [...prevData];
 
-        console.log(`[GoldDataContext] 更新前最后一个数据:`, newData[lastIndex]);
-        console.log(`[GoldDataContext] 今天日期: ${today}, 最后数据日期: ${newData[lastIndex].date}`);
-
         if (newData[lastIndex].date === today) {
-          // 更新今天的数据
+          // 只有当最后一点确实是「今天」时，才用实时值更新它
           newData[lastIndex] = {
             ...newData[lastIndex],
             dollar_index: dollarData.price
           };
-          console.log(`[GoldDataContext] 更新今天的美元指数为: ${dollarData.price}`);
-        } else {
-          // 添加今天的实时数据
-          newData.push({
-            date: today,
-            gold_price: newData[lastIndex].gold_price,
-            dollar_index: dollarData.price
-          });
-          console.log(`[GoldDataContext] 添加今天的美元指数数据: ${dollarData.price}`);
         }
+        // 否则不追加数据点，理由同 refreshCharts：
+        // 不要为「今天」伪造一个带着旧金价的数据点。
 
-        console.log(`[GoldDataContext] 更新后最后一个数据:`, newData[newData.length - 1]);
         return newData;
       });
 

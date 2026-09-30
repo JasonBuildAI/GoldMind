@@ -23,9 +23,18 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const config = error.config;
-    
+
+    // 没有 config 就无法重试（例如请求还没构造完成就失败了）。
+    // 原实现会继续往下执行 `config.retry = 0`，抛
+    // "TypeError: Cannot set properties of undefined"，把原始错误吞掉，
+    // 调用方看到的是一个与被调接口毫无关系的错误。
+    if (!config) {
+      console.error('API Error:', error.message);
+      return Promise.reject(error);
+    }
+
     // 如果没有重试配置，初始化
-    if (!config || !config.retry) {
+    if (!config.retry) {
       config.retry = 0;
     }
     
