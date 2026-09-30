@@ -101,8 +101,12 @@ def fake_llm(monkeypatch: pytest.MonkeyPatch) -> FakeLLM:
 def _block_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """兜底：任何真实出网连接直接失败。
 
-    只拦 `socket.create_connection`（requests / urllib3 / httpx 都走它），
-    不碰 socket 的其他方法，避免影响 TestClient 的内存传输。
+    必须同时 patch 两处，只拦一处是无效的：
+
+    - ``socket.create_connection`` —— httpx / httpcore 走这里；
+    - ``urllib3.util.connection.create_connection`` —— requests 走这里。
+      urllib3 在导入时就把该函数绑定进了自己的模块命名空间，
+      所以仅 patch ``socket`` 拦不住 requests（曾因此让测试打到真实行情接口）。
     """
     import socket
 
@@ -112,6 +116,13 @@ def _block_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(socket, "create_connection", _blocked)
+
+    try:
+        import urllib3.util.connection as urllib3_connection
+
+        monkeypatch.setattr(urllib3_connection, "create_connection", _blocked)
+    except ImportError:  # urllib3 不在时无需处理
+        pass
 
 
 # --------------------------------------------------------------------------- #

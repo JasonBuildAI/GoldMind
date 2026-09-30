@@ -388,8 +388,9 @@ pip install -r requirements.txt -r requirements-dev.txt
 python -m pytest
 
 # 只跑某一层
-python -m pytest tests/unit
-python -m pytest tests/integration
+python -m pytest tests/unit          # 单元：不依赖数据库与网络
+python -m pytest tests/integration   # 集成：内存 SQLite + 假 LLM
+python -m pytest tests/e2e           # 端到端：按真实使用顺序串起整条链路
 
 # 静态检查：全量语法
 python -m compileall -q app
@@ -408,6 +409,9 @@ npm run build
 
 # 静态检查
 npm run lint
+
+# 单元 + 集成测试（vitest + Testing Library）
+npm test
 
 # 本地开发
 npm run dev
