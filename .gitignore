@@ -48,6 +48,8 @@ backend/scripts/smoke_mimo_result.json
 
 # Cache
 .cache/
+# 运行时生成的文件缓存（不入库：既是生成物，也会随时间过时）
+backend/cache/
 *.cache
 
 # Test coverage

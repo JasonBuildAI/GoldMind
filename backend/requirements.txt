@@ -9,8 +9,6 @@ pymysql>=1.1.0
 
 # LangChain and LLM
 langchain==1.2.0
-langchain-deepseek==1.0.1
-langchain-community==0.4.1
 langchain-core==1.2.7
 langchain-openai==1.1.6
 
