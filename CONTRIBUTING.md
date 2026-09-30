@@ -1,5 +1,7 @@
 # 贡献指南 | Contributing to GoldMind
 
+> 🌐 **中文** | [English](./CONTRIBUTING_EN.md)
+
 感谢您考虑为 GoldMind 做出贡献！
 
 ## 🎯 贡献方式

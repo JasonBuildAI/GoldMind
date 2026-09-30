@@ -1,5 +1,7 @@
 # GoldMind 架构
 
+> 🌐 **中文** | [English](./en/architecture.md)
+
 本文描述**当前实现**。产品要做什么见 [`00-产品方向.md`](./00-产品方向.md)，
 命令与配置见 [`../README.md`](../README.md)，接口规范见 [`API.md`](./API.md)。
 
