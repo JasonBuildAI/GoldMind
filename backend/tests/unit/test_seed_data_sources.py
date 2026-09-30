@@ -94,6 +94,66 @@ def test_sina_gold_returns_none_on_http_error(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# 实际发出的请求
+# --------------------------------------------------------------------------- #
+# 上面那些用例只 mock 了响应，不校验 URL 与参数。后果是：把 URL 或 secid 改成
+# 失效值，测试照样全绿。下面这些补上 —— 这几个值恰恰就是当初出错的地方。
+@pytest.mark.unit
+def test_sina_gold_requests_the_service_path(monkeypatch):
+    """回归：原实现漏了服务名，服务端直接回 "Invalid service name"。"""
+    seen: dict = {}
+
+    def capture_get(url, **kwargs):
+        seen["url"] = url
+        seen["params"] = kwargs.get("params")
+        return _FakeResponse(text=_sina_gold_body(SINA_ROWS))
+
+    monkeypatch.setattr(seed_data.requests, "get", capture_get)
+
+    seed_data.fetch_gold_from_sina()
+
+    assert "GlobalFuturesService.getGlobalFuturesDailyKLine" in seen["url"], (
+        "服务名必须在路径里，不能只传 query 参数"
+    )
+    assert "var%20_GC=" in seen["url"], "JSONP 变量名必须在路径里"
+    assert seen["params"] == {"symbol": "GC"}
+
+
+@pytest.mark.unit
+def test_eastmoney_gold_requests_the_working_secid(monkeypatch):
+    """回归：原实现用 113.AU0，服务端返回 data=null。"""
+    seen: dict = {}
+
+    def capture_get(url, **kwargs):
+        seen.update(kwargs.get("params") or {})
+        return _FakeResponse(payload=_eastmoney_payload(EM_KLINES))
+
+    monkeypatch.setattr(seed_data.requests, "get", capture_get)
+
+    seed_data.fetch_gold_from_eastmoney()
+
+    assert seen["secid"] == "101.GC00Y"
+
+
+@pytest.mark.unit
+def test_eastmoney_dollar_requests_the_working_secid(monkeypatch):
+    """回归：原实现用 100.DINIW，服务端返回 data=null。"""
+    seen: dict = {}
+
+    def capture_get(url, **kwargs):
+        seen.update(kwargs.get("params") or {})
+        return _FakeResponse(
+            payload=_eastmoney_payload(["2025-01-01,108.48,108.45,108.49,108.42,0,0.00"])
+        )
+
+    monkeypatch.setattr(seed_data.requests, "get", capture_get)
+
+    seed_data.fetch_dollar_from_eastmoney()
+
+    assert seen["secid"] == "100.UDI"
+
+
+# --------------------------------------------------------------------------- #
 # 东方财富：klines 字段顺序
 # --------------------------------------------------------------------------- #
 def _eastmoney_payload(klines: list[str]) -> dict:

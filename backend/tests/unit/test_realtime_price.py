@@ -151,6 +151,64 @@ def test_malformed_hq_payload_is_rejected(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# 实际发出的请求
+# --------------------------------------------------------------------------- #
+# 上面那些用例只 mock 了响应，不校验请求参数。后果是：把 URL 或 secid 改成
+# 失效值，测试照样全绿 —— 变异测试实测确认过这一点。下面这些补上。
+@pytest.mark.unit
+def test_eastmoney_requests_the_working_secid(monkeypatch):
+    """回归：原实现用 103.XAUUSD，该代码返回 data=null。"""
+    seen: dict = {}
+
+    def capture_get(url, **kwargs):
+        seen["url"] = url
+        seen.update(kwargs.get("params") or {})
+        return _FakeResponse(payload=EASTMONEY_PAYLOAD)
+
+    monkeypatch.setattr(realtime_price.requests, "get", capture_get)
+
+    realtime_price.fetch_from_eastmoney()
+
+    assert seen["secid"] == "122.XAU", "secid 必须是可用的 122.XAU"
+    assert seen["url"] == "https://push2.eastmoney.com/api/qt/stock/get"
+
+
+@pytest.mark.unit
+def test_tencent_and_sina_request_the_expected_urls(monkeypatch):
+    urls: list[str] = []
+
+    def capture_get(url, **kwargs):
+        urls.append(url)
+        if "gtimg" in url:
+            return _FakeResponse(text=TENCENT_BODY)
+        return _FakeResponse(text=SINA_BODY)
+
+    monkeypatch.setattr(realtime_price.requests, "get", capture_get)
+
+    realtime_price.fetch_from_tencent()
+    realtime_price.fetch_from_sina()
+
+    assert urls[0] == "https://qt.gtimg.cn/q=hf_GC"
+    assert urls[1] == "https://hq.sinajs.cn/list=hf_GC"
+
+
+@pytest.mark.unit
+def test_sina_sends_the_referer_it_requires(monkeypatch):
+    """新浪这个接口缺 Referer 会被拒。"""
+    seen: dict = {}
+
+    def capture_get(url, **kwargs):
+        seen["headers"] = kwargs.get("headers") or {}
+        return _FakeResponse(text=SINA_BODY)
+
+    monkeypatch.setattr(realtime_price.requests, "get", capture_get)
+
+    realtime_price.fetch_from_sina()
+
+    assert "Referer" in seen["headers"]
+
+
+# --------------------------------------------------------------------------- #
 # 多源编排
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit
