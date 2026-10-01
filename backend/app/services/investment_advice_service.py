@@ -5,14 +5,18 @@ from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
-from app.services.news_service import format_news_for_prompt
+from app.services.news_service import NEWS_PROMPT_LIMIT, format_news_for_prompt
 from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.gold_price import GoldPrice
 from app.config import settings
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
-from app.services.llm_provider import get_chat_llm
+from app.services.llm_provider import (
+    describe_completion,
+    get_chat_llm,
+    retry_on_content_filter,
+)
 import json
 import logging
 from loguru import logger
@@ -33,7 +37,7 @@ class InvestmentAdviceAnalyzer:
     def llm(self):
         """延迟创建 LLM 实例（供应商由 llm_provider 工厂统一决定）"""
         if self._llm is None:
-            self._llm = get_chat_llm(temperature=0.7, max_tokens=4096)
+            self._llm = get_chat_llm(temperature=0.7)
         return self._llm
 
     def _fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
@@ -105,7 +109,7 @@ class InvestmentAdviceAnalyzer:
         统一走 `news_service.format_news_for_prompt` —— 这里原先自己拼一份，
         用的是 `created_at`（入库时刻）而不是 `published_at`（发布时刻）。
         """
-        return format_news_for_prompt(news_list, limit=10)
+        return format_news_for_prompt(news_list, limit=NEWS_PROMPT_LIMIT)
 
     def _format_prices(self, prices: List[GoldPrice]) -> str:
         """格式化价格数据"""
@@ -289,7 +293,7 @@ class InvestmentAdviceAnalyzer:
 4. 必须明确止损和止盈设置
 5. 风险提示要充分且具体"""
             
-            response = self.llm.invoke(prompt_template)
+            response = retry_on_content_filter(self.llm, prompt_template)
             
             try:
                 content = response.content
@@ -304,7 +308,7 @@ class InvestmentAdviceAnalyzer:
                 return result
                 
             except json.JSONDecodeError as e:
-                logger.error(f"JSON解析错误: {e}")
+                logger.error(f"JSON解析错误: {e}（{describe_completion(response)}）")
                 return self.get_default_advice()
                 
         except Exception as e:
@@ -348,7 +352,7 @@ class InvestmentAdviceService:
         优化策略：
         1. 优先从文件缓存读取（<10ms）
         2. 无缓存时返回默认数据并触发后台分析
-        3. use_cache=False时直接执行 MiMo 分析
+        3. use_cache=False时直接执行实时 LLM 分析
 
         Args:
             market_status: 市场状态
@@ -360,9 +364,9 @@ class InvestmentAdviceService:
         Returns:
             投资建议分析结果
         """
-        # 如果强制刷新，直接执行 MiMo 分析
+        # 如果强制刷新，直接执行实时 LLM 分析
         if not use_cache:
-            logger.info("[InvestmentAdvice] 强制刷新，执行 MiMo 实时分析...")
+            logger.info("[InvestmentAdvice] 强制刷新，执行实时 LLM 分析...")
             try:
                 result = self.analyzer.analyze(
                     self.db,
@@ -374,14 +378,14 @@ class InvestmentAdviceService:
                 self.cache.set(result)
                 result["metadata"] = {
                     "cached": False,
-                    "cache_source": "mimo_realtime",
+                    "cache_source": "llm_realtime",
                     "generated_at": timeutil.now_iso(),
                     "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
-                    "analysis_method": "MiMo LLM 实时分析"
+                    "analysis_method": "LLM 实时分析"
                 }
                 return result
             except Exception as e:
-                logger.error(f"[InvestmentAdvice] MiMo 分析失败: {e}")
+                logger.error(f"[InvestmentAdvice] 实时分析失败: {e}")
                 # 如果分析失败，返回缓存数据
                 pass
         
@@ -393,7 +397,7 @@ class InvestmentAdviceService:
                 "cache_source": "file",
                 "generated_at": timeutil.now_iso(),
                 "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
-                "analysis_method": "MiMo LLM 综合分析"
+                "analysis_method": "LLM 综合分析"
             }
             return cached_data
 
@@ -413,7 +417,7 @@ class InvestmentAdviceService:
             "status": "analyzing",
             "message": "AI分析进行中，首次加载可能需要1-2分钟",
             "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
-            "analysis_method": "MiMo LLM 综合分析",
+            "analysis_method": "LLM 综合分析",
         }
         
         # 触发后台分析

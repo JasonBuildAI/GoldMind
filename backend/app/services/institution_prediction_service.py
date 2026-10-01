@@ -39,7 +39,11 @@ from app.config import settings
 from app.models.analysis import InstitutionView
 from app.models.news import GoldNews
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
-from app.services.llm_provider import get_chat_llm
+from app.services.llm_provider import (
+    describe_completion,
+    get_chat_llm,
+    retry_on_content_filter,
+)
 from app.services.news_service import format_news_for_prompt
 from app.services.single_flight import single_flight
 from app.services.web_search_service import get_web_search_service
@@ -318,7 +322,7 @@ class InstitutionPredictionAnalyzer:
     def llm(self):
         """延迟创建 LLM 实例（供应商由 llm_provider 工厂统一决定）"""
         if self._llm is None:
-            self._llm = get_chat_llm(temperature=0.7, max_tokens=4096)
+            self._llm = get_chat_llm(temperature=0.7)
         return self._llm
 
     @property
@@ -407,10 +411,10 @@ class InstitutionPredictionAnalyzer:
         return all_news
 
     def analyze(self, db: Session) -> Dict[str, Any]:
-        """执行分析 - 使用 MiMo 联网搜索（不可用时回退新闻窗口）"""
-        # 使用MiMo 联网搜索获取最新机构预测
+        """执行分析 - 尝试联网搜索，不可用时回退新闻窗口"""
+        # 联网搜索获取最新机构预测（默认关闭，见 LLM_SEARCH_ENABLED）
         try:
-            logger.info("[InstitutionPrediction] 使用 MiMo 联网搜索机构预测...")
+            logger.info("[InstitutionPrediction] 尝试联网搜索机构预测...")
             search_result = self.web_search_service.search_institution_predictions()
 
             # 必须同时确认搜索真的可用，否则「搜到空结果」与「搜索不可用」
@@ -424,7 +428,7 @@ class InstitutionPredictionAnalyzer:
                 logger.warning("[InstitutionPrediction] 搜索结果为空，使用备用方案")
 
         except Exception as e:
-            logger.error(f"[InstitutionPrediction] MiMo 搜索失败: {e}")
+            logger.error(f"[InstitutionPrediction] 联网搜索失败: {e}")
 
         # 备用方案：使用传统方式分析
         return self._analyze_with_traditional_llm(db)
@@ -445,7 +449,7 @@ class InstitutionPredictionAnalyzer:
             # 数据库没有新闻，尝试从网络获取
             web_news = self.fetch_news_from_web()
             if web_news:
-                news_content = format_news_for_prompt(web_news, limit=15)
+                news_content = format_news_for_prompt(web_news)
             else:
                 # 没有任何新闻可依据 —— 不调 LLM，直接返回空（红线第 1 条）
                 logger.warning(
@@ -462,7 +466,7 @@ class InstitutionPredictionAnalyzer:
         )
 
         try:
-            response = self.llm.invoke(prompt)
+            response = retry_on_content_filter(self.llm, prompt)
 
             # 解析JSON响应
             try:
@@ -476,8 +480,16 @@ class InstitutionPredictionAnalyzer:
                     try:
                         result = json.loads(content[start:end])
                     except Exception:
+                        logger.error(
+                            "[InstitutionPrediction] JSON 解析失败"
+                            f"（{describe_completion(response)}）"
+                        )
                         result = self.get_default_predictions()
                 else:
+                    logger.error(
+                        "[InstitutionPrediction] 输出里没有 JSON"
+                        f"（{describe_completion(response)}）"
+                    )
                     result = self.get_default_predictions()
 
             if isinstance(result, dict):

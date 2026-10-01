@@ -1,4 +1,4 @@
-"""看空因子分析服务 - 优化版（支持MiMo 联网搜索）"""
+"""看空因子分析服务 - 优化版（联网搜索可选，默认走数据库 / RSS）"""
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -16,7 +16,11 @@ from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
-from app.services.llm_provider import get_chat_llm
+from app.services.llm_provider import (
+    describe_completion,
+    get_chat_llm,
+    retry_on_content_filter,
+)
 from app.services.web_search_service import get_web_search_service
 import json
 from loguru import logger
@@ -31,7 +35,7 @@ _cache_ttl = AI_ANALYSIS_CACHE_TTL
 
 
 class BearishFactorAnalyzer:
-    """使用MiMo 联网搜索分析黄金市场看空因子"""
+    """使用联网搜索分析黄金市场看空因子（不可用时回退数据库 / RSS）"""
 
     def __init__(self):
         self._llm = None
@@ -123,7 +127,7 @@ class BearishFactorAnalyzer:
     def llm(self):
         """延迟创建 LLM 实例（供应商由 llm_provider 工厂统一决定）"""
         if self._llm is None:
-            self._llm = get_chat_llm(temperature=0.7, max_tokens=4096)
+            self._llm = get_chat_llm(temperature=0.7)
         return self._llm
 
     def fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
@@ -202,29 +206,29 @@ class BearishFactorAnalyzer:
         return None
 
     def analyze(self, db: Session) -> Dict[str, Any]:
-        """执行分析 - 使用MiMo 联网搜索"""
-        # 使用MiMo 联网搜索获取最新看空因素
+        """执行分析 - 尝试联网搜索，不可用时回退数据库 / RSS"""
+        # 联网搜索获取最新看空因素（默认关闭，见 LLM_SEARCH_ENABLED）
         try:
-            logger.info("[BearishFactor] 使用MiMo 联网搜索看空因素...")
+            logger.info("[BearishFactor] 尝试联网搜索看空因素...")
             search_result = self._search_bearish_factors()
             
             # 检查搜索结果是否有效
             if search_result.get("bearish_factors") and len(search_result["bearish_factors"]) > 0:
                 logger.info(f"[BearishFactor] 成功获取 {len(search_result['bearish_factors'])} 个看空因素")
                 search_result["last_updated"] = timeutil.now_str()
-                search_result["data_source"] = "MiMo 联网搜索"
+                search_result["data_source"] = "联网搜索"
                 return search_result
             else:
                 logger.warning("[BearishFactor] 搜索结果为空，使用备用方案")
                 
         except Exception as e:
-            logger.error(f"[BearishFactor] MiMo 搜索失败: {e}")
+            logger.error(f"[BearishFactor] 联网搜索失败: {e}")
         
         # 备用方案：使用传统方式分析
         return self._analyze_with_traditional_llm(db)
     
     def _search_bearish_factors(self) -> Dict[str, Any]:
-        """使用 MiMo 搜索看空因素"""
+        """使用联网搜索查找看空因素"""
         prompt = """请搜索并分析当前黄金市场的看空因素。
 
 请搜索最新的黄金市场新闻和分析报告，识别出5个最重要的看空因子：
@@ -285,7 +289,7 @@ class BearishFactorAnalyzer:
         if not news:
             web_news = self.fetch_news_from_web()
             if web_news:
-                news_content = format_news_for_prompt(web_news, limit=15)
+                news_content = format_news_for_prompt(web_news)
             else:
                 # **一点新闻都没有 —— 不调 LLM。**
                 #
@@ -301,7 +305,7 @@ class BearishFactorAnalyzer:
                 )
                 return self._get_default_factors()
         else:
-            news_content = format_news_for_prompt(news, limit=15)
+            news_content = format_news_for_prompt(news)
 
         # 2. 获取当前金价数据
         gold_data = self.get_current_gold_data(db)
@@ -320,7 +324,7 @@ class BearishFactorAnalyzer:
 
         # 4. 调用LLM
         try:
-            response = self.llm.invoke(prompt)
+            response = retry_on_content_filter(self.llm, prompt)
 
             # 5. 解析JSON响应
             try:
@@ -334,8 +338,16 @@ class BearishFactorAnalyzer:
                     try:
                         result = json.loads(content[start:end])
                     except:
+                        logger.error(
+                            "[BearishFactor] JSON 解析失败"
+                            f"（{describe_completion(response)}）"
+                        )
                         result = self._get_default_factors()
                 else:
+                    logger.error(
+                        "[BearishFactor] 输出里没有 JSON"
+                        f"（{describe_completion(response)}）"
+                    )
                     result = self._get_default_factors()
 
             return result
@@ -460,7 +472,7 @@ class BearishFactorService:
                     "cached": False,
                     "cache_source": "realtime_search",
                     "generated_at": timeutil.now_iso(),
-                    "message": "基于MiMo 联网搜索的最新数据"
+                    "message": "基于联网搜索的最新数据"
                 }
                 return result
             except Exception as e:

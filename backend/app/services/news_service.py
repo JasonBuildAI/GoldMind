@@ -23,6 +23,14 @@ DEFAULT_RSS_SOURCES = (
     "WSJ Markets|https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
 )
 
+# 拼进分析 prompt 的新闻条数上限（所有分析服务的统一口径）。
+#
+# 取最近 10 条：既覆盖 24h 窗口里最重要的事件，又控制 prompt 体积。
+# 15 条时端点会对看跌这类请求返回 `finish_reason=content_filter`
+# （正文固定为 "The request was rejected because it was considered high risk"），
+# 10 条实测可通过 —— 语料里的冲突类内容越多，越容易触发。
+NEWS_PROMPT_LIMIT = 10
+
 
 def to_local_naive(parsed) -> Optional[datetime]:
     """把 feedparser 的时间结构转成**部署时区的本地 naive 时间**。
@@ -48,7 +56,7 @@ def to_local_naive(parsed) -> Optional[datetime]:
     return timeutil.from_utc_naive(as_utc)
 
 
-def format_news_for_prompt(news_list, limit: int = 15) -> str:
+def format_news_for_prompt(news_list, limit: int = NEWS_PROMPT_LIMIT) -> str:
     """把新闻列表拼成 prompt 里的一段。**所有分析服务的统一入口。**
 
     原先五个服务各写一份，其中 `investment_advice_service` 用的是

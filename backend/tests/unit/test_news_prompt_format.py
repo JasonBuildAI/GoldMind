@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from app.models.news import GoldNews
-from app.services.news_service import format_news_for_prompt
+from app.services.news_service import NEWS_PROMPT_LIMIT, format_news_for_prompt
 from app.utils import timeutil
 
 
@@ -29,6 +29,25 @@ def _news(**kwargs) -> GoldNews:
     }
     base.update(kwargs)
     return GoldNews(**base)
+
+
+@pytest.mark.unit
+def test_default_limit_is_the_shared_constant():
+    """默认条数只有一个真源：NEWS_PROMPT_LIMIT。
+
+    这个值不是随手定的：15 条新闻的看跌请求实测会被端点以
+    `finish_reason=content_filter` 拒绝（正文 "The request was rejected
+    because it was considered high risk"），10 条通过 —— 语料里的冲突类
+    内容越多越容易触发。条数飘回 15 就等于把这个回归放回去。
+    """
+    items = [
+        _news(title=f"第{i}条新闻", published_at=timeutil.now_naive())
+        for i in range(NEWS_PROMPT_LIMIT + 5)
+    ]
+
+    text = format_news_for_prompt(items)
+
+    assert text.count("- [") == NEWS_PROMPT_LIMIT
 
 
 # --------------------------------------------------------------------------- #

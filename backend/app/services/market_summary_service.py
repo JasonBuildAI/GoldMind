@@ -1,4 +1,4 @@
-"""黄金市场综合分析服务 - 使用 MiMo 进行全方位市场总结"""
+"""黄金市场综合分析服务 - 使用 LLM 进行全方位市场总结"""
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy.orm import Session
@@ -7,12 +7,16 @@ import asyncio
 import json
 import logging
 
-from app.services.news_service import format_news_for_prompt
+from app.services.news_service import NEWS_PROMPT_LIMIT, format_news_for_prompt
 from app.utils import timeutil
 from app.config import settings
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
-from app.services.llm_provider import get_chat_llm
+from app.services.llm_provider import (
+    describe_completion,
+    get_chat_llm,
+    retry_on_content_filter,
+)
 from loguru import logger
 
 logger = logging.getLogger(__name__)
@@ -21,7 +25,7 @@ logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=2)
 
 class MarketSummaryAnalyzer:
-    """使用 MiMo 分析所有市场数据，生成综合市场总结"""
+    """使用 LLM 分析所有市场数据，生成综合市场总结"""
 
     def __init__(self):
         self._llm = None
@@ -30,7 +34,7 @@ class MarketSummaryAnalyzer:
     def llm(self):
         """延迟创建 LLM 实例（供应商由 llm_provider 工厂统一决定）"""
         if self._llm is None:
-            self._llm = get_chat_llm(temperature=0.7, max_tokens=4096)
+            self._llm = get_chat_llm(temperature=0.7)
         return self._llm
 
     def analyze(
@@ -66,16 +70,16 @@ class MarketSummaryAnalyzer:
         )
 
         try:
-            # 调用 MiMo 进行分析
-            response = self.llm.invoke(prompt)
+            # 调用 LLM 进行分析
+            response = retry_on_content_filter(self.llm, prompt)
             analysis_text = response.content
 
             # 解析分析结果
-            result = self._parse_analysis_result(analysis_text)
+            result = self._parse_analysis_result(analysis_text, response)
             return result
 
         except Exception as e:
-            logger.error(f"MiMo 分析失败: {e}")
+            logger.error(f"LLM 分析失败: {e}")
             # 返回默认结构
             return self._get_default_analysis()
 
@@ -114,7 +118,11 @@ class MarketSummaryAnalyzer:
         # 原实现打的是 `news.get('sentiment')`，而入库时 sentiment 一律是
         # NEUTRAL（见 news_service.save_news）—— 把恒定值喂给模型只是噪音，
         # 还容易让它以为做过情感分析。换成发布时间，那才是有信息量的字段。
-        news_text = format_news_for_prompt(recent_news, limit=10) if recent_news else "暂无数据"
+        news_text = (
+            format_news_for_prompt(recent_news, limit=NEWS_PROMPT_LIMIT)
+            if recent_news
+            else "暂无数据"
+        )
 
         prompt = f"""你是一位资深的黄金市场分析师，拥有20年以上的贵金属市场研究经验。
 
@@ -190,8 +198,10 @@ class MarketSummaryAnalyzer:
 
         return prompt
 
-    def _parse_analysis_result(self, analysis_text: str) -> Dict[str, Any]:
-        """解析 MiMo 返回的分析结果"""
+    def _parse_analysis_result(
+        self, analysis_text: str, response: Any = None
+    ) -> Dict[str, Any]:
+        """解析 LLM 返回的分析结果（response 仅用于失败时记录 finish_reason）"""
         try:
             # 提取JSON部分
             json_start = analysis_text.find('{')
@@ -205,10 +215,10 @@ class MarketSummaryAnalyzer:
                 raise ValueError("未找到JSON内容")
 
         except json.JSONDecodeError as e:
-            logger.error(f"JSON解析错误: {e}")
+            logger.error(f"JSON解析错误: {e}（{describe_completion(response)}）")
             return self._get_default_analysis()
         except Exception as e:
-            logger.error(f"解析分析结果失败: {e}")
+            logger.error(f"解析分析结果失败: {e}（{describe_completion(response)}）")
             return self._get_default_analysis()
 
     def _get_default_analysis(self) -> Dict[str, Any]:
@@ -278,9 +288,9 @@ class MarketSummaryService:
         # 获取实时金价（用于覆盖结果中的价格）
         realtime_price = self._get_realtime_price()
 
-        # 如果强制刷新，直接执行 MiMo 分析
+        # 如果强制刷新，直接执行实时 LLM 分析
         if not use_cache:
-            logger.info("[MarketSummary] 强制刷新，执行 MiMo 实时分析...")
+            logger.info("[MarketSummary] 强制刷新，执行实时 LLM 分析...")
             try:
                 result = self.analyzer.analyze(
                     self.db,
@@ -295,14 +305,14 @@ class MarketSummaryService:
                 self.cache.set(result)
                 result["metadata"] = {
                     "cached": False,
-                    "cache_source": "mimo_realtime",
+                    "cache_source": "llm_realtime",
                     "generated_at": timeutil.now_iso(),
                     "data_sources": ["实时金价数据", "看涨因子", "看跌因子", "机构预测", "24小时新闻"],
-                    "analysis_method": "MiMo LLM 综合分析"
+                    "analysis_method": "LLM 综合分析"
                 }
                 return result
             except Exception as e:
-                logger.error(f"[MarketSummary] MiMo 分析失败: {e}")
+                logger.error(f"[MarketSummary] 实时分析失败: {e}")
                 pass
 
         # 1. 首先尝试文件缓存
@@ -315,7 +325,7 @@ class MarketSummaryService:
                 "cache_source": "file",
                 "generated_at": timeutil.now_iso(),
                 "data_sources": ["实时金价数据", "看涨因子", "看跌因子", "机构预测", "24小时新闻"],
-                "analysis_method": "MiMo LLM 综合分析"
+                "analysis_method": "LLM 综合分析"
             }
             return cached_data
 

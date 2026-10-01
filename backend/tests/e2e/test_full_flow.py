@@ -348,14 +348,18 @@ def test_get_without_cache_returns_no_content_and_a_status(client, seed_gold_pri
 
 @pytest.mark.e2e
 def test_llm_client_is_constructed_from_config_not_hardcoded(
-    client, seed_gold_prices, seed_news, smart_llm
+    client, seed_gold_prices, seed_news, smart_llm, monkeypatch
 ):
-    """LLM 必须以「配置里的端点与模型」构造，而不是任何遗留供应商的硬编码地址。
+    """LLM 必须以「配置里的端点 / 模型 / 输出预算」构造，不得写死。
 
     测试环境把 LLM_BASE_URL 指向 example.invalid，所以这里断言的是
     「取值来自 settings」——即工厂确实读配置；再显式排除旧供应商域名。
+    输出预算改成非默认值再断言，是为了让「有人又写死 4096」这类回归
+    立刻变红（只比对默认值的话，写死成同样的 8192 也能蒙混过关）。
     """
     from app.config import settings
+
+    monkeypatch.setattr(settings, "LLM_MAX_TOKENS", 12345)
 
     seed_gold_prices(days=5)
     seed_news(count=5)
@@ -365,6 +369,6 @@ def test_llm_client_is_constructed_from_config_not_hardcoded(
     assert smart_llm.last_kwargs["base_url"] == settings.LLM_BASE_URL
     assert smart_llm.last_kwargs["model"] == settings.LLM_MODEL
     assert smart_llm.last_kwargs["api_key"] == settings.LLM_API_KEY.get_secret_value()
-    assert smart_llm.last_kwargs["max_tokens"] == 4096
+    assert smart_llm.last_kwargs["max_tokens"] == 12345
     for stale in ("deepseek.com", "bigmodel.cn"):
         assert stale not in smart_llm.last_kwargs["base_url"]
