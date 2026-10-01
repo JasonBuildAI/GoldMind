@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -111,3 +111,27 @@ def test_yahoo_period_tracks_actual_history_span(db_session, monkeypatch):
     _put_year(db_session, BENCHMARK_KEY, 2016, count=250)
     sync._fetch_source("yahoo", db_session, today=TODAY, history_years=HISTORY_YEARS)
     assert captured["period"] == "3mo", "跨度已够，增量只取最近三个月"
+
+
+def test_start_date_backfills_when_history_is_short(db_session):
+    _put_year(db_session, "tga", 2026, count=100)
+
+    start = sync._start_date(db_session, "tga", TODAY, 20)
+
+    assert start == date(2006, 1, 1), "库里只有近期历史时必须从窗口起点回填"
+
+
+def test_start_date_is_incremental_when_history_covers_window(db_session):
+    for year in range(2016, 2027):
+        _put_year(db_session, "tga", year)
+
+    start = sync._start_date(db_session, "tga", TODAY, 10)
+
+    expected = storage.latest_date(db_session, "tga") - timedelta(days=sync.INCREMENTAL_LOOKBACK_DAYS)
+    assert start == expected
+
+
+def test_start_date_on_empty_database_returns_window_start(db_session):
+    start = sync._start_date(db_session, "tga", TODAY, 20)
+
+    assert start == date(2006, 1, 1)

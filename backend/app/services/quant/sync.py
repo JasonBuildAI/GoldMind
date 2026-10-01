@@ -84,11 +84,24 @@ def is_due(name: str, *, now_timestamp: Optional[float] = None) -> bool:
     return (now_timestamp - float(last)) >= SOURCE_MIN_INTERVALS.get(name, timedelta(0)).total_seconds()
 
 
+# 历史起点晚于窗口起点多少天以内仍算「窗口已铺到」：源本身就只从窗口附近开始
+# （例如逆回购 2013 年才有、TGA 日报 2005 年才有）时不每轮全量重抓。
+HISTORY_START_GRACE_DAYS = 30
+
+
 def _start_date(db: Session, key: str, today: date, history_years: int) -> date:
-    """增量抓取的起点：有历史就从最近一条往前几天，否则回填 N 年。"""
+    """增量抓取的起点：历史明显短于请求窗口就从窗口起点回填，否则只往前几天。
+
+    只看最近一条（原实现）会让「先上线、后加源」的历史缺口永远补不上：
+    库里的最早观测停在 2026 年，窗口起点却是 2006 年，每轮只抓最近 10 天。
+    """
+    window_start = date(today.year - history_years, 1, 1)
+    earliest = storage.earliest_date(db, key)
     latest = storage.latest_date(db, key)
-    if latest is None:
-        return date(today.year - history_years, 1, 1)
+    if earliest is None or latest is None:
+        return window_start
+    if (earliest - window_start).days > HISTORY_START_GRACE_DAYS:
+        return window_start
     return latest - timedelta(days=INCREMENTAL_LOOKBACK_DAYS)
 
 
