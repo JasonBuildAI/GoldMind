@@ -110,11 +110,12 @@ test.describe('GoldMind 看板端到端', () => {
     // 这不是文案偏好：那些词等于替系统编造能力，违反项目红线。
     await page.goto('/')
 
-    // 先把五个区块都填上内容再扫描 —— 空白页扫不出什么，
+    // 先把各区块都填上内容再扫描 —— 空白页扫不出什么，
     // 真正会漏的是「有数据之后」才渲染出来的那些行。
+    // 「重新抓取」在机构观点与量化预测各有一个，选择器必须限定区块（strict mode）。
     await page.getByTestId('bullish-factors').getByRole('button', { name: '重新分析' }).click()
     await page.getByTestId('bearish-factors').getByRole('button', { name: '重新分析' }).click()
-    await page.getByRole('button', { name: '重新抓取' }).click()
+    await page.locator('#institutions').getByRole('button', { name: '重新抓取' }).click()
     await page.locator('#strategy').getByRole('button', { name: '重新分析' }).click()
     await page.locator('#conclusion').getByRole('button', { name: '重新分析' }).click()
 
