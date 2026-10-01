@@ -16,10 +16,10 @@ This document describes the **current implementation**. What the product should 
 ## 1. Components
 
 ```
-┌──────────────┐   /api/**   ┌──────────────┐            ┌──────────────┐
-│  Browser     │ ──────────► │  FastAPI     │ ─────────► │  MySQL 8     │
-│  React 19    │             │  (uvicorn)   │            │  or SQLite   │
-└──────────────┘             └──────┬───────┘            └──────────────┘
+┌──────────────┐   /api/**   ┌──────────────┐            ┌────────────────┐
+│  Browser     │ ──────────► │  FastAPI     │ ─────────► │ SQLite(default)│
+│  React 19    │             │  (uvicorn)   │            │ or MySQL(opt.) │
+└──────────────┘             └──────┬───────┘            └────────────────┘
                                     │
                                     │ llm_provider (the only exit)
                                     ▼
@@ -63,7 +63,7 @@ GoldMind/
     ├── app/
     │   ├── main.py        application entry, rate limiting, CORS
     │   ├── config.py      every configuration item (pydantic-settings)
-    │   ├── database.py    engine and session (MySQL / SQLite dual support)
+    │   ├── database.py    engine and session (SQLite by default; MySQL optional)
     │   ├── models/        ORM definitions of the 6 tables
     │   ├── routers/       4 router modules
     │   ├── services/      business logic (see below)
@@ -80,7 +80,7 @@ GoldMind/
 LLM call and do not communicate with each other:
 
 ```
-MySQL(gold_news, gold_prices)
+SQLite(gold_news, gold_prices)
         │
         ▼
   assemble prompt ──► llm.invoke() ──► parse JSON ──► two-level cache ──► HTTP response
@@ -182,14 +182,16 @@ are **not committed** (`.gitignore` ignores them).
 > schemas once disagreed on the allowed values of enum columns, and MySQL compares ENUMs
 > case-insensitively, which produced "writes go in, reads do not come out".
 
-The engine supports both MySQL and SQLite: SQLite needs `check_same_thread=False`, and an in-memory
-database additionally needs `StaticPool`, otherwise every connection sees its own separate empty
-database.
+The engine uses SQLite by default (the single file `backend/goldmind.db`) and also supports MySQL:
+SQLite needs `check_same_thread=False`, and an in-memory database additionally needs `StaticPool`,
+otherwise every connection sees its own separate empty database. Under SQLite, `init_db.py` creates
+tables with the models' `create_all`; under MySQL it creates the database first and then runs
+`schema.sql`.
 
-> Tests run against in-memory SQLite by default, but production uses MySQL. The two differ in enum
-> storage, JSON columns and string case comparison, so `conftest.py` keeps a
-> `GOLDMIND_TEST_DATABASE_URL` switch that lets the same suite run against MySQL (point it at a
-> separate test database; the cases truncate every table).
+> Tests run against in-memory SQLite by default; to verify MySQL, use the
+> `GOLDMIND_TEST_DATABASE_URL` switch in `conftest.py` to run the same suite again (point it at a
+> separate test database; the cases truncate every table). The two differ in enum storage, JSON
+> columns and string case comparison.
 
 ---
 
@@ -200,7 +202,7 @@ variables. Commonly used items:
 
 | Variable | Default | Notes |
 |---|---|---|
-| `DATABASE_URL` | local MySQL | can also point at SQLite |
+| `DATABASE_URL` | `sqlite:///backend/goldmind.db` | a single-file SQLite database by default, zero install; can also point at MySQL (optional, not exercised in this repository) |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | — (you must fill these in) | LLM access; any OpenAI-compatible endpoint, configured only when all three are set |
 | `LLM_MAX_TOKENS` | `8192` | Per-call output cap, shared by the model's thinking and its answer |
 | `LLM_SEARCH_ENABLED` | `false` | Plugin-style web-search switch (no effect until the endpoint enables it) |
@@ -312,17 +314,25 @@ Middleware in `app/main.py`, implemented in `app/utils/rate_limit.py`:
 
 ## 10. Deployment
 
-`docker-compose.yml` starts three containers: `mysql` / `backend` / `frontend`(nginx).
+**The documented reproduction path is local SQLite** (see "Quick Start" in `README.md`): no database
+server and no containers — `python init_db.py` creates `backend/goldmind.db` and the tables.
 
-- The backend entrypoint script waits for the database to become ready, then runs `init_db.py`, and
-  then starts uvicorn
-- The frontend serves the build output through nginx, with both `/api/` and `/health`
-  reverse-proxied to the backend
-- LLM credentials are injected through `backend/.env` (`LLM_*`)
+The repository still keeps optional MySQL / container assets, **not exercised by this round's gate**:
 
+- `docker-compose.yml` starts three containers: `mysql` / `backend` / `frontend`(nginx); the backend
+  entrypoint waits for the database, runs `init_db.py` and then starts uvicorn, while the frontend's
+  nginx reverse-proxies `/api/` and `/health` to the backend and LLM credentials come from
+  `backend/.env` (`LLM_*`)
 - On first start, MySQL executes `backend/schema.sql` (mounted read-only as
-  `/docker-entrypoint-initdb.d/01-schema.sql`); the script carries its own `CREATE DATABASE` and
-  `USE`, and everything uses `IF NOT EXISTS`, so it can run repeatedly
+  `/docker-entrypoint-initdb.d/01-schema.sql`): the script only contains
+  `CREATE TABLE IF NOT EXISTS` and **no CREATE DATABASE / USE** (hardcoding the database name would
+  break the configuration); the mysql image selects the database from `MYSQL_DATABASE` before
+  running it, so the script can run repeatedly
+
+> To switch to a local MySQL, write `DATABASE_URL` in `backend/.env` and run `python init_db.py`
+> (the MySQL path creates the database and then executes `schema.sql`). The behavioural differences
+> between the two MySQL paths and the SQLite default (ENUM storage, string case comparison,
+> transaction semantics) are known; run the full gate via `GOLDMIND_TEST_DATABASE_URL` first.
 
 ---
 
@@ -346,6 +356,9 @@ it — documentation does not copy a second version.
 | Backtest | `backtest.py` | walk-forward hit rate (scoring the calibrated direction) + three benchmarks + a separate score for the uncalibrated score direction + 80% interval coverage + segments split at 2022-01-01 + per-factor hit rate and IC |
 | Monitoring | `monitor.py` | a weekly dashboard giving frequency / source / value / signal / data as-of date row by row; signal rules are centralised in `_rule`, informational rows have `signal=null`, and missing data is marked "unavailable + reason" |
 | Exit | `service.py` | the scheduled task and `POST /api/gold/quant/refresh` share the same chain |
+| Statistics | `stats.py` | significance toolbox for overlapping samples: Newey–West HAC standard errors, circular block-bootstrap intervals, HAC t / Diebold–Mariano, Brier skill score and reliability bins (no scipy) |
+| Pre-registration | `preregistered.py` | **the only implementation** of the candidate list, selection rules and pass lines: register first, test second; changing a constant after seeing holdout results breaks pre-registration |
+| Research bench | `scripts/quant_lab.py` | full holdout evaluation of pre-registered candidates × horizons (reads the cache by default, `--refresh` recomputes), feeding the "Research" page and the bench report |
 
 Three conventions that must not be broken:
 
@@ -376,16 +389,15 @@ The factor-composite score is an **uncalibrated** input: it appears only in the 
 (`metrics.score_direction_accuracy`). When there are fewer than 60 regression samples,
 `expected_return` is NaN → the whole horizon returns "unavailable + reason"; it does not fall back to
 "expected unchanged", and the sign of the score does not stand in for the direction. The actual
-coverage of the 80% interval after empirical-quantile calibration (measured 2026-10-01):
-full sample 78.1% / 77.3% / 75.8% / 76.7% / 61.0%, most recent 500 evaluable samples
-70.2% / 66.0% / 64.4% / 55.0% / 27.6% (1 day → 1 year; before calibration
-78.4% / 76.4% / 71.7% / 68.4% / 51.8% and 70.0% / 64.0% / 58.8% / 47.6% / 18.4%).
-The 1-year horizon is still clearly low over the last two years: the average walk-forward error from
-2023-10 to 2025-10 is +33.0%, i.e. the drift term (μ) underestimated the 2024–2025 rally —
-interval-width calibration cannot compensate for the bias in the center; correcting μ again by the
-expanding mean of the errors was tried (250-day coverage over the most recent 500 samples
-27.6% → 41.6%), but the 1–60 day hit rates all dropped (e.g. 60-day 64.5% → 60.5%), so it was not
-adopted, and the page shows coverage and benchmarks together, honestly
+coverage of the 80% interval after empirical-quantile calibration (recomputed 2026-10-02, holdout
+from 2023-10-02): 1 day → 1 year is 78.9% / 77.6% / 73.2% / 61.2% / 24.1%; over the same holdout the
+direction hit rates are 56.3% / 62.2% / 68.2% / 83.3% / 100%, matching "always long" day by day
+(+0.0pp), with a negative Brier skill score — the model has no directional edge in the holdout. The
+1-year horizon is the number-one problem: interval-width calibration cannot repair the centre (μ)
+bias, and more coverage does not buy better direction. The pre-registered verdict of 2026-10-02:
+17 candidates × 5 horizons, none passed, so `quant-v4` is **kept and labelled "no statistical
+edge"** (details in `docs/specs/2026-10-02-研究台报告.md`, rules in `preregistered.py`).
+The page honestly shows coverage side by side with the "always long / momentum" benchmarks
 (see section 4 of docs/00-产品方向.md).
 Guard: `tests/unit/quant/test_engine.py` (four criteria — direction / probability / σ / empirical
 quantile, each mutation-verified), `tests/unit/quant/test_backtest_metrics.py`.

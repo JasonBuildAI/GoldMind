@@ -43,7 +43,7 @@ git checkout -b fix/short-description
 - Python 3.11+
 - FastAPI
 - SQLAlchemy
-- MySQL
+- SQLite (default, a single file; MySQL optional)
 
 **Frontend**
 - React 19

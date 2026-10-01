@@ -35,14 +35,14 @@ and what the bullish and bearish arguments are".
 | Capability | Description |
 |------|------|
 | Gold price and dollar index collection | Tencent Finance real-time gold price; Sina Finance ICE dollar index; historical backfill supports three sources: Sina / Eastmoney / Yahoo |
-| Historical data storage | MySQL 8, two tables: `gold_prices` / `dollar_index` |
+| Historical data storage | A single SQLite file by default (`backend/goldmind.db`), two tables: `gold_prices` / `dollar_index`; `DATABASE_URL` can switch to MySQL (not exercised in this repository) |
 | Bullish/bearish factor analysis | Based on the last 24 hours of news, calls the LLM to generate 5 bullish + 5 bearish factors, with caching |
 | Institutional views | Scans the last 30 days of news (`INSTITUTION_NEWS_LOOKBACK_DAYS`) + (web search) and compiles the **most recent verifiable** prediction from Goldman Sachs / UBS / Morgan Stanley / Citi, labelled with the prediction date and source; an empty price target never overwrites an existing real record |
 | Investment advice | Combines market state, bullish/bearish factors and institutional views to generate three tiers of strategy: conservative / balanced / opportunity |
 | Market summary | Outputs the core logic, the main risks, institutional price targets and an overall judgement |
 | Scheduled refresh | APScheduler: prices daily at 06:30; news and AI analysis every even hour |
 | Quant prediction engine | 14 factors covering four categories of drivers (monetary policy and rates / safe-haven and credit / supply-demand structure / market and technicals), all from free public data sources and updated automatically on each source's own release cadence; rolling z-scores are combined into a score → **one calibrated distribution** over 1 / 5 / 20 / 60 / 250 trading days (intraday–1 week / 1–3 months / 6–18 months) (expected return μ, uncertainty σ, upside probability p=Φ(μ/σ)); the direction = sign(μ), and the price target and range and the three scenarios are all derived from this one distribution — factor scores are uncalibrated inputs, and the "factor bias (uncalibrated)" row is listed separately for comparison only; **each horizon has its own dominant weights** (short horizons: capital flows and technicals; medium horizons: policy expectations and the dollar; long horizons: central-bank purchases and demand structure); the walk-forward backtest hit rate scores exactly this direction, compared against "always long / momentum / coin flip", with the uncalibrated score direction's record listed as a separate tier. Per-source failures are annotated on the page with the reason, and when fewer than 3 factors are available it says plainly that the "prediction is unavailable" |
-| Frontend dashboard | React single page: masthead + 6 sections (Market / Bullish vs Bearish / Institutions / Strategy / Quant Prediction / Conclusion), with 10-second quote polling |
+| Frontend dashboard | React single page: masthead + 6 sections (Market / Bullish vs Bearish / Institutions / Strategy / Quant Prediction / Conclusion), with 10-second quote polling; plus a separate "Research" page (`app/research.html`) showing the holdout evaluation of the pre-registered candidates |
 | Cache | Two-level cache: in-process memory + JSON files, supporting multiple processes and sharing across restarts |
 
 **LLM provider**: not hardcoded — any OpenAI-compatible endpoint (OpenAI / DeepSeek / Qwen /
@@ -85,11 +85,11 @@ shows "temporarily unavailable"), and constructed uniformly through
    yourself via `NEWS_RSS_SOURCES`.
 4. **No auth, no multi-tenancy**. All endpoints are publicly accessible, including
    `POST .../refresh`, which triggers paid LLM calls.
-5. **The actual long-horizon coverage of the quant ranges is still below the nominal value**. The interval width has been calibrated to the empirical quantiles of historical walk-forward errors
-   (measured 2026-10-01): full-sample coverage 78.1% / 77.3% / 75.8% / 76.7% / 61.0% (1 day → 1 year);
-   over the most recent 500 evaluable samples, 70.2% / 66.0% / 64.4% / 55.0% / 27.6%. The 1-year horizon has been clearly low for the past two years:
-   the walk-forward error from 2023-10 to 2025-10 averages +33.0%, i.e. the model underestimated the 2024–2025 rally —
-   this is a systematic bias in the drift term (μ) that cannot be fixed by widening the interval; the page honestly shows the coverage
+5. **In the holdout the long-horizon coverage is still below nominal, and the direction has no edge**. The interval width has been calibrated to the empirical quantiles of historical walk-forward errors
+   (recomputed 2026-10-02, holdout from 2023-10-02): the actual coverage of the 80% interval is 78.9% / 77.6% / 73.2% / 61.2% / 24.1% (1 day → 1 year);
+   over the same holdout the direction hit rates are 56.3% / 62.2% / 68.2% / 83.3% / 100%, matching "always long" day by day (+0.0pp), with a negative Brier skill score.
+   The 1-year horizon is the number-one problem: the systematic bias in μ cannot be repaired, and widening the interval does not buy better direction.
+   The pre-registered verdict of 2026-10-02: 17 candidates × 5 horizons, none passed, so `quant-v4` is kept and labelled "no statistical edge"; the page honestly shows the coverage
    side by side with the two benchmarks, always-long / momentum (see Section 11 of docs/ARCHITECTURE.md).
 
 ---

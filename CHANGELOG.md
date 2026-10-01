@@ -16,6 +16,14 @@
 
 - 通用 LLM 接入：任何 OpenAI 兼容端点都行，配置面是 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（三项齐备才算已配置），`LLM_PROVIDER` 仅作界面展示标签
 - 新增 `LLM_MAX_TOKENS`（默认 `8192`）、`LLM_SEARCH_ENABLED`（默认 `false`）、`LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` 与 `LLM_SEARCH_MAX_KEYWORD`
+- 量化研究台与预注册：候选清单、选择规则与通过线的唯一实现 `backend/app/services/quant/preregistered.py`，全档评估工具 `backend/scripts/quant_lab.py`，接口 `GET /api/gold/quant/research`，独立「研究」页 `app/research.html`
+- 量化统计工具箱 `backend/app/services/quant/stats.py`：Newey–West HAC 标准误、圆周分块自助区间、HAC t / Diebold–Mariano、Brier 技能分与可靠性分桶（重叠样本不再按独立样本处理）
+- 20 年因子历史回填（新增 36,150 行 / 修订 26,445 行，见 `docs/specs/2026-10-02-回填报告.md`），为留出期评估补齐数据
+
+### 变更
+
+- **默认数据库改为 SQLite 单文件**（`backend/goldmind.db`，零安装、零配置）：`init_db.py` 在 SQLite 下用模型 `create_all` 建表，`seed_data.py` 去掉 pymysql 直连；MySQL 降级为可选路径（未随本轮闸门实测）
+- 量化评估改为**预注册**口径：候选清单与通过线先写死，再看留出期（2023-10-02 起）。2026-10-02 的裁决为 17 个候选 × 5 个尺度无一过线，保留 `quant-v4` 并在研究页标注「无统计优势」
 
 ### 变更（破坏性）
 
@@ -31,6 +39,8 @@
 
 - README 修复复现缺口：Node 下限改为 ≥22.22.2（或 24.15+/26+）、补 Google Chrome 前置、删除并不存在的 `.\start_all.ps1`、补冷启动预期
 - 报头 / 走势 / 多空 / 机构 / 策略 / 总结截图全部重截；机构观点如实保留「暂无最新预测」空态，文档写明精确报错文案
+- README 中英双版同步到 SQLite 零配置快速开始；量化第六节换成留出期实测覆盖率与方向命中率，新增「研究台与预注册」一节，已知限制改为留出期口径
+- `docs/ARCHITECTURE.md`（含英文镜像）改为默认 SQLite 的部署与配置口径，第十一节补统计、预注册与研究台；`docs/00-产品方向.md`（含英文镜像）的存储口径改为 SQLite 默认
 
 ## [2.0.0] - 2026-10-01
 

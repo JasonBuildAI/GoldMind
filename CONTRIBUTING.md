@@ -42,7 +42,7 @@ git checkout -b fix/bug描述
 - Python 3.11+
 - FastAPI
 - SQLAlchemy
-- MySQL
+- SQLite（默认，单文件；MySQL 可选）
 
 **前端**
 - React 19

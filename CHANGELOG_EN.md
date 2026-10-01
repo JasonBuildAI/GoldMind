@@ -16,6 +16,14 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 - Generic LLM access: any OpenAI-compatible endpoint works, configured through `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` (all three must be set); `LLM_PROVIDER` is a display-only label
 - New `LLM_MAX_TOKENS` (default `8192`), `LLM_SEARCH_ENABLED` (default `false`), `LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` and `LLM_SEARCH_MAX_KEYWORD`
+- Quant research bench and pre-registration: the single implementation of the candidate list, selection rules and pass lines in `backend/app/services/quant/preregistered.py`, the full evaluation tool `backend/scripts/quant_lab.py`, the endpoint `GET /api/gold/quant/research` and the separate "Research" page `app/research.html`
+- Quant statistics toolbox `backend/app/services/quant/stats.py`: Newey–West HAC standard errors, circular block-bootstrap intervals, HAC t / Diebold–Mariano, Brier skill score and reliability bins (overlapping samples are no longer treated as independent)
+- 20 years of factor history backfilled (36,150 rows inserted / 26,445 updated; see `docs/specs/2026-10-02-回填报告.md`) so the holdout evaluation has data
+
+### Changed
+
+- **The default database is now a single SQLite file** (`backend/goldmind.db`, zero install, zero configuration): under SQLite `init_db.py` creates tables with the models' `create_all`, and `seed_data.py` no longer opens a raw pymysql connection; MySQL is now an optional path (not exercised by this round's gate)
+- Quant evaluation now follows a **pre-registered** protocol: the candidate list and pass lines are frozen before looking at the holdout (from 2023-10-02). The 2026-10-02 verdict was 17 candidates × 5 horizons with none passing, so `quant-v4` is kept and labelled "no statistical edge" on the research page
 
 ### Changed (breaking)
 
@@ -31,6 +39,8 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 - README reproduction gaps fixed: the Node floor is now ≥22.22.2 (or 24.15+/26+), a Google Chrome prerequisite was added, the non-existent `.\start_all.ps1` was removed, and cold-start expectations were added
 - The masthead / trend / bullish-bearish / institutional / strategy / summary screenshots were all retaken; institutional views keeps its honest "no recent prediction" empty state and the docs state the exact error message
+- README (Chinese and English) synced to the SQLite zero-configuration quick start; Section 6 of the quant strategy now reports the measured holdout coverage and direction hit rates, a "Research Bench and Pre-registration" section was added, and the known limitations were rewritten to the holdout convention
+- `docs/ARCHITECTURE.md` (and its English mirror) now document SQLite by default for deployment and configuration, with statistics, pre-registration and the research bench added to Section 11; `docs/00-产品方向.md` (and its English mirror) now list SQLite as the default storage
 
 ## [2.0.0] - 2026-10-01
 

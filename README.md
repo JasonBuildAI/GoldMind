@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/version-v2.0.0-brightgreen?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/released-2026--10--01-success?style=flat-square" alt="Release date">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
-  <img src="https://img.shields.io/badge/Docker-部署就绪-2496ED?style=flat-square&logo=docker" alt="Docker">
+  <img src="https://img.shields.io/badge/SQLite-零配置复现-003B57?style=flat-square&logo=sqlite" alt="SQLite">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React">
 </p>
@@ -83,7 +83,8 @@
 1～3 个月、6～18 个月）的方向、目标价与情景（全部出自同一份校准分布，未校准的因子偏向单列
 一行），以一张单页的**浅色研究简报**呈现 —— 六节（行情 / 多空对照 / 机构观点 / 投资策略 /
 量化预测 / 总结）全部左对齐，无渐变、无阴影、无卡片套件；数字表格化，红涨绿跌，且方向同时给
-符号与文字。
+符号与文字。另有一张独立的**研究页**（`/research.html`）：把预注册候选 × 尺度的全档评估、
+覆盖率与技能分数直接摆出来，**包括没有过线的结论**。
 
 LLM 供应商**不写死**：任何 OpenAI 兼容端点（OpenAI / DeepSeek / 通义 / Kimi /
 Ollama 本地模型 / 小米 MiMo ……）都能接 —— 改 `backend/.env` 里的
@@ -101,8 +102,8 @@ Ollama 本地模型 / 小米 MiMo ……）都能接 —— 改 `backend/.env` �
 ### 🧩 实际的分析链路
 
 ```
-行情采集 ──► MySQL ──┐
-RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke() ──► 解析 JSON ──► 缓存 ──► 前端看板
+行情采集 ──► SQLite ──┐
+RSS 新闻 ──► SQLite ──┼──► 拼装 prompt ──► llm.invoke() ──► 解析 JSON ──► 缓存 ──► 前端看板
                      │
                      └──► （可选）插件式 web_search（LLM_SEARCH_ENABLED，默认关）
 
@@ -332,19 +333,47 @@ t 时刻的回归系数只用 `s ≤ t−1` 的已实现样本；样本不足 12
 以及以 2022-01-01 为界的**分段成绩**（`metrics.regimes`）；逐因子命中率与 IC 也逐条列出，
 某段样本不足时只给样本数与原因，不凑数字。
 
-**实测覆盖率（2026-10-01 跑出，页面同源）：**
+**实测覆盖率与命中率（2026-10-02 重算，页面同源）：**
 
 | 尺度 | 1 日 | 1 周 | 1 月 | 1 季 | 1 年 |
 |---|---|---|---|---|---|
-| 全样本（校准后） | 78.1% | 77.3% | 75.8% | 76.7% | 61.0% |
-| 最近 500 个可评估样本 | 70.2% | 66.0% | 64.4% | 55.0% | 27.6% |
-| 全样本（校准前） | 78.4% | 76.4% | 71.7% | 68.4% | 51.8% |
-| 最近 500 个（校准前） | 70.0% | 64.0% | 58.8% | 47.6% | 18.4% |
+| 留出期（2023-10-02 起）方向命中率 | 56.3% | 62.2% | 68.2% | 83.3% | 100% |
+| 留出期「永远看多」 | 56.3% | 62.2% | 68.2% | 83.3% | 100% |
+| 开发期方向命中率 | 52.2% | 54.0% | 53.5% | 57.5% | 63.1% |
+| 留出期 80% 区间覆盖率 | 78.9% | 77.6% | 73.2% | 61.2% | 24.1% |
 
-名义值 80%。60 日方向命中率 64.5%。**校准确实把长尺度拉近了名义值，但 1 年尺度近两年仍然
-明显偏低** —— 见第九节「已知限制」，我们把它写在页面上，而不是藏起来。
+名义值 80%。**1 年尺度的覆盖率仍未达标（24.1%，方案段验收线 ≥70%）**，已列进下一轮的头号
+问题 —— 见第十节「已知限制」。留出期里模型方向与「永远看多」逐日一致（差 +0.0pp，2023-10
+后是黄金单边上涨行情）：这一轮没有把模型换成一个没有证据支持的新版本，裁决过程见第七节。
 
-### 七、监测仪表盘：16 行水位表
+### 七、研究台与预注册：改进必须先在留出期上过线
+
+「回测好看」不是证据 —— 在同一份数据上反复挑参数，总能挑出一条漂亮的曲线。所以任何
+改进都要**先注册、后检验**：候选清单、选择规则与通过线在实验开始前写死
+（`docs/specs/2026-10-02-量化策略提升路线图.md` 第 6.1 节；规则的唯一实现是
+`backend/app/services/quant/preregistered.py`）。实验工具是 `backend/scripts/quant_lab.py`，
+页面入口是「研究」页（`app/research.html` ← `GET /api/gold/quant/research`）。
+
+**2026-10-02 的裁决：17 个候选 × 5 个尺度，没有一条过线。**
+
+| 候选族 | 数量 | 留出期结果 |
+|---|---|---|
+| 基线族 B0（线上口径） | 1 | 与「永远看多」持平（+0.0pp），Brier 技能分为负 |
+| 漂移三档 D1 / D3 / D5 | 3 | 无一过线 |
+| 合成四档 S1–S4 | 4 | 无一过线 |
+| 分布四档 P1–P4 | 4 | 加宽区间能把覆盖率拉高（如 P3 正态区间 100%），但方向与 Brier 技能没有改善 |
+| 因子集四档 F1–F4 | 4 | 无一过线 |
+| 集成一档 E0 | 1 | 无一过线 |
+
+按预注册规则**保留 `quant-v4`**，研究页与研究台统一标注「无统计优势」。全档结果（每个候选的
+逐尺度数字与失败原因）见 `docs/specs/2026-10-02-研究台报告.md`；复现命令
+`python scripts/quant_lab.py`（读缓存约 0.0 秒、全量重算约 6 秒）。
+
+> 这一轮的诚实结论：对预测能力的真实提升是**「评估从此可信」** —— 数据完整（20 年回填）、
+> 区间与显著性口径统一（HAC / DM / Brier 技能分 / 分块自助）、结论可复现 —— 而不是换一个
+> 没有证据支持的模型。下一轮候选必须重新预注册（先写清单、再看留出期）。
+
+### 八、监测仪表盘：16 行水位表
 
 `monitor.py` 覆盖 **16 行**指标，每行给出频率、来源、当前值、信号（看涨 / 看跌 / 中性 / 信息）
 与数据截至日。信号规则是确定性阈值，集中在 `_rule` 一处；汇率、人民币金价与未平仓合约是
@@ -362,7 +391,7 @@ t 时刻的回归系数只用 `s ≤ t−1` 的已实现样本；样本不足 12
 > 仪表盘是「给你看的水位」，不是打分项 —— 其中 `usdcny` / `cny_gold` / `tga` / `rrp` /
 > `cftc_oi` 五条序列与因子同表存储，但**不参与**信号合成。
 
-### 八、数据源与新鲜度
+### 九、数据源与新鲜度
 
 - **全部免费、无需密钥**：美国财政部收益率曲线与 Fiscal Data（TGA）、纽约联储 RRP 与 EFFR、
   CFTC 持仓报告、Yahoo Finance（DXY / GC=F / GLD / SPY / BTC-USD / ^VIX / HYG / IEF / CNY=X）、
@@ -374,12 +403,12 @@ t 时刻的回归系数只用 `s ≤ t−1` 的已实现样本；样本不足 12
 - **首次回填 10 年**，之后只抓增量；`factor_observations` 对 `(factor_key, obs_date)` 建唯一
   约束，重复抓取是幂等的。
 
-### 九、已知限制（我们不加修饰地写在这里）
+### 十、已知限制（我们不加修饰地写在这里）
 
-1. **1 年尺度的漂移项系统性偏低**。2023-10 至 2025-10 的走查误差平均 **+33.0%**，即模型低估了
-   2024–2025 年的上涨。这是 μ 的偏差，**加宽区间补不回来**：试过再按误差的扩展均值校正 μ
-   （250 日近 500 样本覆盖 27.6% → 41.6%），但 1–60 日命中率一律下降（如 60 日
-   64.5% → 60.5%），因此**未采用**。页面把覆盖率与「永远看多 / 动量」并排展示，让你自己判断。
+1. **1 年尺度的漂移项系统性偏低**。2023-10 起的留出期是黄金单边上涨行情，μ 系统性低估了
+   涨幅，250 日 80% 区间的实际覆盖率只剩 **24.1%**，而加宽区间补不回方向上的偏差。
+   这是下一轮的头号攻关点（本轮 17 个候选都没能过预注册线）。页面把覆盖率与
+   「永远看多 / 动量」并排展示，让你自己判断。
 2. **上海金溢价不可用**。上海黄金交易所 AU9999 没有公开免密钥接口，实测取不到数，
    该行如实显示「不可用 + 原因」，不编数字。
 3. **联网搜索默认关闭**。它用的是 MiMo 插件式的 `web_search` 工具，不是通用 OpenAI 能力；
@@ -388,7 +417,10 @@ t 时刻的回归系数只用 `s ≤ t−1` 的已实现样本；样本不足 12
    且端点侧已开通插件；未开启时机构观点回退到 RSS 新闻窗口，不发起无效请求。
 4. **地缘风险强度是语料代理指标**（最近新闻中相关报道占比），不是 GPR 官方指数。
 5. **无鉴权、无多租户**。所有接口公开可访问，包括会触发付费 LLM 调用的 `POST .../refresh`。
-6. **不是交易系统**。不下单、不接券商、不托管资金；所有产出都带免责声明。
+6. **留出期方向无信息优势**。2023-10-02 起的留出期里，五个尺度的方向与「永远看多」逐日
+   一致（+0.0pp），Brier 技能分为负 —— 见第七节的预注册裁决与
+   `docs/specs/2026-10-02-研究台报告.md`。
+7. **不是交易系统**。不下单、不接券商、不托管资金；所有产出都带免责声明。
 
 ---
 
@@ -400,10 +432,10 @@ t 时刻的回归系数只用 `s ≤ t−1` 的已实现样本；样本不足 12
 |------|----------|------|----------|
 | Node.js | ≥22.22.2（或 24.15+/26+） | 前端运行环境，包含 npm。下限来自 lockfile 里最严的依赖（jsdom `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`）；Node 22.2.0 能跑起来，但 Vite 会打印版本告警 | `node -v` |
 | Python | 3.11 - 3.12 | 后端运行环境 | `python --version` |
-| MySQL | 8.0+ | 数据存储 | `mysql --version` |
+| SQLite | Python 内置 | 数据存储：单文件 `backend/goldmind.db`，**零安装、零配置** | 无需检查 |
 | Google Chrome | 任意近期版本 | 前端端到端测试复用本机已装的 Chrome，**不下载** Playwright 自带浏览器 | 打开 Chrome → `chrome://version` |
 
-### 方式一：本地开发（推荐）
+### 本地开发（文档化路径：SQLite 零配置）
 
 #### 1. 配置环境变量
 
@@ -419,15 +451,12 @@ cp .env.example .env
 
 ```bash
 # ============================================
-# 数据库配置
+# 数据库配置（默认 SQLite，零安装）
 # ============================================
-# MySQL数据库连接URL
-DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
-
+# 不填 DATABASE_URL = 用 backend/goldmind.db（单文件 SQLite），无需安装任何数据库。
 # 这一项是**唯一真源**：后端应用、init_db.py、seed_data.py、scripts/*.py 都从这里取。
-# 不要再单独配 DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME —— 两套配置一旦不一致，
-# 建表灌数据的库和应用读写的库就不是同一个，而且不会有任何报错。
-# （那两个脚本只在 DATABASE_URL 缺失时才退回 DB_*。）
+# 只有想改用 MySQL 时才显式覆盖它（可选；未随本仓库实测）：
+# DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
 
 # ============================================
 # LLM 接入（任何 OpenAI 兼容端点，三项必须同时填）
@@ -457,7 +486,7 @@ LLM_PROVIDER=
 | 变量 | 默认值 | 作用 |
 |---|---|---|
 | `INSTITUTION_NEWS_LOOKBACK_DAYS` | `30` | 机构观点扫描新闻的窗口（天）。窗口内取每家机构**最近一次可核实**的预测，可以是较早发布的那条 |
-| `DEBUG` | `false` | 只影响 uvicorn 的 `--reload`；docker-compose 会强制覆盖为 `false` |
+| `DEBUG` | `false` | 只影响 uvicorn 的 `--reload`；本地开发想要热重载就在 `.env` 里设 `true` |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 | `CACHE_DIR` | `backend/cache` | 两级缓存里文件缓存的落盘目录 |
 | `NEWS_RSS_SOURCES` | 内置默认源 | 形如 `名称\|URL,名称\|URL` |
@@ -465,7 +494,7 @@ LLM_PROVIDER=
 | `LLM_SEARCH_ENABLED` | `false` | 是否启用插件式联网搜索（MiMo `web_search`）；开启前需端点侧已开通 |
 | `LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` | 跟随推理配置 | 搜索单独使用另一套模型 / 端点 / 密钥时才填 |
 | `LLM_TRUST_ENV` | `false` | 是否让 httpx 读宿主的代理环境变量；走代理访问 LLM 端点时设为 `true` |
-| `GOLDMIND_TEST_DATABASE_URL` | 未设置 | 只在跑测试时用：指定 MySQL 测试库，避免「SQLite 全绿 ≠ MySQL 全绿」 |
+| `GOLDMIND_TEST_DATABASE_URL` | 未设置 | 只在跑测试时用：让同一套用例跑在另一个数据库上（默认内存 SQLite；只有你确实要验 MySQL 时才需要） |
 | `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | **全项目唯一的时区口径**，定时任务与「今天」都按它算 |
 
 #### 2. 安装依赖
@@ -502,29 +531,29 @@ cd app
 npm ci
 ```
 
-#### 3. 初始化数据库
+#### 3. 初始化数据库（SQLite，零配置）
 
 ```bash
 cd backend
 
-# 确保MySQL服务已启动
-
-# 初始化数据库（自动创建数据库、数据表，并填充2025年至今的历史数据）
+# 建表 + 抓取并填充 2025 年至今的历史数据（需要联网访问公开数据源）
 python init_db.py
+
+# 只建表、不抓数据：几秒完成，离线可用
+SKIP_SEED=1 python init_db.py
 ```
 
 **数据初始化说明：**
 
 `init_db.py` 会自动完成以下操作：
-1. 创建数据库 `gold_analysis`（如果不存在）
-2. 创建所有数据表结构
-3. **自动获取并填充历史数据**（2025年1月1日至今）
+1. 创建 SQLite 库文件 `backend/goldmind.db`（不存在时）并建出全部数据表
+2. **自动获取并填充历史数据**（2025年1月1日至今）
    - 黄金价格数据：开盘价、最高价、最低价、收盘价
    - 美元指数数据：开盘价、最高价、最低价、收盘价
 
 **数据源优先级（国内优先）：**
 - 黄金数据：新浪财经 → 东方财富 → Yahoo Finance
-- 美元指数：新浪财经 → 东方财富 → Yahoo Finance
+- 美元指数：东方财富 → Yahoo Finance
 
 > 💡 **提示**：脚本会自动尝试多个数据源，确保国内用户也能成功获取数据。如果所有数据源都失败，您可以稍后再运行 `python seed_data.py` 重试。
 
@@ -583,121 +612,22 @@ npm run dev
 - 后端API: http://localhost:8000
 - API文档: http://localhost:8000/docs
 
-### 方式二：Docker部署
+### 可选：MySQL / Docker（未随本仓库实测）
 
-#### 前置要求
+本 README 的快速开始、闸门命令与 CI **只走 SQLite** —— 这是唯一被仓库实测覆盖的复现路径。
+仓库里仍保留两处可选的 MySQL / 容器化资产，供确实需要的人参考，但**不保证在当前版本下
+开箱可用**：
 
-| 工具 | 版本要求 | 说明 | 安装检查 |
-|------|----------|------|----------|
-| Docker | 20.10+ | 容器化平台 | `docker --version` |
-| Docker Compose | 2.0+ | 多容器编排 | `docker compose version` |
+- `docker-compose.yml` + `backend/schema.sql`：三容器（mysql / backend / frontend）编排。
+  MySQL 首次启动会用 `schema.sql` 建表；容器内后端的 `DATABASE_URL` 由 compose 注入。
+- 改用本机 MySQL：在 `backend/.env` 里写
+  `DATABASE_URL=mysql+pymysql://user:password@localhost:3306/gold_analysis`，
+  然后 `python init_db.py`（MySQL 路径会先建库、再执行 `schema.sql`）。
 
-> ⚠️ **网络要求**：需要能够访问 Docker Hub 下载镜像。国内用户可能需要配置 VPN/代理。
-
-#### 1. 配置环境变量
-
-```bash
-# 复制示例配置文件（后端应用自己的变量，比如 LLM_API_KEY）
-cp backend/.env.example backend/.env
-
-# 编辑 backend/.env，填入必要的 API 密钥
-```
-
-**Docker 部署的变量分两处，别放错：**
-
-```bash
-# ============================================
-# ① 项目根目录的 .env —— 供 docker-compose 做变量插值
-# ============================================
-# compose 里的 ${MYSQL_ROOT_PASSWORD:-goldmind123} 只认**宿主环境**和
-# **项目根目录的 .env**，不认 `env_file:` 指定的 backend/.env。
-# 放错地方的结果是 MySQL 用默认密码、后端却按你写的密码去连，连不上。
-MYSQL_ROOT_PASSWORD=your_secure_password
-
-# ============================================
-# ② backend/.env —— 供容器内的应用读取
-# ============================================
-# LLM 接入 —— 任何 OpenAI 兼容端点，密钥 / 端点 / 模型三项必须同时填。
-# 供应商不写死，示例见 backend/.env.example（OpenAI / DeepSeek / 通义 / Kimi /
-# Ollama / 小米 MiMo 任选）。
-LLM_API_KEY=your_api_key_here
-LLM_BASE_URL=https://api.deepseek.com/v1
-LLM_MODEL=deepseek-chat
-```
-
-> 💡 `docker-compose.yml` 会加载 `backend/.env` 作为容器环境（`env_file:`），
-> 并在 `environment:` 里覆盖数据库连接与 `DEBUG` / `LOG_LEVEL`。
-> **`DATABASE_URL` 不必写进 `backend/.env`** —— compose 会用
-> `${MYSQL_ROOT_PASSWORD}` 拼好并覆盖它，写在那里也不会生效。
->
-> 注意 `environment:` 的优先级高于 `env_file:`，所以那里**不要**再写
-> `- LLM_API_KEY=${LLM_API_KEY}`：项目根目录没有该变量时它会插值成空串，
-> 反过来把 `backend/.env` 里配好的 key 覆盖掉。
-
-#### 2. 启动服务
-
-```bash
-# 构建并启动所有服务（前端 + 后端 + 数据库）
-docker-compose up -d --build
-
-# 查看服务状态
-docker-compose ps
-
-# 查看日志（观察数据初始化进度）
-docker-compose logs -f backend
-```
-
-**国内用户网络配置（如无法下载镜像）：**
-
-如果使用 Clash/V2Ray 等代理工具：
-
-1. 开启系统代理或 TUN 模式
-2. 在 Docker Desktop → Settings → Resources → Proxies 中配置：
-   - HTTP Proxy: `http://127.0.0.1:7890`
-   - HTTPS Proxy: `http://127.0.0.1:7890`
-3. Apply & Restart
-4. 重试 `docker-compose up -d --build`
-
-> ⚠️ 如果网络问题无法解决，建议使用**本地开发方式**（方式一）。
-
-**首次启动说明：**
-
-Docker 部署会自动完成以下初始化：
-1. ✅ 创建 MySQL 数据库和数据表
-2. ✅ **自动获取并填充历史数据**（2025年至今的黄金和美元指数数据）
-3. ✅ 启动后端服务
-
-数据获取过程可能需要 1-3 分钟，请观察日志等待初始化完成。
-
-#### 3. 访问应用
-
-**服务地址：**
-- 前端: http://localhost
-- 后端API: http://localhost:8000
-- API文档: http://localhost:8000/docs
-
-> 💡 **提示**：首次访问时，页面显示「正在读取…」或「正在分析中」，说明后端仍在初始化数据
-> 或首次分析尚未完成，请稍等片刻刷新页面。
-
-#### 4. 常用命令
-
-```bash
-# 停止服务
-docker-compose down
-
-# 停止并删除数据卷（清空数据库）
-docker-compose down -v
-
-# 重启服务
-docker-compose restart
-
-# 进入后端容器
-docker exec -it goldmind_backend /bin/bash
-
-# 进入数据库容器
-docker exec -it goldmind_mysql mysql -uroot -p
-```
-
+> ⚠️ 这两条路径与本轮的 SQLite 默认路径**没有跑过同一套闸门**，行为差异（ENUM 存储、
+> 字符串比较大小写、事务语义）已知存在。用之前请先跑一遍
+> `GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" python -m pytest`，
+> 确认基线再上线。
 ---
 
 ## 🧪 常用命令
@@ -720,9 +650,8 @@ python -m pytest tests/unit          # 单元：不依赖数据库与网络
 python -m pytest tests/integration   # 集成：内存 SQLite + 假 LLM
 python -m pytest tests/e2e           # 端到端：按真实使用顺序串起整条链路
 
-# 换 MySQL 方言再跑一遍（改数据库相关代码后建议做）
-# 生产用 MySQL，而 SQLite 与它在枚举存储、JSON 列、字符串比较大小写上都有差异 ——
-# 「SQLite 全绿」不等于「MySQL 全绿」。必须指向**独立的测试库**：用例会清空所有表。
+# 可选：换 MySQL 方言再跑一遍（**仅在你确实要验 MySQL 时**；SQLite 是默认与 CI 的口径）
+# 两者在枚举存储、JSON 列、字符串比较大小写上都有差异。必须指向**独立的测试库**：用例会清空所有表。
 GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" \
     python -m pytest
 
@@ -733,9 +662,9 @@ python -m compileall -q app
 python scripts/gen_api_doc.py --check     # 不一致时退出码 1
 python scripts/gen_api_doc.py             # 重新生成 docs/API.md 与 docs/en/api.md
 
-# 数据库初始化（建库 + 建表 + 灌历史数据）
+# 数据库初始化（SQLite：建表 + 灌历史数据；库文件自动创建）
 python init_db.py
-SKIP_SEED=1 python init_db.py        # 只建库建表，不灌数据
+SKIP_SEED=1 python init_db.py        # 只建表，不灌数据（离线可用）
 
 # 修正旧库里的枚举列取值（幂等；只影响 schema.sql 早期版本建出来的库）
 python scripts/fix_enum_columns.py --dry-run
@@ -755,6 +684,10 @@ python scripts/migrate_quant.py --drop --yes
 
 # 手动跑一轮因子抓取（首次回填 10 年；之后是增量）
 python -c "from app.database import SessionLocal; from app.services.quant.sync import run_sync; db=SessionLocal(); print(run_sync(db, force=True).to_dict()); db.close()"
+
+# 量化研究台：预注册候选 × 尺度的全档评估（默认读缓存；--refresh 全量重算）
+python scripts/quant_lab.py
+python scripts/quant_lab.py --refresh
 ```
 
 ### 前端
@@ -821,7 +754,7 @@ python scripts/smoke_llm.py
 
 | 任务 | 跑什么 | 环境 |
 |---|---|---|
-| `Backend (pytest)` | `python -m pytest` | Python 3.11 + 内存 SQLite（不连 MySQL） |
+| `Backend (pytest)` | `python -m pytest` | Python 3.11 + 内存 SQLite（不需要 MySQL） |
 | `Frontend (lint + test + build)` | `npm run lint` / `npm test` / `npm run build` | Node 22 |
 | `Browser E2E (Playwright)` | `npm run test:e2e` | Python 3.11 + Node 22 + Chromium + 假 LLM |
 
@@ -858,26 +791,29 @@ GoldMind/
 ├── app/                          # 前端（React 19 + TypeScript + Tailwind）
 │   ├── src/
 │   │   ├── sections/            # 六个页面区块 + 各自的测试
+│   │   ├── research/            # 「研究」页：预注册评估的全档结果
 │   │   ├── components/          # 可复用组件（含机构观点的预测日期列）
 │   │   ├── layout/              # 报头 / 页脚
 │   │   ├── services/            # API 客户端与类型定义（api.ts）
 │   │   └── test/                # 测试夹具
 │   └── package.json
-├── backend/                      # 后端（FastAPI + SQLAlchemy + MySQL）
+├── backend/                      # 后端（FastAPI + SQLAlchemy；默认 SQLite 单文件）
 │   ├── app/
 │   │   ├── services/            # 业务逻辑
 │   │   │   ├── llm_provider.py                     # **LLM 调用的唯一入口**
 │   │   │   ├── institution_prediction_service.py   # 机构观点（含机构注册表）
 │   │   │   └── quant/                              # 量化引擎：sources / derive / storage /
 │   │   │                                           #   sync / engine / decompose / scenarios /
-│   │   │                                           #   backtest / monitor / service
+│   │   │                                           #   backtest / monitor / service /
+│   │   │                                           #   stats / preregistered
 │   │   ├── routers/             # API 路由
 │   │   ├── models/ schemas/     # 数据模型与响应契约
 │   │   ├── tasks/ scheduler.py  # 定时任务（含唯一时区口径）
 │   │   └── utils/timeutil.py    # **「现在」与「今天」的唯一来源**
 │   ├── scripts/                 # 迁移脚本、文档生成器、冒烟与开发工具
 │   ├── tests/                   # unit / integration / e2e
-│   ├── schema.sql               # 建表脚本（Docker 首次启动时执行）
+│   ├── schema.sql               # MySQL（可选路径）建表脚本；SQLite 走模型 create_all
+│   ├── goldmind.db              # 默认 SQLite 库（运行时生成，已被 .gitignore 忽略）
 │   └── requirements*.txt
 ├── docs/                         # 中文文档
 │   ├── en/                      # 英文镜像（与中文版一一对应）
@@ -892,7 +828,7 @@ GoldMind/
 ├── CHANGELOG.md / CHANGELOG_EN.md
 ├── CONTRIBUTING.md / CONTRIBUTING_EN.md
 ├── README.md / README_EN.md
-└── docker-compose.yml
+└── docker-compose.yml            # 可选路径（未随本仓库实测）
 ```
 
 ---
@@ -912,7 +848,7 @@ GoldMind/
 | [`docs/API.md`](docs/API.md) | [`docs/en/api.md`](docs/en/api.md) | 接口规范（**两份都由路由表生成**） | 改接口前 |
 | [`CHANGELOG.md`](CHANGELOG.md) | [`CHANGELOG_EN.md`](CHANGELOG_EN.md) | 每个版本改了什么 | 升级前 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | [`CONTRIBUTING_EN.md`](CONTRIBUTING_EN.md) | 贡献流程 | 提 PR 前 |
-| [`docs/specs/`](docs/specs/) | —（保持中文） | 各轮改动的 spec 与 plan（过程记录，不是第二权威） | 追溯某轮决定时 |
+| [`docs/specs/`](docs/specs/) | —（保持中文） | 各轮改动的 spec 与 plan（过程记录，不是第二权威）；本轮量化见 `2026-10-02-量化策略提升路线图.md` + `2026-10-02-研究台报告.md` | 追溯某轮决定时 |
 
 > 📌 `docs/API.md` 与 `docs/en/api.md` **不是手写的** —— 它们由
 > `backend/scripts/gen_api_doc.py` 从 FastAPI 路由表生成，`backend/tests/integration/test_api_doc.py`
@@ -923,7 +859,7 @@ GoldMind/
 ## 🔄 工作流程
 
 1. **数据采集**：腾讯财经实时金价、新浪财经 ICE 美元指数；历史数据回填支持新浪 / 东方财富 / Yahoo 三源；新闻经 RSS 抓取
-2. **持久化**：金价、美元指数、新闻写入 MySQL
+2. **持久化**：金价、美元指数、新闻写入 SQLite（默认单文件；`DATABASE_URL` 可切 MySQL）
 3. **分析**：5 个分析服务各自拼装 prompt → 调用一次 LLM（端点由 `LLM_*` 决定）→ 解析 JSON
 4. **量化**：公开数据源 → 因子库 → 滚动 z → 分尺度权重 → 一份校准分布 → 走查式回测
 5. **缓存**：结果写入内存 + JSON 文件两级缓存（TTL 2 小时），供重启与多进程共享
@@ -945,7 +881,7 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 | 投资建议 | `app/services/investment_advice_service.py` | 市场状态 + 多空因子 + 机构观点 | 三档策略 + 风险提示 |
 | 市场总结 | `app/services/market_summary_service.py` | 上述全部 | 核心逻辑 + 风险 + 综合判断 |
 
-**模型**：由 `backend/.env` 的 `LLM_MODEL` 决定（供应商同理，见「方式一」的环境变量）；
+**模型**：由 `backend/.env` 的 `LLM_MODEL` 决定（供应商同理，见「本地开发」的环境变量）；
 页面页脚显示的型号来自 `/health` 的 `ai_config`，不写死在代码里。
 
 **降级行为**：任一服务在数据源或联网搜索不可用时，返回明确的「不可用」状态并回退到

@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/version-v2.0.0-brightgreen?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/released-2026--10--01-success?style=flat-square" alt="Release date">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
-  <img src="https://img.shields.io/badge/Docker-部署就绪-2496ED?style=flat-square&logo=docker" alt="Docker">
+  <img src="https://img.shields.io/badge/SQLite-zero--config--repro-003B57?style=flat-square&logo=sqlite" alt="SQLite">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React">
 </p>
@@ -88,7 +88,7 @@ calibrated distribution, with the uncalibrated factor bias listed on its own row
 single-page **light research brief**: six sections (Market / Bullish vs Bearish / Institutional
 Views / Investment Strategy / Quant Prediction / Conclusion), all left-aligned, with no gradients,
 no shadows and no card grid; numbers live in tables, rising is red and falling is green, and the
-direction always carries both a sign and a word.
+direction always carries both a sign and a word. There is also a separate **research page** (`/research.html`): it lays out the pre-registered candidates × horizons evaluation, coverage and skill scores on the page, **including the conclusions that did not clear the line**.
 
 The LLM provider is **not hardcoded**: any OpenAI-compatible endpoint (OpenAI / DeepSeek /
 Qwen / Kimi / a local Ollama / Xiaomi MiMo …) works — just set `LLM_BASE_URL` /
@@ -107,8 +107,8 @@ content is used as a fallback.
 ### 🧩 The Actual Analysis Chain
 
 ```
-Market data ──► MySQL ──┐
-RSS news ───► MySQL ────┼──► assemble prompt ──► llm.invoke() ──► parse JSON ──► cache ──► frontend dashboard
+Market data ──► SQLite ──┐
+RSS news ───► SQLite ────┼──► assemble prompt ──► llm.invoke() ──► parse JSON ──► cache ──► frontend dashboard
                         │
                         └──► (optional) plugin-style web_search (LLM_SEARCH_ENABLED, off by default)
 
@@ -327,18 +327,37 @@ The backtest (`backtest.py`) is **walk-forward**: every historical point uses on
 
 Three more items are listed separately: the record of the **uncalibrated score direction** (`metrics.score_direction_accuracy`, which answers "does calibration actually add anything"), the **actual coverage of the nominal 80% interval** (`metrics.interval_coverage_80`), and the **per-segment results** split at 2022-01-01 (`metrics.regimes`); per-factor hit rate and IC are also listed one by one, and when a segment has too few samples it gives only the sample count and the reason — no padding the numbers.
 
-**Measured coverage (produced 2026-10-01, same source as the page):**
+**Measured coverage and hit rates (recomputed 2026-10-02, same source as the page):**
 
 | Horizon | 1 day | 1 week | 1 month | 1 quarter | 1 year |
 |---|---|---|---|---|---|
-| Full sample (calibrated) | 78.1% | 77.3% | 75.8% | 76.7% | 61.0% |
-| Most recent 500 evaluable samples | 70.2% | 66.0% | 64.4% | 55.0% | 27.6% |
-| Full sample (before calibration) | 78.4% | 76.4% | 71.7% | 68.4% | 51.8% |
-| Most recent 500 (before calibration) | 70.0% | 64.0% | 58.8% | 47.6% | 18.4% |
+| Holdout (from 2023-10-02) direction hit rate | 56.3% | 62.2% | 68.2% | 83.3% | 100% |
+| Holdout "always long" | 56.3% | 62.2% | 68.2% | 83.3% | 100% |
+| Development-period direction hit rate | 52.2% | 54.0% | 53.5% | 57.5% | 63.1% |
+| Holdout actual coverage of the 80% interval | 78.9% | 77.6% | 73.2% | 61.2% | 24.1% |
 
-The nominal value is 80%. The 60-day direction hit rate is 64.5%. **Calibration does bring the long horizons closer to nominal, but the 1-year horizon over the last two years is still clearly low** — see Section 9, "Known limitations"; we write it on the page instead of hiding it.
+The nominal value is 80%. **The 1-year coverage is still below the plan's ≥70% acceptance line (24.1%)** and heads the next round's agenda — see Section 10, "Known limitations". In the holdout the model's direction matches "always long" day by day (+0.0pp; gold trended up one way after 2023-10): this round did not swap the model for a new version that has no evidence behind it. The verdict process is in Section 7.
 
-### 7. Monitoring Dashboard: The 16-Row Gauge
+### 7. Research Bench and Pre-registration: Improvements Must Clear the Holdout First
+
+"The backtest looks good" is not evidence — pick parameters repeatedly on the same data and you will always find a pretty curve. So every improvement is **registered first and tested second**: the candidate list, the selection rules and the pass lines are frozen before the experiment starts (`docs/specs/2026-10-02-量化策略提升路线图.md`, section 6.1; the rules live in one place, `backend/app/services/quant/preregistered.py`). The experiment tool is `backend/scripts/quant_lab.py`, and the page is the "Research" page (`app/research.html` ← `GET /api/gold/quant/research`).
+
+**Verdict on 2026-10-02: 17 candidates × 5 horizons, not one passed.**
+
+| Candidate family | Count | Holdout result |
+|---|---|---|
+| Baseline B0 (the live convention) | 1 | Ties "always long" (+0.0pp); Brier skill score negative |
+| Drift trio D1 / D3 / D5 | 3 | None passed |
+| Compositing quartet S1–S4 | 4 | None passed |
+| Distribution quartet P1–P4 | 4 | Wider intervals raise coverage (P3 normal, 100%) but do not improve direction or Brier skill |
+| Factor-set quartet F1–F4 | 4 | None passed |
+| Ensemble E0 | 1 | None passed |
+
+By the pre-registered rules we **keep `quant-v4`** and label it "no statistical edge" on the research page and in the bench output. The full results (per-horizon numbers and failure reasons for every candidate) are in `docs/specs/2026-10-02-研究台报告.md`; reproduce with `python scripts/quant_lab.py` (about 0.0s from cache, about 6s for a full recompute).
+
+> The honest conclusion of this round: the real gain is that **the evaluation is now trustworthy** — complete data (a 20-year backfill), one significance toolkit (HAC / DM / Brier skill / block bootstrap), reproducible conclusions — not a replacement model with no evidence behind it. Next round's candidates must be pre-registered again (write the list, then look at the holdout).
+
+### 8. Monitoring Dashboard: The 16-Row Gauge
 
 `monitor.py` covers **16 rows** of metrics; each row gives frequency, source, current value, signal (bullish / bearish / neutral / info) and data-as-of date. The signal rules are deterministic thresholds, centralised in `_rule` in one place; FX rates, the CNY gold price and open interest are **informational** indicators (`signal = null`) and are not forced into bull/bear; rows with no data or too little history honestly return "unavailable + reason".
 
@@ -352,22 +371,23 @@ Each row's update frequency follows its own data source (daily / weekly / monthl
 
 > The dashboard is a "gauge for you to read", not a scoring item — five of its series, `usdcny` / `cny_gold` / `tga` / `rrp` / `cftc_oi`, are stored in the same table as the factors but **do not participate** in signal composition.
 
-### 8. Data Sources and Freshness
+### 9. Data Sources and Freshness
 
 - **All free, no keys required**: the US Treasury yield curve and Fiscal Data (TGA), the New York Fed RRP and EFFR, CFTC Commitments of Traders, Yahoo Finance (DXY / GC=F / GLD / SPY / BTC-USD / ^VIX / HYG / IEF / CNY=X), Sina Finance (PBoC official reserves), and this system's own RSS corpus.
 - **Throttled per source**: the syncer gives each source its own 6h–24h throttle window and fetches incrementally; one source failing does not affect the others, and the failure reason goes into the sync report and is shown on the page.
 - **A freshness cap per factor** (last column of the table above): the 7-day cap for daily factors covers long holidays, and the 62-day cap for monthly ones covers publication delays. A factor past its cap is marked "**stale**" and excluded from the composite, instead of padding with the old value.
 - **The first backfill covers 10 years**, after which only increments are fetched; `factor_observations` has a unique constraint on `(factor_key, obs_date)`, so repeated fetches are idempotent.
 
-### 9. Known Limitations (Stated Here Without Varnish)
+### 10. Known Limitations (Stated Here Without Varnish)
 
-1. **The 1-year horizon's drift term is systematically low.** The walk-forward error from 2023-10 to 2025-10 averages **+33.0%**, i.e. the model underestimated the 2024–2025 rally. This is a bias in μ and **widening the interval cannot compensate**: correcting μ again by the expanding mean of the errors was tried (250-day coverage over the most recent 500 samples 27.6% → 41.6%), but the 1–60 day hit rates all dropped (e.g. 60-day 64.5% → 60.5%), so it was **not adopted**. The page shows coverage side by side with "always long / momentum", leaving the judgement to you.
+1. **The 1-year horizon's drift term is systematically low.** The holdout starting 2023-10 is a one-way gold rally: μ systematically underestimated the gains, and the actual coverage of the 250-day 80% interval is down to **24.1%**, while widening the interval cannot repair a directional bias. This is the number-one target for the next round (none of this round's 17 candidates cleared the pre-registered line). The page shows coverage side by side with "always long / momentum", leaving the judgement to you.
 2. **The Shanghai gold premium is unavailable.** The Shanghai Gold Exchange's AU9999 has no public key-less API and cannot be fetched in practice; the row honestly shows "unavailable + reason" and does not invent numbers.
 3. **Web search is off by default.** It uses MiMo's plugin-style `web_search` tool, not a generic OpenAI capability; when the endpoint has not enabled it, it returns
    `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false` (reproducible in practice). To enable it: `LLM_SEARCH_ENABLED=true` with the plugin enabled on the endpoint side; while it is off, institutional views fall back to the RSS news window and make no pointless requests.
 4. **Geopolitical risk intensity is a corpus proxy metric** (the share of related reports in recent news), not the official GPR index.
 5. **No auth, no multi-tenancy.** All endpoints are publicly accessible, including `POST .../refresh`, which triggers paid LLM calls.
-6. **It is not a trading system.** It does not place orders, does not connect to brokers and does not custody funds; all output carries a disclaimer.
+6. **No informational edge in the holdout direction.** Over the holdout starting 2023-10-02, all five horizons match "always long" day by day (+0.0pp) and the Brier skill score is negative — see the pre-registered verdict in Section 7 and `docs/specs/2026-10-02-研究台报告.md`.
+7. **It is not a trading system.** It does not place orders, does not connect to brokers and does not custody funds; all output carries a disclaimer.
 ---
 
 ## 🚀 Quick Start
@@ -378,10 +398,10 @@ Each row's update frequency follows its own data source (daily / weekly / monthl
 |------|----------|------|----------|
 | Node.js | ≥22.22.2 (or 24.15+/26+) | Frontend runtime, includes npm. The floor comes from the strictest dependency in the lockfile (jsdom `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`); Node 22.2.0 still runs, but Vite prints a version warning | `node -v` |
 | Python | 3.11 - 3.12 | Backend runtime | `python --version` |
-| MySQL | 8.0+ | Data storage | `mysql --version` |
+| SQLite | Built into Python | Data storage: a single file, `backend/goldmind.db` — **zero install, zero configuration** | No check needed |
 | Google Chrome | Any recent version | The frontend end-to-end tests reuse the Chrome already installed on the machine and do **not** download Playwright's bundled browser | Open Chrome → `chrome://version` |
 
-### Method 1: Local Development (Recommended)
+### Local Development (the documented path: SQLite, zero configuration)
 
 #### 1. Configure Environment Variables
 
@@ -397,17 +417,14 @@ cp .env.example .env
 
 ```bash
 # ============================================
-# Database configuration
+# Database configuration (SQLite by default — nothing to install)
 # ============================================
-# MySQL database connection URL
-DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
-
+# Leave DATABASE_URL unset = use backend/goldmind.db (a single-file SQLite database);
+# no database server to install.
 # This one is the **single source of truth**: the backend application, init_db.py,
 # seed_data.py and scripts/*.py all read it from here.
-# Do not configure DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME separately again — if the
-# two sets of configuration ever disagree, the database that gets the tables and seed data
-# and the one the application reads and writes are no longer the same, and nothing will error.
-# (Those two scripts only fall back to DB_* when DATABASE_URL is missing.)
+# Override it explicitly only when you want MySQL (optional; not exercised in this repository):
+# DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
 
 # ============================================
 # LLM access (any OpenAI-compatible endpoint; all three must be set)
@@ -438,7 +455,7 @@ LLM_PROVIDER=
 | Variable | Default | Effect |
 |---|---|---|
 | `INSTITUTION_NEWS_LOOKBACK_DAYS` | `30` | Window (days) in which institutional views scan the news. Within the window it takes each institution's **most recent verifiable** prediction, which may be the older item |
-| `DEBUG` | `false` | Only affects uvicorn's `--reload`; docker-compose force-overrides it to `false` |
+| `DEBUG` | `false` | Only affects uvicorn's `--reload`; set it to `true` in `.env` for local hot reload |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `CACHE_DIR` | `backend/cache` | On-disk directory for the file half of the two-level cache |
 | `NEWS_RSS_SOURCES` | Built-in defaults | Format: `name\|URL,name\|URL` |
@@ -446,7 +463,7 @@ LLM_PROVIDER=
 | `LLM_SEARCH_ENABLED` | `false` | Whether to enable the plugin-style web search (MiMo `web_search`); the endpoint must have it enabled first |
 | `LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` | follows the reasoning config | Fill in only when search uses a separate model / endpoint / key |
 | `LLM_TRUST_ENV` | `false` | Whether httpx reads the host's proxy environment variables; set to `true` when reaching the LLM endpoint through a proxy |
-| `GOLDMIND_TEST_DATABASE_URL` | Unset | Test runs only: point at a MySQL test database, to catch "green on SQLite ≠ green on MySQL" |
+| `GOLDMIND_TEST_DATABASE_URL` | Unset | Test runs only: run the same suite against a different database (in-memory SQLite by default; only needed when you really want to verify MySQL) |
 | `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | **The project's only time-zone convention**; scheduled tasks and "today" are all computed in it |
 
 #### 2. Install Dependencies
@@ -483,29 +500,29 @@ cd app
 npm ci
 ```
 
-#### 3. Initialise the Database
+#### 3. Initialise the Database (SQLite, zero configuration)
 
 ```bash
 cd backend
 
-# Make sure the MySQL service is running
-
-# Initialise the database (creates the database and tables, and seeds historical data from 2025 to today)
+# Create the tables and seed historical data from 2025 to today (needs network access to public data sources)
 python init_db.py
+
+# Create the tables only, no fetching: takes seconds and works offline
+SKIP_SEED=1 python init_db.py
 ```
 
 **About data initialisation:**
 
 `init_db.py` automatically does the following:
-1. Creates the database `gold_analysis` (if it does not exist)
-2. Creates all table structures
-3. **Automatically fetches and seeds historical data** (1 January 2025 to today)
+1. Creates the SQLite file `backend/goldmind.db` (if missing) and all table structures
+2. **Automatically fetches and seeds historical data** (1 January 2025 to today)
    - Gold price data: open, high, low, close
    - Dollar index data: open, high, low, close
 
 **Data source priority (domestic first):**
 - Gold data: Sina Finance → Eastmoney → Yahoo Finance
-- Dollar index: Sina Finance → Eastmoney → Yahoo Finance
+- Dollar index: Eastmoney → Yahoo Finance
 
 > 💡 **Tip**: the script tries multiple data sources automatically, so that users in mainland China can fetch data successfully too. If every source fails, you can run `python seed_data.py` later to retry.
 
@@ -570,120 +587,18 @@ npm run dev
 - Backend API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-### Method 2: Docker Deployment
+### Optional: MySQL / Docker (not exercised in this repository)
 
-#### Prerequisites
+This README's quick start, gate commands and CI **run on SQLite only** — that is the only reproduction path the repository actually tests. Two optional MySQL / container assets are kept for people who really need them, but they are **not guaranteed to work out of the box in the current version**:
 
-| Tool | Version required | Purpose | Install check |
-|------|----------|------|----------|
-| Docker | 20.10+ | Container platform | `docker --version` |
-| Docker Compose | 2.0+ | Multi-container orchestration | `docker compose version` |
+- `docker-compose.yml` + `backend/schema.sql`: a three-container setup (mysql / backend / frontend). On first start MySQL creates the tables from `schema.sql`, and compose injects the backend container's `DATABASE_URL`.
+- Using a local MySQL: write
+  `DATABASE_URL=mysql+pymysql://user:password@localhost:3306/gold_analysis` in `backend/.env`,
+  then run `python init_db.py` (the MySQL path creates the database first and then executes `schema.sql`).
 
-> ⚠️ **Network requirement**: you need to be able to reach Docker Hub to pull images. Users in mainland China may need a VPN/proxy.
-
-#### 1. Configure Environment Variables
-
-```bash
-# Copy the example configuration file (variables for the backend application itself, e.g. LLM_API_KEY)
-cp backend/.env.example backend/.env
-
-# Edit backend/.env and fill in the required API keys
-```
-
-**Docker deployment variables live in two places — do not put them in the wrong one:**
-
-```bash
-# ============================================
-# ① The .env in the project root — used by docker-compose for variable interpolation
-# ============================================
-# ${MYSQL_ROOT_PASSWORD:-goldmind123} in compose only looks at the **host environment** and the
-# **project-root .env**; it does not read the backend/.env given to `env_file:`.
-# Put it in the wrong place and MySQL uses the default password while the backend connects with
-# the password you wrote — and cannot connect.
-MYSQL_ROOT_PASSWORD=your_secure_password
-
-# ============================================
-# ② backend/.env — read by the application inside the container
-# ============================================
-# LLM access — any OpenAI-compatible endpoint; the key / endpoint / model must all be set.
-# No provider is hardcoded; see backend/.env.example for examples (OpenAI / DeepSeek /
-# Qwen / Kimi / Ollama / Xiaomi MiMo — your choice).
-LLM_API_KEY=your_api_key_here
-LLM_BASE_URL=https://api.deepseek.com/v1
-LLM_MODEL=deepseek-chat
-```
-
-> 💡 `docker-compose.yml` loads `backend/.env` as the container environment (`env_file:`)
-> and overrides the database connection and `DEBUG` / `LOG_LEVEL` in `environment:`.
-> **`DATABASE_URL` does not need to go into `backend/.env`** — compose builds it from
-> `${MYSQL_ROOT_PASSWORD}` and overrides it, so writing it there has no effect.
->
-> Note that `environment:` takes priority over `env_file:`, so do **not** write
-> `- LLM_API_KEY=${LLM_API_KEY}` there: when the project root has no such variable it
-> interpolates to an empty string and instead overwrites the key configured in `backend/.env`.
-
-#### 2. Start the Services
-
-```bash
-# Build and start all services (frontend + backend + database)
-docker-compose up -d --build
-
-# Check service status
-docker-compose ps
-
-# View logs (watch data-initialisation progress)
-docker-compose logs -f backend
-```
-
-**Network configuration for users in mainland China (if images cannot be pulled):**
-
-If you use a proxy tool such as Clash/V2Ray:
-
-1. Enable system proxy or TUN mode
-2. In Docker Desktop → Settings → Resources → Proxies, configure:
-   - HTTP Proxy: `http://127.0.0.1:7890`
-   - HTTPS Proxy: `http://127.0.0.1:7890`
-3. Apply & Restart
-4. Retry `docker-compose up -d --build`
-
-> ⚠️ If the network problem cannot be solved, we recommend the **local development route** (Method 1).
-
-**First-start notes:**
-
-Docker deployment automatically completes the following initialisation:
-1. ✅ Creates the MySQL database and tables
-2. ✅ **Automatically fetches and seeds historical data** (gold and dollar-index data from 2025 to today)
-3. ✅ Starts the backend service
-
-Fetching the data may take 1-3 minutes; watch the logs and wait for initialisation to finish.
-
-#### 3. Access the Application
-
-**Service addresses:**
-- Frontend: http://localhost
-- Backend API: http://localhost:8000
-- API docs: http://localhost:8000/docs
-
-> 💡 **Tip**: on first access the page may show "loading…" or "analysing…", which means the backend is still initialising data or the first analysis has not finished; wait a moment and refresh the page.
-
-#### 4. Common Commands
-
-```bash
-# Stop the services
-docker-compose down
-
-# Stop and delete the data volumes (wipes the database)
-docker-compose down -v
-
-# Restart the services
-docker-compose restart
-
-# Enter the backend container
-docker exec -it goldmind_backend /bin/bash
-
-# Enter the database container
-docker exec -it goldmind_mysql mysql -uroot -p
-```
+> ⚠️ Neither path has been through the same gate as this round's SQLite default, and the behavioural differences (ENUM storage, case-insensitive string comparison, transaction semantics) are known. Before relying on them, run
+> `GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" python -m pytest`
+> to confirm the baseline.
 ---
 
 ## 🧪 Common Commands
@@ -706,10 +621,10 @@ python -m pytest tests/unit          # unit: no database or network
 python -m pytest tests/integration   # integration: in-memory SQLite + fake LLM
 python -m pytest tests/e2e           # end-to-end: the whole chain in real usage order
 
-# Run the same suite under the MySQL dialect (worth doing after database-related changes)
-# Production uses MySQL, and MySQL differs from SQLite on enum storage, JSON columns and
-# case-insensitive string comparison — "green on SQLite" is not "green on MySQL". It must point
-# at a **separate test database**: the suite truncates every table.
+# Optional: run the same suite under the MySQL dialect (**only when you really want to verify
+# MySQL**; SQLite is the default and the CI convention). The two differ on enum storage, JSON
+# columns and case-insensitive string comparison. It must point at a **separate test database**:
+# the suite truncates every table.
 GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" \
     python -m pytest
 
@@ -720,9 +635,9 @@ python -m compileall -q app
 python scripts/gen_api_doc.py --check     # exit code 1 when out of sync
 python scripts/gen_api_doc.py             # regenerate docs/API.md and docs/en/api.md
 
-# Database initialisation (create database + tables + seed history)
+# Database initialisation (SQLite: create tables + seed history; the file is created automatically)
 python init_db.py
-SKIP_SEED=1 python init_db.py        # create the database and tables only, no seeding
+SKIP_SEED=1 python init_db.py        # create the tables only, no seeding (works offline)
 
 # Repair enum values in an old database (idempotent; only affects databases created by early
 # versions of schema.sql)
@@ -745,6 +660,11 @@ python scripts/migrate_quant.py --drop --yes
 
 # Run one round of factor fetching manually (first run backfills 10 years; increments after that)
 python -c "from app.database import SessionLocal; from app.services.quant.sync import run_sync; db=SessionLocal(); print(run_sync(db, force=True).to_dict()); db.close()"
+
+# Quant research bench: full evaluation of pre-registered candidates × horizons (reads the
+# cache by default; --refresh recomputes everything)
+python scripts/quant_lab.py
+python scripts/quant_lab.py --refresh
 ```
 
 ### Frontend
@@ -811,7 +731,7 @@ listed above —
 
 | Job | What it runs | Environment |
 |---|---|---|
-| `Backend (pytest)` | `python -m pytest` | Python 3.11 + in-memory SQLite (no MySQL) |
+| `Backend (pytest)` | `python -m pytest` | Python 3.11 + in-memory SQLite (MySQL is not needed) |
 | `Frontend (lint + test + build)` | `npm run lint` / `npm test` / `npm run build` | Node 22 |
 | `Browser E2E (Playwright)` | `npm run test:e2e` | Python 3.11 + Node 22 + Chromium + mock LLM |
 
@@ -847,26 +767,29 @@ GoldMind/
 ├── app/                          # Frontend (React 19 + TypeScript + Tailwind)
 │   ├── src/
 │   │   ├── sections/            # Six page sections + their tests
+│   │   ├── research/            # The "Research" page: the full pre-registered evaluation
 │   │   ├── components/          # Reusable components (including the prediction-date column of institutional views)
 │   │   ├── layout/              # Masthead / footer
 │   │   ├── services/            # API client and type definitions (api.ts)
 │   │   └── test/                # Test fixtures
 │   └── package.json
-├── backend/                      # Backend (FastAPI + SQLAlchemy + MySQL)
+├── backend/                      # Backend (FastAPI + SQLAlchemy; a single SQLite file by default)
 │   ├── app/
 │   │   ├── services/            # Business logic
 │   │   │   ├── llm_provider.py                     # **The only entry point for LLM calls**
 │   │   │   ├── institution_prediction_service.py   # Institutional views (including the institution registry)
 │   │   │   └── quant/                              # Quant engine: sources / derive / storage /
 │   │   │                                           #   sync / engine / decompose / scenarios /
-│   │   │                                           #   backtest / monitor / service
+│   │   │                                           #   backtest / monitor / service /
+│   │   │                                           #   stats / preregistered
 │   │   ├── routers/             # API routes
 │   │   ├── models/ schemas/     # Data models and response contracts
 │   │   ├── tasks/ scheduler.py  # Scheduled tasks (including the single time-zone convention)
 │   │   └── utils/timeutil.py    # **The only source of "now" and "today"**
 │   ├── scripts/                 # Migration scripts, doc generator, smoke and dev tools
 │   ├── tests/                   # unit / integration / e2e
-│   ├── schema.sql               # Table-creation script (run on the first Docker start)
+│   ├── schema.sql               # MySQL (optional path) DDL; SQLite uses the models' create_all
+│   ├── goldmind.db              # Default SQLite database (created at runtime, gitignored)
 │   └── requirements*.txt
 ├── docs/                         # Chinese documentation
 │   ├── en/                      # English mirrors (one-to-one with the Chinese versions)
@@ -881,7 +804,7 @@ GoldMind/
 ├── CHANGELOG.md / CHANGELOG_EN.md
 ├── CONTRIBUTING.md / CONTRIBUTING_EN.md
 ├── README.md / README_EN.md
-└── docker-compose.yml
+└── docker-compose.yml            # Optional path (not exercised in this repository)
 ```
 
 ---
@@ -901,7 +824,7 @@ The single mapping table for "changing what → read which file". The Chinese an
 | [`docs/API.md`](docs/API.md) | [`docs/en/api.md`](docs/en/api.md) | API specification (**both generated from the route table**) | Before changing an endpoint |
 | [`CHANGELOG.md`](CHANGELOG.md) | [`CHANGELOG_EN.md`](CHANGELOG_EN.md) | What changed in each version | Before upgrading |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | [`CONTRIBUTING_EN.md`](CONTRIBUTING_EN.md) | Contribution process | Before opening a PR |
-| [`docs/specs/`](docs/specs/) | — (stays Chinese) | Specs and plans for each round of changes (process records, not a second authority) | When tracing a decision from a past round |
+| [`docs/specs/`](docs/specs/) | — (stays Chinese) | Specs and plans for each round of changes (process records, not a second authority); this round's quant work is in `2026-10-02-量化策略提升路线图.md` + `2026-10-02-研究台报告.md` | When tracing a decision from a past round |
 
 > 📌 `docs/API.md` and `docs/en/api.md` **are not hand-written** — they are generated from the FastAPI route table by `backend/scripts/gen_api_doc.py`, and `backend/tests/integration/test_api_doc.py` checks that both stay consistent with the implementation. After changing an endpoint, run `cd backend && python scripts/gen_api_doc.py` to regenerate them.
 ---
@@ -909,7 +832,7 @@ The single mapping table for "changing what → read which file". The Chinese an
 ## 🔄 Workflow
 
 1. **Data collection**: Tencent Finance real-time gold price and Sina Finance ICE dollar index; historical backfill supports three sources — Sina / Eastmoney / Yahoo; news is fetched via RSS
-2. **Persistence**: gold prices, the dollar index and news are written to MySQL
+2. **Persistence**: gold prices, the dollar index and news are written to SQLite (a single file by default; `DATABASE_URL` can switch to MySQL)
 3. **Analysis**: 5 analysis services each assemble a prompt → call the LLM once (the endpoint is chosen by `LLM_*`) → parse the JSON
 4. **Quant**: public data sources → factor store → rolling z → per-horizon weights → one calibrated distribution → walk-forward backtest
 5. **Cache**: results are written into a two-level cache of memory + JSON files (TTL 2 hours), shared across restarts and processes
@@ -929,7 +852,7 @@ Early documents described these 5 services as a "LangChain Agent", which does no
 | Investment advice | `app/services/investment_advice_service.py` | Market state + bullish/bearish factors + institutional views | Three strategy tiers + risk notes |
 | Market summary | `app/services/market_summary_service.py` | All of the above | Core logic + risks + overall judgement |
 
-**Model**: decided by `LLM_MODEL` in `backend/.env` (and the provider likewise — see the environment variables under "Method 1"). The model name shown in the page footer comes from `/health`'s `ai_config` and is not hardcoded in the code.
+**Model**: decided by `LLM_MODEL` in `backend/.env` (and the provider likewise — see the environment variables under "Local Development"). The model name shown in the page footer comes from `/health`'s `ai_config` and is not hardcoded in the code.
 
 **Degradation behaviour**: when a data source or web search is unavailable, any service returns an explicit "unavailable" state and falls back to the database / RSS content; it does **not** fabricate data.
 

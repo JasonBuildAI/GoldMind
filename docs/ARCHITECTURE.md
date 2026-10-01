@@ -14,10 +14,10 @@
 ## 一、组件
 
 ```
-┌──────────────┐   /api/**   ┌──────────────┐            ┌──────────────┐
-│  浏览器      │ ──────────► │  FastAPI     │ ─────────► │  MySQL 8     │
-│  React 19    │             │  (uvicorn)   │            │  或 SQLite   │
-└──────────────┘             └──────┬───────┘            └──────────────┘
+┌──────────────┐   /api/**   ┌──────────────┐            ┌────────────────┐
+│  浏览器      │ ──────────► │  FastAPI     │ ─────────► │ SQLite（默认） │
+│  React 19    │             │  (uvicorn)   │            │ 或 MySQL（可选）│
+└──────────────┘             └──────┬───────┘            └────────────────┘
                                     │
                                     │ llm_provider（唯一出口）
                                     ▼
@@ -60,7 +60,7 @@ GoldMind/
     ├── app/
     │   ├── main.py        应用入口、限流、CORS
     │   ├── config.py      全部配置项（pydantic-settings）
-    │   ├── database.py    引擎与会话（MySQL / SQLite 双支持）
+    │   ├── database.py    引擎与会话（默认 SQLite；MySQL 可选）
     │   ├── models/        6 张表的 ORM 定义
     │   ├── routers/       4 个路由模块
     │   ├── services/      业务逻辑（见下）
@@ -76,7 +76,7 @@ GoldMind/
 **这不是多 Agent 系统。** 五个服务各自独立完成一次单轮 LLM 调用，彼此不通信：
 
 ```
-MySQL(gold_news, gold_prices)
+SQLite(gold_news, gold_prices)
         │
         ▼
   拼装 prompt ──► llm.invoke() ──► 解析 JSON ──► 两级缓存 ──► HTTP 响应
@@ -171,12 +171,13 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 > `tests/unit/test_schema_matches_models.py` 守住 —— 这两份 schema 曾经对枚举列的
 > 取值约定不一致，而 MySQL 的 ENUM 比较不区分大小写，导致「写得进去、读不出来」。
 
-引擎同时支持 MySQL 与 SQLite：SQLite 需要 `check_same_thread=False`，
-内存库还需 `StaticPool`，否则每个连接看到的是各自独立的空库。
+引擎默认使用 SQLite（单文件 `backend/goldmind.db`），同时支持 MySQL：SQLite 需要
+`check_same_thread=False`，内存库还需 `StaticPool`，否则每个连接看到的是各自独立的空库。
+`init_db.py` 在 SQLite 下用模型 `create_all` 建表，MySQL 下才先建库、再执行 `schema.sql`。
 
-> 测试默认跑内存 SQLite，但生产用 MySQL。两者在枚举存储、JSON 列与字符串比较
-> 大小写上都有差异，所以 `conftest.py` 留了 `GOLDMIND_TEST_DATABASE_URL` 开关，
-> 可以拿同一套用例去跑 MySQL（指向独立的测试库，用例会清空所有表）。
+> 测试默认跑内存 SQLite；想验 MySQL 时用 `conftest.py` 的 `GOLDMIND_TEST_DATABASE_URL`
+> 开关拿同一套用例再跑一遍（指向独立的测试库，用例会清空所有表）。两者在枚举存储、
+> JSON 列与字符串比较大小写上都有差异。
 
 ---
 
@@ -186,7 +187,7 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `DATABASE_URL` | MySQL 本地 | 也可指向 SQLite |
+| `DATABASE_URL` | `sqlite:///backend/goldmind.db` | 默认单文件 SQLite，零安装；也可指向 MySQL（可选，未随本仓库实测） |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | —（必须自填） | LLM 接入；任何 OpenAI 兼容端点，三项齐备才算已配置 |
 | `LLM_MAX_TOKENS` | `8192` | 单次输出上限，模型思考与正文共用 |
 | `LLM_SEARCH_ENABLED` | `false` | 插件式联网搜索开关（端点侧未开通时无效） |
@@ -290,15 +291,23 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 
 ## 十、部署
 
-`docker-compose.yml` 起三个容器：`mysql` / `backend` / `frontend`(nginx)。
+**文档化的复现路径是本地 SQLite**（见 `README.md`「快速开始」）：不装数据库、不装容器，
+`python init_db.py` 自动创建 `backend/goldmind.db` 并建表。
 
-- 后端入口脚本会等待数据库就绪，再跑 `init_db.py`，然后启动 uvicorn
-- 前端由 nginx 提供构建产物，`/api/` 与 `/health` 都反代到后端
-- LLM 凭证经 `backend/.env` 注入（`LLM_*`）
+仓库里仍保留可选的 MySQL / 容器资产，**未随本轮闸门实测**：
 
-- MySQL 首次启动时会执行 `backend/schema.sql`（只读挂载为
-  `/docker-entrypoint-initdb.d/01-schema.sql`）；该脚本自带 `CREATE DATABASE`
-  与 `USE`，且全部是 `IF NOT EXISTS`，可重复执行
+- `docker-compose.yml` 起三个容器：`mysql` / `backend` / `frontend`(nginx)；后端入口
+  等待数据库就绪后跑 `init_db.py` 再启动 uvicorn，前端 nginx 把 `/api/` 与 `/health`
+  反代到后端，LLM 凭证经 `backend/.env`（`LLM_*`）注入
+- MySQL 首次启动会执行 `backend/schema.sql`（只读挂载为
+  `/docker-entrypoint-initdb.d/01-schema.sql`）：脚本只含 `CREATE TABLE IF NOT EXISTS`，
+  **不写 CREATE DATABASE / USE**（写死库名会让配置失效）；mysql 镜像会先在
+  `MYSQL_DATABASE` 指定的库中选库再执行，因此可重复执行
+
+> 改用本机 MySQL 时在 `backend/.env` 写 `DATABASE_URL`，再跑 `python init_db.py`
+> （MySQL 路径先建库、再执行 `schema.sql`）。两条 MySQL 路径与 SQLite 默认路径的
+> 行为差异（ENUM 存储、字符串比较大小写、事务语义）已知，上线前先用
+> `GOLDMIND_TEST_DATABASE_URL` 跑一遍全档测试。
 
 ---
 
@@ -320,6 +329,9 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 回测 | `backtest.py` | 走查式命中率（评校准后的方向）+ 三个基准 + 未校准得分方向单列成绩 + 80% 区间覆盖率 + 2022-01-01 前后分段 + 逐因子命中率与 IC |
 | 监测 | `monitor.py` | 周更仪表盘逐行给频率 / 来源 / 值 / 信号 / 数据截至日；信号规则集中在 `_rule`，信息型行 `signal=null`，缺数据标「不可用 + 原因」 |
 | 出口 | `service.py` | 调度任务与 `POST /api/gold/quant/refresh` 共用同一条链路 |
+| 统计 | `stats.py` | 重叠样本的显著性工具箱：Newey–West HAC 标准误、圆周分块自助区间、HAC t / Diebold–Mariano、Brier 技能分与可靠性分桶（不引入 scipy） |
+| 预注册 | `preregistered.py` | 候选清单、选择规则与通过线的**唯一实现**：先注册、后检验；看到留出期成绩后再改常量即破坏预注册 |
+| 研究台 | `scripts/quant_lab.py` | 预注册候选 × 尺度的全档留出期评估（默认读缓存，`--refresh` 全量重算），结论进「研究」页与研究台报告 |
 
 三条不能破的口径：
 
@@ -343,15 +355,14 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 因子合成的 score 是**未校准**的输入：只在因子表与「因子偏向（未校准）」行展示，
 回测里单列成绩（`metrics.score_direction_accuracy`）。回归样本不足 60 组时
 `expected_return` 为 NaN → 该尺度整体「不可用 + 原因」，不退回「预期不变」，
-也不拿得分符号顶替方向。经验分位校准后 80% 区间的实际覆盖率（2026-10-01 实测）：
-全样本 78.1% / 77.3% / 75.8% / 76.7% / 61.0%，最近 500 个可评估样本
-70.2% / 66.0% / 64.4% / 55.0% / 27.6%（1 日 → 1 年；校准前为
-78.4% / 76.4% / 71.7% / 68.4% / 51.8% 与 70.0% / 64.0% / 58.8% / 47.6% / 18.4%）。
-1 年尺度近两年仍明显偏低：2023-10 至 2025-10 的走查误差平均 +33.0%，即漂移项（μ）
-低估了 2024–2025 年的上涨 —— 区间宽度校准补不回中心的偏差；试过再按误差的扩展均值
-校正 μ（250 日近 500 样本覆盖 27.6% → 41.6%），但 1–60 日命中率一律下降
-（如 60 日 64.5% → 60.5%），未采用，页面把覆盖率和基准一起如实展示
-（见 docs/00-产品方向.md 第四节）。
+也不拿得分符号顶替方向。经验分位校准后 80% 区间的实际覆盖率（2026-10-02 重算，留出期自 2023-10-02 起）：
+1 日 → 1 年依次为 78.9% / 77.6% / 73.2% / 61.2% / 24.1%；同留出期的方向命中率
+56.3% / 62.2% / 68.2% / 83.3% / 100%，逐日与「永远看多」一致（+0.0pp），Brier 技能分为负 ——
+模型在留出期没有方向上的信息优势。1 年尺度是头号问题：区间宽度校准补不回中心（μ）的
+偏差，覆盖率提高也不能换来方向上的改进。2026-10-02 的预注册裁决：17 个候选 × 5 个尺度
+无一过线，按规则**保留 `quant-v4` 并标注「无统计优势」**（裁决细节见
+`docs/specs/2026-10-02-研究台报告.md`，规则实现见 `preregistered.py`）。
+页面把覆盖率与「永远看多 / 动量」基准一起如实展示（见 docs/00-产品方向.md 第四节）。
 守卫：`tests/unit/quant/test_engine.py`（方向 / 概率 / σ / 经验分位四条判据，
 逐条做过变异验证）、`tests/unit/quant/test_backtest_metrics.py`。
 
