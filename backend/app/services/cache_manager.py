@@ -173,6 +173,11 @@ class CacheManager:
             #   Windows：表现为 WinError 32 / 5，写入直接失败；
             #   Linux：没有那个文件锁，会写出交错的内容，或把半成品 rename 成正式文件。
             # 实测 8 线程 × 25 轮写同一个键，稳定复现一批写入失败。
+            # 运行期目录被删掉时自愈（E2E 的 global-setup 会清空缓存目录）：
+            # 原实现只在导入时 mkdir 一次，目录一旦消失，之后每一笔写入都是
+            # ENOENT —— 文件缓存静默失效、日志刷满错误。
+            self.file_path.parent.mkdir(parents=True, exist_ok=True)
+
             fd, temp_name = tempfile.mkstemp(
                 dir=str(self.file_path.parent),
                 prefix=f".{self.cache_key}.",
