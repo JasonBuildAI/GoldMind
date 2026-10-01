@@ -36,7 +36,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Test
-        run: python -m pytest
+        run: python -m pytest > pytest-output.txt 2>&1
+      - name: Publish failures to the job summary
+        if: failure()
+        run: |
+          {
+            echo '### Backend (pytest) failures'
+            echo '```text'
+            tail -n 150 pytest-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   frontend:
     name: Frontend (lint + test + build)
@@ -94,4 +103,14 @@ jobs:
         env:
           E2E_PYTHON: python
           E2E_BROWSER: chromium
-        run: npm run test:e2e
+        run: npm run test:e2e > e2e-output.txt 2>&1
+      - name: Publish failures to the job summary
+        if: failure()
+        working-directory: app
+        run: |
+          {
+            echo '### Browser E2E failures'
+            echo '```text'
+            tail -n 250 e2e-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
