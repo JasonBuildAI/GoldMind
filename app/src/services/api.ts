@@ -600,6 +600,78 @@ export interface QuantMonitorResponse {
   rows: QuantMonitorRow[]
 }
 
+export interface ResearchPeriod {
+  label: string
+  window_start: string | null
+  window_end: string | null
+  sample_size: number
+  accuracy: number | null
+  baseline_up_accuracy: number | null
+  baseline_momentum_accuracy: number | null
+  brier_score: number | null
+  brier_skill_score: number | null
+  brier_skill_p_value: number | null
+  accuracy_diff_vs_up: number | null
+  accuracy_ci95: number[] | null
+  p_value_vs_up: number | null
+  interval_coverage_80: number | null
+  interval_coverage_ci95: number[] | null
+  effective_sample_size: number | null
+  reason: string | null
+}
+
+export interface ResearchReliabilityBin {
+  lo: number | null
+  hi: number | null
+  count: number
+  mean_predicted: number | null
+  frequency: number | null
+}
+
+export interface ResearchFactor {
+  key: string
+  name: string
+  category: string
+  category_name: string
+  weight: number
+  sign: number
+  samples: number
+  hit_rate: number | null
+  ic: number | null
+  rank_ic: number | null
+}
+
+export interface HorizonResearch {
+  horizon_days: number
+  label: string
+  headline: string
+  periods: {
+    development: ResearchPeriod
+    holdout: ResearchPeriod
+    full: ResearchPeriod
+  }
+  reliability_bins: ResearchReliabilityBin[]
+  factors: ResearchFactor[]
+}
+
+export interface ResearchVerdict {
+  status: 'candidate' | 'no_edge' | 'unavailable' | string
+  label: string
+  detail: string
+}
+
+export interface QuantResearchResponse {
+  model_version: string
+  status: string
+  reason: string | null
+  as_of: string | null
+  holdout_start: string
+  generated_at: string
+  cached: boolean
+  verdict: ResearchVerdict
+  horizons: HorizonResearch[]
+}
+
 export const quantApi = {
   getFactors: async (category?: string): Promise<QuantFactorsResponse> => {
     const url = category
@@ -624,6 +696,14 @@ export const quantApi = {
 
   getMonitor: async (): Promise<QuantMonitorResponse> => {
     const response = await api.get<QuantMonitorResponse>('/api/gold/quant/monitor')
+    return response.data
+  },
+
+  // 研究页：技能总览 / 可靠性 / 因子拆解 / 预注册裁决；首次约数秒，后端缓存 1 小时
+  getResearch: async (): Promise<QuantResearchResponse> => {
+    const response = await api.get<QuantResearchResponse>('/api/gold/quant/research', {
+      timeout: 60000,
+    })
     return response.data
   },
 

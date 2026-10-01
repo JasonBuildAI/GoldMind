@@ -7,11 +7,12 @@ const NAV = [
   { href: '#institutions', label: '机构' },
   { href: '#strategy', label: '策略' },
   { href: '#quant', label: '量化' },
+  { href: './research.html', label: '研究' },
   { href: '#conclusion', label: '总结' },
 ]
 
 /**
- * 报头：字标 + 锚点导航 + 数据来源与数据时间。
+ * 报头：字标 + 导航（本页锚点 + 独立研究页）+ 数据来源与数据时间。
  *
  * 数据时间只展示后端返回的 `updated_at`，不用浏览器时钟推算「今天」——
  * 那会在跨时区与跨零点时给出错误的时间（见 docs/ARCHITECTURE.md 第七节）。

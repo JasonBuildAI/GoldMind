@@ -6,6 +6,16 @@ import { defineConfig } from "vite"
 export default defineConfig({
   base: './',
   plugins: [react()],
+  build: {
+    // 多页：看板（index.html）与研究页（research.html）各自独立入口；
+    // base './' 下相对链接 ./research.html 在预览与静态部署里都能直达。
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        research: path.resolve(__dirname, 'research.html'),
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
