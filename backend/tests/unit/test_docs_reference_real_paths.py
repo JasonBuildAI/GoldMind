@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,22 @@ def _inline_paths(text: str) -> set[str]:
     }
 
 
+def _gitignored(rel: str) -> bool:
+    """该路径是否被 .gitignore 覆盖。
+
+    被忽略的文件（最典型的是 `backend/.env`）在**新克隆里天然不存在**，
+    引用它并不算死链 —— CI 里就是这种情况。反之，没被忽略又不存在的路径
+    必须报出来。
+    """
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", rel],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def _repo_links(text: str) -> set[str]:
     """只取相对路径的链接目标；http(s)、mailto、锚点都不算。"""
     targets = set()
@@ -65,7 +82,7 @@ def test_agents_md_inline_paths_exist():
     missing = [
         token
         for token in sorted(_inline_paths(_read("AGENTS.md")))
-        if not (REPO_ROOT / token).exists()
+        if not (REPO_ROOT / token).exists() and not _gitignored(token)
     ]
 
     assert not missing, (
