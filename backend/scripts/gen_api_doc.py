@@ -132,6 +132,10 @@ SUMMARY_EN: dict[str, str] = {
         "Fetch factors, recompute predictions and append one backtest run now "
         "(takes tens of seconds)."
     ),
+    "GET /api/gold/quant/research": (
+        "Research page: skill overview, reliability bins, coverage, regime scores, "
+        "factor breakdown and the pre-registered verdict."
+    ),
     "GET /api/gold/stats": (
         "Gold price statistics since 2025 (current price, return, volatility range, ...)."
     ),

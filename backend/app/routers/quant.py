@@ -16,6 +16,7 @@ from app.schemas.quant import (
     FactorDashboardResponse,
     MonitorResponse,
     QuantPredictionsResponse,
+    QuantResearchResponse,
     RefreshResponse,
 )
 from app.services.quant import monitor, service
@@ -65,6 +66,15 @@ async def get_quant_monitor(db: Session = Depends(get_db)):
     取不到数据行如实标「不可用 + 原因」（如上海金溢价），不编数字。
     """
     return monitor.build_monitor(db)
+
+
+@router.get("/quant/research", response_model=QuantResearchResponse)
+async def get_quant_research(db: Session = Depends(get_db)):
+    """研究页：技能总览、可靠性分桶、覆盖率、分段成绩、因子拆解与预注册裁决。
+
+    数字由走查式回测现算（缓存 1 小时）；数据不足的项带 `reason`，页面照实显示。
+    """
+    return await run_in_threadpool(service.research_report, db)
 
 
 @router.post("/quant/refresh", response_model=RefreshResponse)

@@ -14,10 +14,20 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.models.analysis import ModelEvaluation, Prediction
-from app.services.quant import backtest, decompose, engine, scenarios, storage, sync
+from app.services.cache_manager import CacheManager
+from app.services.quant import (
+    backtest,
+    decompose,
+    engine,
+    preregistered,
+    scenarios,
+    storage,
+    sync,
+)
 from app.services.quant.definitions import (
     BENCHMARK_KEY,
     CATEGORY_NAMES,
+    HOLDOUT_START,
     HORIZONS,
     MODEL_VERSION,
     factor_by_key,
@@ -27,6 +37,10 @@ from app.utils import timeutil
 
 # 完整回测的最小间隔：预测每 2 小时重算，回测每天只跑一次（它要扫全历史）
 BACKTEST_INTERVAL = timedelta(hours=24)
+# 研究页报告：走查式重算约数秒，缓存 1 小时；刷新数据后主动失效
+RESEARCH_CACHE_TTL = 3600
+RESEARCH_CACHE_KEY = "quant_research"
+RESEARCH_PERIOD_LABELS = {"development": "开发期", "holdout": "留出期", "full": "全样本"}
 
 
 def load_panel(db: Session) -> tuple[dict[str, pd.Series], pd.Series]:
@@ -280,8 +294,202 @@ def _evaluation_payload(row: Optional[ModelEvaluation], horizon: Optional[int] =
 
 
 # --------------------------------------------------------------------------- #
-# 写：预测与回测
+# 读：研究页（技能评估 / 可靠性 / 因子拆解 / 预注册裁决）
 # --------------------------------------------------------------------------- #
+def research_report(db: Session, *, use_cache: bool = True) -> dict:
+    """研究页的数据：三个样本期的技能指标 + 可靠性分桶 + 因子拆解 + 裁决。
+
+    技能指标是走查式现算（数据一变、页面跟着变），单次约数秒，用 1 小时缓存
+    挡住页面刷新；``full_refresh`` 成功后会让缓存失效。数字全部来自
+    ``backtest`` / ``stats``，这一层只做搬运与裁定，不自己造口径。
+    """
+    cache = CacheManager(RESEARCH_CACHE_KEY, ttl=RESEARCH_CACHE_TTL)
+    if use_cache:
+        cached = cache.get()
+        if cached is not None:
+            return {**cached, "cached": True}
+    payload = _build_research_payload(db)
+    if payload["status"] == engine.STATUS_OK:
+        cache.set(payload)
+    return {**payload, "cached": False}
+
+
+def _build_research_payload(db: Session) -> dict:
+    factors, close = load_panel(db)
+    generated_at = timeutil.now_iso()
+    if close is None or close.empty or not factors:
+        return {
+            "model_version": MODEL_VERSION,
+            "status": engine.PREDICTION_UNAVAILABLE,
+            "reason": "库里还没有因子面板或黄金价格序列（先同步数据，再看研究页）",
+            "as_of": None,
+            "holdout_start": HOLDOUT_START.isoformat(),
+            "generated_at": generated_at,
+            "verdict": {
+                "status": "unavailable",
+                "label": "数据不可用",
+                "detail": "没有可评估的数据，研究页不给出任何技能结论。",
+            },
+            "horizons": [],
+        }
+
+    horizons_payload = []
+    flags = {}
+    for horizon in HORIZONS:
+        periods = backtest.evaluate_periods(factors, close, horizon=horizon)
+        spec = horizon_spec.get(horizon)
+        # 线上模型就是 B0：留出期裁决里「自己 vs 自己」的覆盖率比较按保守处理
+        # （规则 ② 的覆盖率一条永不成立），与 quant_lab 对 B0 的算法一致。
+        flags[horizon] = preregistered.rule_flags(
+            preregistered.rule_input(periods["holdout"], periods["holdout"])
+        )
+        horizons_payload.append(
+            {
+                "horizon_days": horizon,
+                "label": spec.label if spec else f"{horizon} 日",
+                "headline": spec.headline if spec else "方向 / 校准区间",
+                "periods": {
+                    name: _research_period(name, evaluation)
+                    for name, evaluation in periods.items()
+                },
+                "reliability_bins": _research_bins(
+                    (periods["full"].metrics or {}).get("reliability_bins")
+                ),
+                "factors": _research_factors(periods["full"]),
+            }
+        )
+    passed_scales = [horizon for horizon, flag in flags.items() if flag["pass"]]
+    return {
+        "model_version": MODEL_VERSION,
+        "status": engine.STATUS_OK,
+        "reason": None,
+        "as_of": close.index[-1].date().isoformat(),
+        "holdout_start": HOLDOUT_START.isoformat(),
+        "generated_at": generated_at,
+        "verdict": _research_verdict(passed_scales, horizons_payload),
+        "horizons": horizons_payload,
+    }
+
+
+def _finite_pair(pair):
+    if pair is None:
+        return None
+    values = [preregistered.finite(value) for value in pair]
+    return None if any(value is None for value in values) else values
+
+
+def _research_period(name: str, evaluation: backtest.HorizonEvaluation) -> dict:
+    """一个样本期的指标（None = 算不出来；页面照实显示，不补数字）。"""
+    metrics = evaluation.metrics or {}
+    return {
+        "label": RESEARCH_PERIOD_LABELS.get(name, name),
+        "window_start": (
+            evaluation.window_start.isoformat() if evaluation.window_start else None
+        ),
+        "window_end": (
+            evaluation.window_end.isoformat() if evaluation.window_end else None
+        ),
+        "sample_size": evaluation.sample_size,
+        "accuracy": preregistered.finite(evaluation.accuracy),
+        "baseline_up_accuracy": preregistered.finite(evaluation.baseline_up_accuracy),
+        "baseline_momentum_accuracy": preregistered.finite(
+            evaluation.baseline_momentum_accuracy
+        ),
+        "brier_score": preregistered.finite(evaluation.brier_score),
+        "brier_skill_score": preregistered.finite(metrics.get("brier_skill_score")),
+        "brier_skill_p_value": preregistered.finite(metrics.get("brier_skill_p_value")),
+        "accuracy_diff_vs_up": preregistered.finite(metrics.get("accuracy_diff_vs_up")),
+        "accuracy_ci95": _finite_pair(metrics.get("accuracy_ci95")),
+        "p_value_vs_up": preregistered.finite(metrics.get("p_value_vs_up")),
+        "interval_coverage_80": preregistered.finite(metrics.get("interval_coverage_80")),
+        "interval_coverage_ci95": _finite_pair(metrics.get("interval_coverage_ci95")),
+        "effective_sample_size": preregistered.finite(metrics.get("effective_sample_size")),
+        "reason": metrics.get("reason"),
+    }
+
+
+def _research_bins(bins) -> list[dict]:
+    rows = []
+    for item in bins or []:
+        rows.append(
+            {
+                "lo": preregistered.finite(item.get("lo")),
+                "hi": preregistered.finite(item.get("hi")),
+                "count": int(item.get("count") or 0),
+                "mean_predicted": preregistered.finite(item.get("mean_predicted")),
+                "frequency": preregistered.finite(item.get("frequency")),
+            }
+        )
+    return rows
+
+
+def _research_factors(evaluation: backtest.HorizonEvaluation) -> list[dict]:
+    per_factor = (evaluation.metrics or {}).get("per_factor") or {}
+    rows = []
+    for key, item in per_factor.items():
+        definition = factor_by_key.get(key)
+        category = item.get("category") or (definition.category if definition else "")
+        rows.append(
+            {
+                "key": key,
+                "name": item.get("name") or (definition.name if definition else key),
+                "category": category,
+                "category_name": CATEGORY_NAMES.get(category, ""),
+                "weight": float(item.get("weight") or 0.0),
+                "sign": int(item.get("sign") or 0),
+                "samples": int(item.get("samples") or 0),
+                "hit_rate": preregistered.finite(item.get("hit_rate")),
+                "ic": preregistered.finite(item.get("ic")),
+                "rank_ic": preregistered.finite(item.get("rank_ic")),
+            }
+        )
+    rows.sort(key=lambda row: row["weight"], reverse=True)
+    return rows
+
+
+def _research_verdict(passed_scales: list[int], horizons_payload: list[dict]) -> dict:
+    """由数据生成一句诚实的结论；文案不写死「好」或「坏」。"""
+    differences = [
+        item["periods"]["holdout"]["accuracy_diff_vs_up"]
+        for item in horizons_payload
+        if item["horizon_days"] != preregistered.TARGET_SCALE
+    ]
+    others_ok = preregistered.other_scales_ok(differences)
+    if preregistered.selected(passed_scales, others_ok=others_ok):
+        detail = (
+            f"留出期有 {len(passed_scales)} 个尺度过线（"
+            + "、".join(f"{horizon} 日" for horizon in passed_scales)
+            + "）；按预注册规则进入模型换代复核。"
+        )
+        return {"status": "candidate", "label": "存在过线候选", "detail": detail}
+
+    details = []
+    for item in horizons_payload:
+        holdout = item["periods"]["holdout"]
+        accuracy = holdout["accuracy"]
+        up = holdout["baseline_up_accuracy"]
+        coverage = holdout["interval_coverage_80"]
+        if accuracy is None or up is None:
+            details.append(f"{item['horizon_days']} 日：样本不足")
+            continue
+        piece = (
+            f"{item['horizon_days']} 日命中 {accuracy * 100:.1f}% / "
+            f"永远看多 {up * 100:.1f}%（{100 * (accuracy - up):+.1f}pp）"
+        )
+        if coverage is not None:
+            piece += f"，区间覆盖 {coverage * 100:.1f}%（名义 80%）"
+        details.append(piece)
+    return {
+        "status": "no_edge",
+        "label": "无统计优势",
+        "detail": (
+            f"留出期（{HOLDOUT_START.isoformat()} 起）没有尺度满足预注册规则 ①/②："
+            + "；".join(details)
+            + "。按预注册规则保留 quant-v4，不换模型。"
+        ),
+    }
+
+
 def refresh_predictions(
     db: Session,
     *,
@@ -437,6 +645,8 @@ def full_refresh(db: Session, *, force: bool = True) -> dict:
     """抓取 → 派生 → 落库 → 重算预测 → 回测。限流与耗时见 POST /refresh。"""
     report = sync.run_sync(db, force=force)
     result = refresh_predictions(db, force_backtest=True)
+    # 数据变了，研究页的缓存（含旧截止日）必须失效，否则页面讲旧数字
+    CacheManager(RESEARCH_CACHE_KEY, ttl=RESEARCH_CACHE_TTL).delete()
     available = sum(1 for item in result["predictions"] if item["status"] == engine.STATUS_OK)
     return {
         "success": True,

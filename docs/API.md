@@ -58,6 +58,7 @@
 | `GET` | `/api/gold/quant/monitor` | 监测仪表盘：每行一个指标（频率、来源、当前值、信号、数据截至时间）。 |
 | `GET` | `/api/gold/quant/predictions` | 量化预测：方向、上行概率、目标价与逐因子贡献。 |
 | `POST` | `/api/gold/quant/refresh` | 立即抓取因子、重算预测并追加一次回测（耗时数十秒，已按付费档限流）。 （**重操作**，限流更严） |
+| `GET` | `/api/gold/quant/research` | 研究页：技能总览、可靠性分桶、覆盖率、分段成绩、因子拆解与预注册裁决。 |
 | `GET` | `/api/gold/stats` | 获取 2025 年至今的金价统计（当前价、涨跌幅、波动区间等）。 |
 
 ### 其他

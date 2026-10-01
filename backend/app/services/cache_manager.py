@@ -205,6 +205,17 @@ class CacheManager:
         """检查缓存是否存在且有效"""
         return self.get() is not None
 
+    def delete(self) -> None:
+        """让缓存立即失效（内存 + 文件）。数据同步后调用，避免页面讲旧数字。"""
+        with _memory_cache_lock:
+            _memory_cache.pop(self.cache_key, None)
+        if not _FILE_CACHE_ENABLED:
+            return
+        try:
+            self.file_path.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning(f"[CacheManager] 删除文件缓存失败（{self.file_path}）：{exc}")
+
 def get_cache_status():
     """获取缓存状态。"""
     with _memory_cache_lock:

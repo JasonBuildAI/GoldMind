@@ -247,3 +247,22 @@ def test_cache_write_self_heals_a_deleted_directory(tmp_path, monkeypatch):
     cache.set({"value": 2})                      # 应当自愈
     payload = json.loads(cache.file_path.read_text(encoding="utf-8"))
     assert payload["data"] == {"value": 2}
+
+
+@pytest.mark.unit
+def test_delete_invalidates_memory_and_file_cache(monkeypatch):
+    """`delete()` 必须同时清掉内存与文件 —— full_refresh 靠它让研究页立刻换数字。"""
+    from app.services import cache_manager
+
+    cache = cache_manager.CacheManager("delete_probe", ttl=3600)
+    cache.set({"value": 1})
+    assert cache.exists() is True
+    assert cache.file_path.exists()
+
+    cache.delete()
+
+    assert cache.get() is None
+    assert cache.exists() is False
+    assert not cache.file_path.exists()
+
+    cache.delete()  # 文件本就不存在：幂等，不抛

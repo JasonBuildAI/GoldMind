@@ -32,7 +32,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.services.quant import backtest, engine  # noqa: E402
+from app.services.quant import backtest, engine, preregistered  # noqa: E402
 from app.services.quant.definitions import (  # noqa: E402
     CATEGORY_MONETARY,
     CATEGORY_RISK,
@@ -40,17 +40,17 @@ from app.services.quant.definitions import (  # noqa: E402
     HOLDOUT_START,
     HORIZONS,
 )
+from app.services.quant.preregistered import (  # noqa: E402
+    INTERVAL_NOMINAL,
+    RULE_2_ACCURACY_TOLERANCE,
+    RULE_2_BRIER_P,
+    RULE_OTHER_SCALE_TOLERANCE,
+    TARGET_SCALE,
+)
 from app.utils import timeutil  # noqa: E402
 
 PERIODS = ("development", "holdout", "full")
 PERIOD_LABELS = {"development": "开发期", "holdout": "留出期", "full": "全样本"}
-
-# 预注册规则（与 spec 6.1 一字不差地对应；改这里必须同时改 spec，测试会红）
-TARGET_SCALE = 250
-RULE_2_ACCURACY_TOLERANCE = -0.01   # 命中率不劣化 ≤1pp
-RULE_OTHER_SCALE_TOLERANCE = -0.02  # 其它尺度不恶化 ≤2pp
-RULE_2_BRIER_P = 0.05               # Brier 技能分显著为正
-INTERVAL_NOMINAL = 0.80
 
 GROUP_LABELS = {
     "baseline": "基线族",
@@ -276,30 +276,18 @@ def _number(value, digits: int = 3) -> str:
 
 
 def rule_flags(row: dict, baseline_row: dict) -> dict:
-    """预注册硬规则的逐尺度判定（细则见 spec 6.1）。"""
-    up = row["baseline_up"]
-    ci_low = row["accuracy_ci_low"]
-    rule_1 = not _missing(ci_low) and not _missing(up) and ci_low > up
-
-    coverage = row["coverage_80"]
-    base_coverage = baseline_row["coverage_80"]
-    closer_to_80 = (
-        not _missing(coverage)
-        and not _missing(base_coverage)
-        and abs(coverage - INTERVAL_NOMINAL) < abs(base_coverage - INTERVAL_NOMINAL)
+    """预注册硬规则的逐尺度判定（唯一实现见 ``preregistered.rule_flags``）。"""
+    return preregistered.rule_flags(
+        preregistered.RuleInput(
+            accuracy_ci_low=row["accuracy_ci_low"],
+            baseline_up=row["baseline_up"],
+            accuracy_diff_vs_up=row["accuracy_diff_vs_up"],
+            brier_skill_score=row["brier_skill_score"],
+            brier_skill_p_value=row["brier_skill_p_value"],
+            coverage_80=row["coverage_80"],
+            baseline_coverage_80=baseline_row["coverage_80"],
+        )
     )
-    not_worse = (
-        not _missing(row["accuracy_diff_vs_up"])
-        and row["accuracy_diff_vs_up"] >= RULE_2_ACCURACY_TOLERANCE
-    )
-    skill_significant = (
-        not _missing(row["brier_skill_score"])
-        and row["brier_skill_score"] > 0
-        and not _missing(row["brier_skill_p_value"])
-        and row["brier_skill_p_value"] < RULE_2_BRIER_P
-    )
-    rule_2 = not_worse and skill_significant and closer_to_80
-    return {"rule_1": bool(rule_1), "rule_2": bool(rule_2), "pass": bool(rule_1 or rule_2)}
 
 
 def decide(rows: list[dict]) -> dict[str, dict]:
@@ -323,12 +311,18 @@ def decide(rows: list[dict]) -> dict[str, dict]:
                 else {"rule_1": False, "rule_2": False, "pass": False}
             )
         passed_scales = [horizon for horizon in horizons if flags[horizon]["pass"]]
-        others_ok = all(
-            not _missing(index[(candidate.key, horizon, "holdout")]["accuracy_diff_vs_up"])
-            and index[(candidate.key, horizon, "holdout")]["accuracy_diff_vs_up"]
-            >= RULE_OTHER_SCALE_TOLERANCE
-            for horizon in horizons
-            if horizon != TARGET_SCALE and (candidate.key, horizon, "holdout") in index
+        others_ok = preregistered.other_scales_ok(
+            [
+                index[(candidate.key, horizon, "holdout")]["accuracy_diff_vs_up"]
+                for horizon in horizons
+                if (candidate.key, horizon, "holdout") in index
+            ],
+            horizons=[
+                horizon
+                for horizon in horizons
+                if (candidate.key, horizon, "holdout") in index
+            ],
+            target_scale=TARGET_SCALE,
         )
         target_ok = (
             TARGET_SCALE in flags
@@ -340,7 +334,9 @@ def decide(rows: list[dict]) -> dict[str, dict]:
             "passed_scales": passed_scales,
             "target_ok": bool(target_ok),
             "others_ok": bool(others_ok),
-            "selected": bool(len(passed_scales) >= 3 or (target_ok and others_ok)),
+            "selected": preregistered.selected(
+                passed_scales, others_ok=bool(others_ok), target_scale=TARGET_SCALE
+            ),
         }
     return results
 

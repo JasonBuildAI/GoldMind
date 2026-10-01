@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -213,4 +213,66 @@ class RefreshResponse(BaseModel):
     factor_status: dict
     predictions: List[QuantPredictionItem]
     evaluations: List[AccuracyRow]
+
+
+class ResearchPeriod(BaseModel):
+    """一个样本期（开发 / 留出 / 全样本）的技能指标；算不出来就是 None + reason。"""
+
+    label: str
+    window_start: Optional[date] = None
+    window_end: Optional[date] = None
+    sample_size: int = 0
+    accuracy: Optional[float] = None
+    baseline_up_accuracy: Optional[float] = None
+    baseline_momentum_accuracy: Optional[float] = None
+    brier_score: Optional[float] = None
+    brier_skill_score: Optional[float] = None
+    brier_skill_p_value: Optional[float] = None
+    accuracy_diff_vs_up: Optional[float] = None
+    accuracy_ci95: Optional[List[float]] = None
+    p_value_vs_up: Optional[float] = None
+    interval_coverage_80: Optional[float] = None
+    interval_coverage_ci95: Optional[List[float]] = None
+    effective_sample_size: Optional[float] = None
+    reason: Optional[str] = None
+
+
+class ResearchFactor(BaseModel):
+    key: str
+    name: str
+    category: str
+    category_name: str
+    weight: float
+    sign: int
+    samples: int
+    hit_rate: Optional[float] = None
+    ic: Optional[float] = None
+    rank_ic: Optional[float] = None
+
+
+class HorizonResearch(BaseModel):
+    horizon_days: int
+    label: str
+    headline: str
+    periods: Dict[str, ResearchPeriod]
+    reliability_bins: List[Dict[str, Any]] = []
+    factors: List[ResearchFactor] = []
+
+
+class ResearchVerdict(BaseModel):
+    status: str          # ok / no_edge / candidate / unavailable
+    label: str
+    detail: str
+
+
+class QuantResearchResponse(BaseModel):
+    model_version: str
+    status: str
+    reason: Optional[str] = None
+    as_of: Optional[date] = None
+    holdout_start: date
+    generated_at: datetime
+    cached: bool = False
+    verdict: ResearchVerdict
+    horizons: List[HorizonResearch] = []
 

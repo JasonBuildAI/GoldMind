@@ -58,6 +58,7 @@ The running service also serves interactive documentation at `http://localhost:8
 | `GET` | `/api/gold/quant/monitor` | Monitoring dashboard: one row per indicator (frequency, source, current value, signal, data as of). |
 | `GET` | `/api/gold/quant/predictions` | Quant forecast: direction, upside probability, target price and per-factor contributions. |
 | `POST` | `/api/gold/quant/refresh` | Fetch factors, recompute predictions and append one backtest run now (takes tens of seconds). (**heavy operation**, stricter rate limit) |
+| `GET` | `/api/gold/quant/research` | Research page: skill overview, reliability bins, coverage, regime scores, factor breakdown and the pre-registered verdict. |
 | `GET` | `/api/gold/stats` | Gold price statistics since 2025 (current price, return, volatility range, ...). |
 
 ### other
