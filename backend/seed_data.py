@@ -5,35 +5,43 @@
 2. 东方财富（国内，备选）
 3. Yahoo Finance（国外，最后尝试）
 
+数据库由 **DATABASE_URL 唯一真源**决定，SQLite（默认）与 MySQL 共用同一套代码：
+    - 默认 SQLite：backend/goldmind.db，零安装、单文件，方便任何人复现；
+    - 需要 MySQL 时在 backend/.env 里显式覆盖 DATABASE_URL。
+
 使用方式:
     cd backend
     python seed_data.py
 """
 
-import os
 import sys
 import re
 import requests
 import json
-from datetime import datetime, date, timedelta
-from typing import List, Dict, Optional, Tuple
+from datetime import datetime, date
+from typing import List, Dict, Optional
 from pathlib import Path
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent))
 
-import pymysql
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from app.database import mysql_connection_params  # noqa: E402
+import app.models  # noqa: E402,F401  注册全部模型（建表时需要）
+from app.database import SessionLocal, engine, init_db  # noqa: E402
+from app.models.gold_price import DollarIndex, GoldPrice  # noqa: E402
 
-# 数据库配置：以 DATABASE_URL 为唯一真源（与后端应用一致）。
-# 曾经这里读 DB_*、应用读 DATABASE_URL，两处不一致时会把数据灌到另一个库上，
-# 且没有任何报错 —— 表现只是「接口里没数据」。
-DB_PARAMS = mysql_connection_params(include_database=True)
-DB_NAME = DB_PARAMS["database"]
+
+def database_label() -> str:
+    """给日志用的库标识；**不打印凭据**。"""
+    url = engine.url
+    if url.get_backend_name() == "sqlite":
+        return f"SQLite {url.database}"
+    return f"{url.get_backend_name()} {url.host}:{url.port}/{url.database}"
+
+
+# 数据库目标只认 DATABASE_URL（与后端应用一致）。曾经这里读 DB_*、
+# 应用读 DATABASE_URL，两处不一致时会把数据灌到另一个库上，且没有任何报错 ——
+# 表现只是「接口里没数据」。
 
 # 数据获取配置
 START_DATE = date(2025, 1, 1)
@@ -50,10 +58,14 @@ class DatabaseError(Exception):
     pass
 
 
-def get_db_connection():
-    """获取数据库连接"""
+def get_db_session():
+    """打开一个数据库会话（SQLite / MySQL 通用）。
+
+    第一次运行（库文件或表还不存在）时会自动建表，与后端启动时的建表逻辑一致。
+    """
     try:
-        return pymysql.connect(**DB_PARAMS)
+        init_db()
+        return SessionLocal()
     except Exception as e:
         raise DatabaseError(f"数据库连接失败: {e}")
 
@@ -423,91 +435,98 @@ def fetch_dollar_index_history() -> List[Dict]:
 # 数据库操作
 # =============================================================================
 
-def save_gold_prices(conn, data: List[Dict]) -> int:
-    """保存黄金价格数据到数据库"""
-    cursor = conn.cursor()
+def _existing_dates(session, model, dates) -> set:
+    """查一批日期里哪些已经在库里。
+
+    SQLite 的占位符上限比 MySQL 小，分批查询，避免一次 IN (...) 里塞太多值。
+    """
+    clean = [d for d in dates if d]
+    existing: set = set()
+    for start in range(0, len(clean), 500):
+        chunk = clean[start:start + 500]
+        rows = session.query(model.date).filter(model.date.in_(chunk)).all()
+        existing.update(row[0] for row in rows)
+    return existing
+
+
+def save_gold_prices(session, data: List[Dict]) -> int:
+    """保存黄金价格数据（已存在的日期跳过；单行失败不影响整批）。"""
     inserted = 0
     skipped = 0
-    
+    known = _existing_dates(session, GoldPrice, [item.get("date") for item in data])
+
     for item in data:
         try:
-            # 检查是否已存在
-            cursor.execute(
-                "SELECT id FROM gold_prices WHERE date = %s",
-                (item['date'],)
-            )
-            if cursor.fetchone():
+            if not item.get("date"):
+                raise ValueError("缺少 date 字段")
+            if item["date"] in known:
                 skipped += 1
                 continue
-            
+
             # 计算涨跌幅
             change_pct = 0.0
-            if item['open_price'] > 0:
-                change_pct = round((item['close_price'] - item['open_price']) / item['open_price'] * 100, 2)
-            
-            # 插入数据
-            cursor.execute("""
-                INSERT INTO gold_prices 
-                (date, open_price, high_price, low_price, close_price, volume, change_percent)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (
-                item['date'],
-                item['open_price'],
-                item['high_price'],
-                item['low_price'],
-                item['close_price'],
-                item.get('volume', 0),
-                change_pct
-            ))
+            if item["open_price"] > 0:
+                change_pct = round(
+                    (item["close_price"] - item["open_price"]) / item["open_price"] * 100, 2
+                )
+
+            # begin_nested() = SAVEPOINT：单行写失败只回滚这一行，不毁掉整批
+            with session.begin_nested():
+                session.add(
+                    GoldPrice(
+                        date=item["date"],
+                        open_price=item["open_price"],
+                        high_price=item["high_price"],
+                        low_price=item["low_price"],
+                        close_price=item["close_price"],
+                        volume=item.get("volume", 0),
+                        change_percent=change_pct,
+                    )
+                )
+            known.add(item["date"])
             inserted += 1
-            
+
         except Exception as e:
-            print(f"  警告: 插入数据失败 {item['date']}: {e}")
-    
-    conn.commit()
-    cursor.close()
-    
+            print(f"  警告: 插入数据失败 {item.get('date')}: {e}")
+
+    session.commit()
+
     print(f"  黄金数据: 新增 {inserted} 条, 跳过 {skipped} 条(已存在)")
     return inserted
 
 
-def save_dollar_index(conn, data: List[Dict]) -> int:
-    """保存美元指数数据到数据库"""
-    cursor = conn.cursor()
+def save_dollar_index(session, data: List[Dict]) -> int:
+    """保存美元指数数据（已存在的日期跳过；单行失败不影响整批）。"""
     inserted = 0
     skipped = 0
-    
+    known = _existing_dates(session, DollarIndex, [item.get("date") for item in data])
+
     for item in data:
         try:
-            # 检查是否已存在
-            cursor.execute(
-                "SELECT id FROM dollar_index WHERE date = %s",
-                (item['date'],)
-            )
-            if cursor.fetchone():
+            if not item.get("date"):
+                raise ValueError("缺少 date 字段")
+            if item["date"] in known:
                 skipped += 1
                 continue
-            
-            # 插入数据
-            cursor.execute("""
-                INSERT INTO dollar_index 
-                (date, open_price, high_price, low_price, close_price)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (
-                item['date'],
-                item['open_price'],
-                item['high_price'],
-                item['low_price'],
-                item['close_price']
-            ))
+
+            with session.begin_nested():
+                session.add(
+                    DollarIndex(
+                        date=item["date"],
+                        open_price=item["open_price"],
+                        high_price=item["high_price"],
+                        low_price=item["low_price"],
+                        close_price=item["close_price"],
+                    )
+                )
+            known.add(item["date"])
             inserted += 1
-            
+
         except Exception as e:
-            print(f"  警告: 插入数据失败 {item['date']}: {e}")
-    
-    conn.commit()
-    cursor.close()
-    
+            print(f"  警告: 插入数据失败 {item.get('date')}: {e}")
+
+    session.commit()
+
     print(f"  美元指数数据: 新增 {inserted} 条, 跳过 {skipped} 条(已存在)")
     return inserted
 
@@ -522,13 +541,13 @@ def main():
     print("🚀 数据库种子数据初始化")
     print("=" * 60)
     print(f"数据范围: {START_DATE} 至 {END_DATE}")
-    print(f"数据库: {DB_PARAMS['host']}:{DB_PARAMS['port']}/{DB_NAME}")
+    print(f"数据库: {database_label()}")
     print("-" * 60)
     
     try:
         # 1. 连接数据库
         print("\n📡 连接数据库...")
-        conn = get_db_connection()
+        session = get_db_session()
         print("✅ 数据库连接成功")
         
         # 2. 获取黄金数据
@@ -539,11 +558,11 @@ def main():
         
         # 4. 保存到数据库
         print("\n💾 保存数据到数据库...")
-        gold_inserted = save_gold_prices(conn, gold_data)
-        dollar_inserted = save_dollar_index(conn, dollar_data)
+        gold_inserted = save_gold_prices(session, gold_data)
+        dollar_inserted = save_dollar_index(session, dollar_data)
         
-        # 5. 关闭连接
-        conn.close()
+        # 5. 关闭会话
+        session.close()
         
         # 6. 显示结果
         print("\n" + "=" * 60)
@@ -561,10 +580,9 @@ def main():
     except DatabaseError as e:
         print(f"\n❌ 数据库错误: {e}")
         print("\n请检查:")
-        print("  1. MySQL服务是否已启动")
-        print("  2. 数据库配置是否正确")
-        print("  3. 数据库 'gold_analysis' 是否存在")
-        print("\n您可以通过以下命令创建数据库:")
+        print("  1. DATABASE_URL 是否正确（留空即用默认 SQLite：backend/goldmind.db）")
+        print("  2. 只有显式配置 MySQL 时才需要 MySQL 服务已启动、库已建好")
+        print("\n您可以通过以下命令初始化数据库:")
         print("  python init_db.py")
         return False
         

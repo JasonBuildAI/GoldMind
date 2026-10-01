@@ -1,21 +1,32 @@
 """配置管理"""
 import os
+from pathlib import Path
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
 load_dotenv()
 
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+# 默认数据库：backend/goldmind.db（SQLite 单文件，零安装）。
+# 用绝对路径，避免「从哪个目录启动就建到哪」。
+DEFAULT_DATABASE_URL = f"sqlite:///{(BACKEND_DIR / 'goldmind.db').as_posix()}"
+
 
 class Settings(BaseSettings):
     # 数据库配置
-    # 默认指向本机 MySQL，但**故意不带密码**：凭据只能来自 .env 与部署环境
-    # （AGENTS.md 的红线 2）。带一个弱默认密码的后果是「没配也能连上」——
-    # 那会掩盖配置缺失，也让弱口令看起来是正常用法。
-    # 没配 .env 时这里会认证失败，是期望的行为。
-    # 同样用 SecretStr：连接串里带数据库密码，
-    # repr/日志里不该出现。取用时用 `.get_secret_value()`。
-    DATABASE_URL: SecretStr = SecretStr("mysql+pymysql://root@localhost:3306/gold_analysis")
+    # 默认 SQLite：零安装、单文件，不需要 MySQL / Docker / 任何数据库凭据，
+    # 任何人都能在自己电脑上复现整个系统。
+    #
+    # 需要 MySQL 时在 backend/.env 里显式写
+    #   DATABASE_URL=mysql+pymysql://user:password@localhost:3306/gold_analysis
+    # 覆盖即可。应用、init_db.py、seed_data.py、scripts/*.py 共用这一处真源。
+    #
+    # 用 SecretStr：连接串里可能带数据库密码，repr/日志里不该出现。
+    # 取用时用 `.get_secret_value()`。
+    DATABASE_URL: SecretStr = SecretStr(DEFAULT_DATABASE_URL)
     
     # ------------------------------------------------------------------
     # LLM 接入 —— 任何 OpenAI 兼容端点，不绑定具体供应商
