@@ -204,7 +204,7 @@ export default function Conclusion() {
                   {targets.map((item) => (
                     <tr key={item.institution}>
                       <th scope="row">{item.institution}</th>
-                      <td className="num">{formatUsd(item.target)}</td>
+                      <td className="num">{item.target ? formatUsd(item.target) : '—'}</td>
                       <td>{item.probability || '—'}</td>
                       <td>{item.timeframe || '—'}</td>
                     </tr>

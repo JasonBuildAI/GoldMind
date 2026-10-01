@@ -62,6 +62,22 @@ describe('Conclusion', () => {
     expect(screen.getByText('$2,690.00')).toBeInTheDocument()
   })
 
+  it('机构没有目标价、模型写成 0 时显示「—」，不是 $0.00', async () => {
+    // 回归：模型对「暂无目标价」会写 target: 0，Intl 把它渲染成 $0.00 —— 那是
+    // 一个并不存在的价格。设计规范要求算不出的字段显示「—」，不填默认值。
+    mocked.getMarketSummary.mockResolvedValue({
+      ...SUMMARY,
+      institution_targets: [
+        { institution: '接口返回的机构', target: 0, probability: '低', timeframe: '暂无' },
+      ],
+    })
+
+    render(<Conclusion />)
+
+    expect(await screen.findByText('接口返回的机构')).toBeInTheDocument()
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+  })
+
   it('接口没给当前价格时不显示「当前价格」这一行', async () => {
     // 回归：原实现把当前价格写死成 5067 —— 那是凭空的数字，
     // 会被当成「当前价格」摆在目标价表里。
