@@ -219,3 +219,31 @@ def test_cache_write_does_not_use_a_shared_temp_name(monkeypatch):
 
     assert len(seen) == 2
     assert seen[0] != seen[1], "两次写入用了同一个临时文件名"
+
+
+@pytest.mark.unit
+def test_cache_write_self_heals_a_deleted_directory(tmp_path, monkeypatch):
+    """缓存目录在运行期被删掉时，写入应当自建目录，而不是一直 ENOENT。
+
+    回归：CI 的 E2E 里 global-setup 会清空 ``backend/e2e-cache``，之后后端进程
+    持有的目录不存在，每一笔文件缓存写入都失败（日志实证）。
+    写入前补一次 mkdir 即可自愈；文件缓存是加速手段，不该静默失效。
+    """
+    import json
+    import shutil
+
+    from app.services import cache_manager
+
+    monkeypatch.setattr(cache_manager, "_FILE_CACHE_ENABLED", True)
+    cache = cache_manager.CacheManager("self_heal_probe", ttl=3600)
+
+    target = tmp_path / "runtime-cache"
+    monkeypatch.setattr(cache, "file_path", target / "self_heal_probe.json")
+
+    cache.set({"value": 1})                      # 目录不存在 -> 应当自建
+    assert cache.file_path.exists(), "首次写入没有创建目录"
+
+    shutil.rmtree(target)                        # 运行期被删掉
+    cache.set({"value": 2})                      # 应当自愈
+    payload = json.loads(cache.file_path.read_text(encoding="utf-8"))
+    assert payload["data"] == {"value": 2}
