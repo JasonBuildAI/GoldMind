@@ -62,6 +62,11 @@ CALIBRATION_WINDOW = 750
 # α 的安全范围：太小的 α 会让区间退化成「永远覆盖」，太大则失去意义
 ACI_ALPHA_FLOOR = 0.005
 ACI_ALPHA_CAP = 0.6
+# 合成得分的变体（研究台用；默认仍是 weighted，即线上口径）
+SCORE_MODES = ("weighted", "equal", "winsor", "trimmed")
+WINSOR_LIMIT = 2.0
+# 区间口径的变体（研究台用；默认仍是 aci，即线上口径）
+INTERVAL_MODES = ("aci", "aci_symmetric", "empirical", "normal")
 
 EPS = 1e-12
 
@@ -139,26 +144,52 @@ def build_signals(
     return pd.DataFrame(columns, index=calendar)
 
 
-def composite_score(signals: pd.DataFrame, *, horizon: Optional[int] = None) -> pd.Series:
+def composite_score(
+    signals: pd.DataFrame,
+    *,
+    horizon: Optional[int] = None,
+    mode: str = "weighted",
+    include: Optional[tuple[str, ...]] = None,
+) -> pd.Series:
     """加权合成得分，权重按当日**可用**因子归一（缺因子不等于该因子为 0）。
 
     ``horizon`` 决定用哪一组权重：不同时间尺度主导项不同（见 definitions 的
     ``horizon_weights``）；``None`` 表示基础权重。
+
+    ``mode`` 是研究台的预注册变体：``weighted``（线上口径）、``equal``（等权）、
+    ``winsor``（z 截尾到 ±2 再加权）、``trimmed``（每行剔除绝对值最大的一个贡献）。
+    ``include`` 限定因子子集（研究台用；默认全部）。
     """
     if signals.empty:
         return pd.Series(dtype="float64", index=signals.index)
+    if mode not in SCORE_MODES:
+        raise ValueError(f"未知的合成模式：{mode}")
+    frame = signals
+    if include is not None:
+        frame = frame[[key for key in frame.columns if key in set(include)]]
+    if frame.empty:
+        return pd.Series(np.nan, index=signals.index)
     weights = pd.Series(
         {
             key: factor_by_key[key].weight_for(horizon)
-            for key in signals.columns
+            for key in frame.columns
             if key in factor_by_key
         }
     )
     if weights.empty:
         return pd.Series(np.nan, index=signals.index)
-    present = signals.notna().mul(weights, axis=1)
+    if mode == "equal":
+        weights = pd.Series(1.0, index=weights.index)
+    values = frame.clip(-WINSOR_LIMIT, WINSOR_LIMIT) if mode == "winsor" else frame
+    if mode == "trimmed":
+        weighted_values = values.mul(weights, axis=1)
+        available_count = values.notna().mul(weights, axis=1).sum(axis=1)
+        rank = weighted_values.abs().rank(axis=1, ascending=False, method="first")
+        keep = (rank > 1) | (available_count < 4).values[:, None]
+        values = values.where(keep)
+    present = values.notna().mul(weights, axis=1)
     total_weight = present.sum(axis=1)
-    weighted = signals.mul(weights, axis=1).sum(axis=1, skipna=True)
+    weighted = values.mul(weights, axis=1).sum(axis=1, skipna=True)
     return weighted / total_weight.where(total_weight > EPS)
 
 
@@ -179,8 +210,12 @@ def expanding_ols(
     y: pd.Series,
     *,
     min_samples: int = MIN_OLS_SAMPLES,
+    window: Optional[int] = None,
 ) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
-    """扩展窗口一元回归，返回 ``(alpha, beta, residual_sigma, calibrated)``。
+    """扩展窗口（或滚动窗口）一元回归，返回 ``(alpha, beta, residual_sigma, calibrated)``。
+
+    ``window`` 给定时改为滚动窗口（研究台的「漂移」预注册变体）：
+    只使用最近 ``window`` 个已实现样本，允许定价关系随时间漂移。
 
     调用方必须传**已经右移过 h 期**的 x / y（见 ``build_prediction_frame``）：
     这样 t 时刻的样本只包含 ``s + h <= t`` 的已实现样本对，回归不会看到未来。
@@ -193,13 +228,24 @@ def expanding_ols(
         empty = pd.Series(np.nan, index=x.index, dtype="float64")
         return empty, empty, empty, pd.Series(False, index=x.index, dtype="bool")
 
-    expanding = frame["x"].expanding()
+    if window is None:
+        expanding = frame["x"].expanding()
+        y_expanding = frame["y"].expanding()
+        xx_expanding = (frame["x"] ** 2).expanding()
+        xy_expanding = (frame["x"] * frame["y"]).expanding()
+        yy_expanding = (frame["y"] ** 2).expanding()
+    else:
+        expanding = frame["x"].rolling(window, min_periods=min_samples)
+        y_expanding = frame["y"].rolling(window, min_periods=min_samples)
+        xx_expanding = (frame["x"] ** 2).rolling(window, min_periods=min_samples)
+        xy_expanding = (frame["x"] * frame["y"]).rolling(window, min_periods=min_samples)
+        yy_expanding = (frame["y"] ** 2).rolling(window, min_periods=min_samples)
     n = expanding.count()
     sum_x = expanding.sum()
-    sum_y = frame["y"].expanding().sum()
-    sum_xx = (frame["x"] ** 2).expanding().sum()
-    sum_xy = (frame["x"] * frame["y"]).expanding().sum()
-    sum_yy = (frame["y"] ** 2).expanding().sum()
+    sum_y = y_expanding.sum()
+    sum_xx = xx_expanding.sum()
+    sum_xy = xy_expanding.sum()
+    sum_yy = yy_expanding.sum()
 
     denominator = n * sum_xx - sum_x ** 2
     usable = (n >= min_samples) & (denominator.abs() > EPS)
@@ -243,6 +289,7 @@ def calibrate_interval_factors(
     half_life: int = ACI_HALF_LIFE,
     window: int = CALIBRATION_WINDOW,
     min_samples: int = MIN_ERRORS_FOR_SIGMA,
+    symmetric: bool = False,
 ) -> pd.DataFrame:
     """非对称经验分位 + ACI：studentized 误差 → 逐日的上下分位因子。
 
@@ -268,8 +315,14 @@ def calibrate_interval_factors(
             ages = np.arange(len(tail) - 1, -1, -1, dtype="float64")
             weights = np.power(0.5, ages / float(half_life))
             sample = np.asarray(tail, dtype="float64")
-            q_low = _weighted_quantile(sample, weights, current_alpha / 2.0)
-            q_high = _weighted_quantile(sample, weights, 1.0 - current_alpha / 2.0)
+            if symmetric:
+                magnitude = _weighted_quantile(
+                    np.abs(sample), weights, 1.0 - current_alpha / 2.0
+                )
+                q_low, q_high = -magnitude, magnitude
+            else:
+                q_low = _weighted_quantile(sample, weights, current_alpha / 2.0)
+                q_high = _weighted_quantile(sample, weights, 1.0 - current_alpha / 2.0)
             lower[position] = q_low
             upper[position] = q_high
             alphas[position] = current_alpha
@@ -295,6 +348,9 @@ def build_prediction_frame(
     score: pd.Series,
     close: pd.Series,
     horizon: int,
+    *,
+    regression_window: Optional[int] = None,
+    interval: str = "aci",
 ) -> pd.DataFrame:
     """把得分序列变成逐日的预测：期望收益、不确定度、上行概率、目标价。
 
@@ -304,8 +360,12 @@ def build_prediction_frame(
     再按误差的**经验分位**校准一次（``q80(|e| / (z80·σ))``）：正态分位假设
     在误差不是正态时会系统性偏窄，实测长尺度区间只盖住一半名义范围。
     """
+    if interval not in INTERVAL_MODES:
+        raise ValueError(f"未知的区间口径：{interval}")
     forward = close.shift(-horizon) / close - 1.0
-    alpha, beta, _, calibrated = expanding_ols(score.shift(horizon), forward.shift(horizon))
+    alpha, beta, _, calibrated = expanding_ols(
+        score.shift(horizon), forward.shift(horizon), window=regression_window
+    )
     # 没校准就没有期望收益：NaN 而不是 0，否则「样本不足」会被下游当成「预期不变」
     expected = (alpha + beta * score).where(calibrated)
     # t 时刻只取 (s + h ≤ t) 的误差：e_s = 已实现收益 − 当时给出的期望收益
@@ -319,13 +379,27 @@ def build_prediction_frame(
     fallback = forward.shift(horizon).expanding(min_periods=MIN_SCORES_FOR_SIGMA).std()
     sigma = sigma.fillna(fallback)
 
-    # 区间边界：非对称经验分位 + ACI，作用在未乘对称因子的误差刻度上。
-    # studentized 误差在样本不足时先回退到正态分位，保证早期也有区间。
+    # 区间边界：按预注册口径生成（默认 aci = 非对称经验分位 + ACI）。
+    # studentized 误差在样本不足时回退到正态分位，保证早期也有区间。
     error_scale = errors.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).std()
     scale = error_scale.fillna(fallback)
-    calibration = calibrate_interval_factors(errors / scale)
-    lower_factor = calibration["lower"].fillna(-INTERVAL_Z_80)
-    upper_factor = calibration["upper"].fillna(INTERVAL_Z_80)
+    if interval == "normal":
+        lower_factor = pd.Series(-INTERVAL_Z_80, index=expected.index)
+        upper_factor = pd.Series(INTERVAL_Z_80, index=expected.index)
+        interval_alpha = pd.Series(np.nan, index=expected.index)
+    elif interval == "empirical":
+        ratio = errors.abs() / (INTERVAL_Z_80 * error_scale)
+        empirical = ratio.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).quantile(ERROR_QUANTILE)
+        lower_factor = -INTERVAL_Z_80 * empirical
+        upper_factor = INTERVAL_Z_80 * empirical
+        interval_alpha = pd.Series(np.nan, index=expected.index)
+    else:
+        calibration = calibrate_interval_factors(
+            errors / scale, symmetric=(interval == "aci_symmetric")
+        )
+        lower_factor = calibration["lower"].fillna(-INTERVAL_Z_80)
+        upper_factor = calibration["upper"].fillna(INTERVAL_Z_80)
+        interval_alpha = calibration["alpha"]
 
     frame = pd.DataFrame(
         {
@@ -335,7 +409,7 @@ def build_prediction_frame(
             "base_price": close,
             "lower_return": expected + scale * lower_factor,
             "upper_return": expected + scale * upper_factor,
-            "interval_alpha": calibration["alpha"],
+            "interval_alpha": interval_alpha,
         }
     )
     frame["probability_up"] = probability_up(frame["expected_return"], frame["uncertainty"])

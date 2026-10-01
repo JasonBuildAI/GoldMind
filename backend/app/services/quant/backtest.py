@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
 
 import numpy as np
@@ -68,6 +68,68 @@ class HorizonEvaluation:
         }
 
 
+def prepare_evaluation(
+    factors: dict[str, pd.Series],
+    close: pd.Series,
+    *,
+    horizon: int,
+    score_mode: str = "weighted",
+    include: Optional[tuple[str, ...]] = None,
+    regression_window: Optional[int] = None,
+    interval: str = "aci",
+    score: Optional[pd.Series] = None,
+) -> dict:
+    """把因子面板算成一次评估所需的全部序列。
+
+    研究台（``scripts/quant_lab.py``）的预注册候选在这里落地：``score_mode``
+    见 ``engine.SCORE_MODES``、``interval`` 见 ``engine.INTERVAL_MODES``、
+    ``include`` 限定因子子集、``regression_window`` 指定滚动回归窗口。
+    计算量最大的一段（信号、回归、区间校准）只做一次，
+    ``evaluate_periods`` 在开发期 / 留出期 / 全样本三个切片上复用同一结果。
+
+    ``score`` 直接给定时忽略 ``score_mode`` 的合成部分（集成候选的得分由
+    调用方先平均好）；可用因子数仍按 ``include`` 统计。
+    """
+    calendar = close.index
+    aligned = engine.align_factors(factors, calendar)
+    signals = engine.build_signals(aligned, calendar)
+    if score is None:
+        score = engine.composite_score(
+            signals, horizon=horizon, mode=score_mode, include=include
+        )
+    frame = engine.build_prediction_frame(
+        score, close, horizon, regression_window=regression_window, interval=interval
+    )
+    forward = close.shift(-horizon) / close - 1.0
+    outcome = np.sign(forward)
+    available_signals = signals
+    if include is not None:
+        available_signals = signals[
+            [key for key in signals.columns if key in set(include)]
+        ]
+    available = available_signals.notna().sum(axis=1) >= engine.MIN_AVAILABLE_FACTORS
+    return {
+        "close": close,
+        "signals": signals,
+        "score": score,
+        "frame": frame,
+        "forward": forward,
+        "outcome": outcome,
+        "available": available,
+    }
+
+
+def _base_mask(prepared: dict) -> pd.Series:
+    """「这一行可以计入评估」的统一口径（预测可用、收益已实现、因子够用）。"""
+    return (
+        prepared["score"].notna()
+        & prepared["frame"]["expected_return"].notna()
+        & prepared["forward"].notna()
+        & (prepared["outcome"] != 0)
+        & prepared["available"]
+    )
+
+
 def evaluate_horizon(
     factors: dict[str, pd.Series],
     close: pd.Series,
@@ -75,40 +137,62 @@ def evaluate_horizon(
     horizon: int,
     start: Optional[date] = None,
     end: Optional[date] = None,
+    score_mode: str = "weighted",
+    include: Optional[tuple[str, ...]] = None,
+    regression_window: Optional[int] = None,
+    interval: str = "aci",
+    score: Optional[pd.Series] = None,
 ) -> HorizonEvaluation:
-    """对一段区间做走查式回测。``start`` / ``end`` 为闭区间（按日期）。"""
+    """对一段区间做走查式回测。``start`` / ``end`` 为闭区间（按日期）。
+
+    其余关键字参数是研究台的候选变体（口径见 ``prepare_evaluation``）；
+    缺省值即线上 ``quant-v4`` 口径。
+    """
     if close is None or close.empty:
         return _empty(horizon, "缺少黄金价格序列")
 
-    calendar = close.index
-    aligned = engine.align_factors(factors, calendar)
-    signals = engine.build_signals(aligned, calendar)
-    score = engine.composite_score(signals, horizon=horizon)
-    frame = engine.build_prediction_frame(score, close, horizon)
-
-    forward = close.shift(-horizon) / close - 1.0
-    outcome = np.sign(forward)
-    available = signals.notna().sum(axis=1) >= engine.MIN_AVAILABLE_FACTORS
-
-    expected_return = frame["expected_return"]
-    mask = (
-        score.notna()
-        & expected_return.notna()
-        & forward.notna()
-        & (outcome != 0)
-        & available
+    prepared = prepare_evaluation(
+        factors,
+        close,
+        horizon=horizon,
+        score_mode=score_mode,
+        include=include,
+        regression_window=regression_window,
+        interval=interval,
+        score=score,
     )
+    mask = _base_mask(prepared)
+    calendar = close.index
     if start is not None:
         mask &= calendar >= pd.Timestamp(start)
     if end is not None:
         mask &= calendar <= pd.Timestamp(end)
+
+    return _evaluate(horizon, prepared, mask, universe=int(mask.size))
+
+
+def _evaluate(
+    horizon: int,
+    prepared: dict,
+    mask: pd.Series,
+    *,
+    universe: int,
+) -> HorizonEvaluation:
+    """在一段掩码上计算全部指标（三个样本期的唯一实现）。"""
+    close = prepared["close"]
+    signals = prepared["signals"]
+    score = prepared["score"]
+    frame = prepared["frame"]
+    forward = prepared["forward"]
+    outcome = prepared["outcome"]
+    expected_return = frame["expected_return"]
 
     samples = int(mask.sum())
     if samples < MIN_EVALUATION_SAMPLES:
         return _empty(
             horizon,
             f"可评估样本只有 {samples} 个（至少需要 {MIN_EVALUATION_SAMPLES} 个）",
-            universe=int(mask.size),
+            universe=universe,
         )
 
     # 评的就是页面上那个方向：校准后的期望收益符号（spec 判据见
@@ -137,12 +221,23 @@ def evaluate_horizon(
     probability_mask = probability.notna()
     brier = None
     brier_skill = None
+    brier_skill_p_value = None
     reliability = None
     if probability_mask.sum() >= MIN_EVALUATION_SAMPLES:
         win = (realized[probability_mask] > 0).astype("float64")
         usable_probability = probability[probability_mask]
-        brier = float(((usable_probability - win) ** 2).mean())
+        squared_error = (usable_probability - win) ** 2
+        brier = float(squared_error.mean())
         brier_skill = stats.brier_skill_score(usable_probability, win)
+        # 「Brier 技能分显著为正」的正式检验：模型平方误差 vs 常数基准率，
+        # 重叠样本用 HAC —— 与研究台预注册规则 ② 是同一口径。
+        skill_test = stats.diebold_mariano(
+            squared_error,
+            (float(win.mean()) - win) ** 2,
+            lags=horizon - 1 if horizon > 1 else None,
+            alternative="less",
+        )
+        brier_skill_p_value = skill_test["p_value"]
         reliability = stats.reliability_bins(usable_probability, win, bins=10)
 
     window_start = mask[mask].index[0].date()
@@ -196,6 +291,7 @@ def evaluate_horizon(
         "effective_sample_size": stats.effective_sample_size(samples, horizon),
         "hac_lags": lags,
         "brier_skill_score": brier_skill,
+        "brier_skill_p_value": brier_skill_p_value,
         "reliability_bins": reliability,
         "interval_coverage_ci95": list(coverage_ci) if coverage_ci is not None else None,
         "holdout_start": HOLDOUT_START.isoformat(),
@@ -367,18 +463,42 @@ def evaluate_periods(
     *,
     horizon: int,
     holdout_start: date = HOLDOUT_START,
+    score_mode: str = "weighted",
+    include: Optional[tuple[str, ...]] = None,
+    regression_window: Optional[int] = None,
+    interval: str = "aci",
+    score: Optional[pd.Series] = None,
 ) -> dict[str, HorizonEvaluation]:
     """开发期 / 留出期 / 全样本三列。
 
     留出期（``HOLDOUT_START`` 起）只用于汇报与预注册裁决，不参与任何调参 ——
-    否则「样本外」就不再是样本外。
+    否则「样本外」就不再是样本外。三个切片共用一次预计算（见
+    ``prepare_evaluation``），不会对整段历史把同一候选算三遍。
     """
+    if close is None or close.empty:
+        empty = _empty(horizon, "缺少黄金价格序列")
+        return {"development": empty, "holdout": empty, "full": empty}
+
+    prepared = prepare_evaluation(
+        factors,
+        close,
+        horizon=horizon,
+        score_mode=score_mode,
+        include=include,
+        regression_window=regression_window,
+        interval=interval,
+        score=score,
+    )
+    base = _base_mask(prepared)
+    calendar = close.index
+    development = base & (calendar < pd.Timestamp(holdout_start))
+    holdout = base & (calendar >= pd.Timestamp(holdout_start))
     return {
-        "development": evaluate_horizon(
-            factors, close, horizon=horizon, end=holdout_start - timedelta(days=1)
+        "development": _evaluate(
+            horizon, prepared, development, universe=int(development.size)
         ),
-        "holdout": evaluate_horizon(factors, close, horizon=horizon, start=holdout_start),
-        "full": evaluate_horizon(factors, close, horizon=horizon),
+        "holdout": _evaluate(horizon, prepared, holdout, universe=int(holdout.size)),
+        "full": _evaluate(horizon, prepared, base, universe=int(base.size)),
     }
 
 
@@ -417,5 +537,6 @@ __all__ = [
     "factor_summary",
     "interval_coverage_80",
     "interval_coverage_indicator",
+    "prepare_evaluation",
     "FACTORS",
 ]
