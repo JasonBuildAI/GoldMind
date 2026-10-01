@@ -113,25 +113,36 @@ def fake_llm(monkeypatch: pytest.MonkeyPatch) -> FakeLLM:
 def _block_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """兜底：任何**对外**连接直接失败；本机地址放行。
 
-    只 patch `socket.create_connection` 与 urllib3 是**不够的**。
-    实测（用能解析的地址验证，避免 DNS 失败掩盖问题）：
+    只 patch `socket.create_connection` 与 urllib3 是**不够的**：
+    异步 httpx 走 anyio → `loop.create_connection` → `sock.connect()`，
+    不经过它，测试会**真的打到外网**。
 
-        requests（urllib3 路径）      -> 被拦住
-        异步 httpx（anyio 路径）      -> **没被拦**
-
-    异步客户端走 `loop.create_connection` → `sock.connect()`，不经过
-    `create_connection`。也就是说异步 HTTP 客户端的测试会**真的打到外网**，
-    而红线第 4 条要求测试不得访问真实外部服务。
-
-    拦截点选 `socket.getaddrinfo`：**任何按域名发起的连接都要先解析**，
-    所以它覆盖同步与异步两条路径，而且不像 patch `socket.socket.connect`
-    那样会弄坏 asyncio 在 Windows 上的 Proactor 事件循环
-    （实测：patch `connect` 后 asyncio 会报
+    拦截点选 `socket.getaddrinfo`：任何按域名发起的连接都要先解析，覆盖同步
+    与异步两条路径，又不像 patch `socket.socket.connect` 那样弄坏 asyncio 在
+    Windows 上的 Proactor 事件循环（实测：patch `connect` 后 asyncio 会报
     `'ProactorEventLoop' object has no attribute '_ssock'`）。
 
-    **本机地址必须放行** —— 测试要连本机 MySQL（`localhost:3306`）。
+    2026-10-02 的实测发现还有两个漏洞，于是补成四层：
+
+    1. **代理**。本机配置着 `HTTP_PROXY=127.0.0.1:7897` 这类代理；httpx 与
+       requests 的 `trust_env` 会连这个**本机**代理，而代理会替你把请求转发
+       出去 —— 回环地址在「放行本机」规则里，DNS 与连接层一次都不触发，
+       实测异步 httpx 拿到过真实 HTTP 200。所以先整体清掉代理：环境变量、
+       `urllib.request.getproxies`、以及所有已加载模块里按值导入的那份副本
+       （`from urllib.request import getproxies` 是按值导入，只改源模块拦不住）。
+    2. **IP 字面量**。任何直接用 IP 的连接都不经过解析，`getaddrinfo` 拦不住。
+    3. **客户端层**。httpx / openai SDK 都经由 `httpcore`：拦它的连接类与
+       连接池的 `handle_request` / `handle_async_request`（异步是 `async def`，
+       必须用协程包装），域名与 IP 字面量、同步与异步一起覆盖，且不碰 socket。
+    4. **urllib3 的签名**与 `socket.create_connection` 不同（多出
+       `socket_options` 等参数）—— 包装 urllib3 时必须调用 urllib3 自己的原
+       函数，否则连本机请求都会 TypeError。
+
+    本机（回环）地址一律放行 —— 测试要连本机服务。
     """
+    import inspect
     import socket
+    import sys
 
     _ALLOWED_HOSTS = {"127.0.0.1", "::1", "localhost", "", None}
 
@@ -140,33 +151,127 @@ def _block_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
             "测试禁止真实网络访问：请 mock 掉发起该请求的服务方法"
         )
 
-    # 1) DNS：解析非本机域名即视为出网
-    _real_getaddrinfo = socket.getaddrinfo
-
-    def _guarded_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
+    def _normalized(host: Any) -> Any:
         # host 可能是 bytes（异步客户端就这么传，实测是 b'example.com'）——
         # 不归一化的话，本机白名单会因为类型不同而失效。
         if isinstance(host, bytes):
             try:
-                host = host.decode("ascii")
+                return host.decode("ascii")
             except UnicodeDecodeError:
-                _blocked()
-        if host not in _ALLOWED_HOSTS:
+                return host
+        return host
+
+    def _is_allowed(host: Any) -> bool:
+        return _normalized(host) in _ALLOWED_HOSTS
+
+    def _host_of(address: Any) -> Any:
+        return address[0] if isinstance(address, tuple) and address else address
+
+    # 0) 代理：环境变量 + 注册表兜底一起清掉。已导入模块里的副本也要换 ——
+    #    `from urllib.request import getproxies` 会在模块命名空间里留一份旧引用。
+    for key in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    def _no_proxies(*args: Any, **kwargs: Any) -> dict:
+        return {}
+
+    import urllib.request
+
+    monkeypatch.setattr(urllib.request, "getproxies", _no_proxies)
+
+    for module in list(sys.modules.values()):
+        name = getattr(module, "__name__", "")
+        if name.split(".")[0] not in {"requests", "httpx", "urllib3", "openai"}:
+            continue
+        if hasattr(module, "getproxies"):
+            monkeypatch.setattr(module, "getproxies", _no_proxies, raising=False)
+
+    # 1) DNS：解析非本机域名即视为出网
+    _real_getaddrinfo = socket.getaddrinfo
+
+    def _guarded_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
+        if not _is_allowed(host):
             _blocked()
         return _real_getaddrinfo(host, *args, **kwargs)
 
     monkeypatch.setattr(socket, "getaddrinfo", _guarded_getaddrinfo)
 
-    # 2) 两个高层入口：给出更直白的报错，并挡住直接给 IP 的调用
-    monkeypatch.setattr(socket, "create_connection", _blocked)
+    # 2) socket 层的高层入口：给出更直白的报错，并挡住直接给 IP 的调用。
+    _real_create_connection = socket.create_connection
+
+    def _guarded_create_connection(address: Any, *args: Any, **kwargs: Any) -> Any:
+        if not _is_allowed(_host_of(address)):
+            _blocked()
+        return _real_create_connection(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "create_connection", _guarded_create_connection)
 
     try:
         import urllib3.util.connection as urllib3_connection
-
-        monkeypatch.setattr(urllib3_connection, "create_connection", _blocked)
     except ImportError:  # urllib3 不在时无需处理
         pass
+    else:
+        _real_urllib3_create_connection = urllib3_connection.create_connection
 
+        def _guarded_urllib3_create_connection(
+            address: Any, *args: Any, **kwargs: Any
+        ) -> Any:
+            if not _is_allowed(_host_of(address)):
+                _blocked()
+            return _real_urllib3_create_connection(address, *args, **kwargs)
+
+        monkeypatch.setattr(
+            urllib3_connection, "create_connection", _guarded_urllib3_create_connection
+        )
+
+    # 3) 客户端层：httpx / openai SDK 都经 httpcore。同步方法叫 handle_request，
+    #    异步方法叫 handle_async_request 且是 async def。连接类与连接池类都拦
+    #    （池负责代理路径，连接类负责真正的建连），带上标记属性便于测试核验。
+    try:
+        import httpcore
+    except ImportError:  # httpx 不在时无需处理
+        return
+
+    def _guard_request(request: Any) -> None:
+        url = getattr(request, "url", None)
+        if not _is_allowed(getattr(url, "host", None)):
+            _blocked()
+
+    def _guard_sync(original: Any) -> Any:
+        def guarded(self: Any, request: Any) -> Any:
+            _guard_request(request)
+            return original(self, request)
+
+        guarded.__goldmind_outbound_guard__ = True
+        return guarded
+
+    def _guard_async(original: Any) -> Any:
+        async def guarded(self: Any, request: Any) -> Any:
+            _guard_request(request)
+            return await original(self, request)
+
+        guarded.__goldmind_outbound_guard__ = True
+        return guarded
+
+    for attr_name in dir(httpcore):
+        connection_class = getattr(httpcore, attr_name)
+        if not inspect.isclass(connection_class):
+            continue
+        for method_name in ("handle_request", "handle_async_request"):
+            original = vars(connection_class).get(method_name)
+            if original is None:
+                continue
+            if getattr(original, "__goldmind_outbound_guard__", False):
+                continue  # 已经包过就不再包（同一个类可能以多个别名出现）
+            guard = _guard_async if inspect.iscoroutinefunction(original) else _guard_sync
+            monkeypatch.setattr(connection_class, method_name, guard(original))
 
 # --------------------------------------------------------------------------- #
 # 数据库
