@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # --------------------------------------------------------------------------- #
@@ -200,6 +201,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """客户端提前断开（浏览器关闭页面）不是错误 —— 不要打印堆栈噪音。"""
+
+    def handle_error(self, request, client_address) -> None:
+        if isinstance(sys.exc_info()[1], ConnectionResetError):
+            return
+        super().handle_error(request, client_address)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8099)
@@ -207,7 +217,7 @@ def main() -> None:
 
     # 必须用多线程版本：页面首次加载会在缓存未命中时并发触发多个后台分析，
     # 单线程 HTTPServer 会让这些请求互相阻塞，表现为「Connection error」。
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    server = QuietThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     server.daemon_threads = True
     print(f"[mock-llm] listening on http://127.0.0.1:{args.port}/v1", flush=True)
     server.serve_forever()
