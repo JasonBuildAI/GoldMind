@@ -11,6 +11,11 @@ const API_PORT = Number(process.env.E2E_API_PORT || 8000)
 const WEB_PORT = Number(process.env.E2E_WEB_PORT || 4173)
 const MOCK_PORT = Number(process.env.E2E_MOCK_PORT || 8099)
 
+// 本地默认复用已安装的 Chrome（不下载 Playwright 自带浏览器）。
+// CI 的 runner 没有 Chrome，把 E2E_BROWSER 设为 chromium 即用 `playwright install`
+// 装好的 Chromium；留空时仍是 chrome。
+const BROWSER_CHANNEL = process.env.E2E_BROWSER || 'chrome'
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 90_000,
@@ -21,8 +26,8 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   use: {
     baseURL: `http://127.0.0.1:${WEB_PORT}`,
-    // 本机已安装 Chrome，直接复用，避免下载 Playwright 自带的浏览器
-    channel: 'chrome',
+    // 本机已安装 Chrome，直接复用；CI 用 E2E_BROWSER=chromium 覆盖
+    channel: BROWSER_CHANNEL === 'chrome' ? 'chrome' : undefined,
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chrome', use: { ...devices['Desktop Chrome'] } }],

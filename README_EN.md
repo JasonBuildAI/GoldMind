@@ -803,6 +803,32 @@ python scripts/smoke_llm.py
 > (skipped by default). Results are written to `backend/scripts/smoke_llm_result.json`
 > (already ignored by `.gitignore`).
 
+### Continuous Integration (GitHub Actions)
+
+The default branch only accepts green merges: `.github/workflows/ci.yml` runs three
+parallel jobs on every PR and every push to `main`, using exactly the gate commands
+listed above —
+
+| Job | What it runs | Environment |
+|---|---|---|
+| `Backend (pytest)` | `python -m pytest` | Python 3.11 + in-memory SQLite (no MySQL) |
+| `Frontend (lint + test + build)` | `npm run lint` / `npm test` / `npm run build` | Node 22 |
+| `Browser E2E (Playwright)` | `npm run test:e2e` | Python 3.11 + Node 22 + Chromium + mock LLM |
+
+In CI the browser end-to-end job passes `E2E_BROWSER=chromium` to
+`app/playwright.config.ts` and installs the browser with
+`npx playwright install --with-deps chromium`; locally the variable is left unset
+and the already-installed Chrome is reused.
+
+Dependency updates are handled by `.github/dependabot.yml`: pip / npm / github-actions
+each open a small number of PRs every week, and **nothing is auto-merged** — every PR
+still has to pass the three jobs above, and a human decides when to merge.
+
+> Branch protection (required checks, mandatory PRs) is a GitHub repository setting,
+> not version-controlled code, so it must be enabled manually under
+> Settings → Branches. Once the workflow has completed successfully at least once,
+> mark the three checks as required.
+
 ### Troubleshooting
 
 - **httpx reports `Invalid port: ':1]'` or `Missing dependencies for SOCKS support`** — the machine has a system proxy set (`ALL_PROXY` / `HTTP_PROXY` etc.), or `NO_PROXY` contains `[::1]`, and httpx cannot parse those values. Clear them before running tests:
@@ -848,6 +874,9 @@ GoldMind/
 │   ├── 00-产品方向.md · 10-密钥与隐私.md · 20-前端设计规范.md
 │   ├── ARCHITECTURE.md · API.md
 │   └── images/screenshots/
+├── .github/
+│   ├── workflows/ci.yml          # CI gates: backend / frontend / browser E2E
+│   └── dependabot.yml            # Dependency update bot
 ├── AGENTS.md                     # How to work: rules, gates, process
 ├── CHANGELOG.md / CHANGELOG_EN.md
 ├── CONTRIBUTING.md / CONTRIBUTING_EN.md

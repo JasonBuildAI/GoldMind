@@ -76,8 +76,8 @@
 
 **顺手改**（错别字、注释、单个常量、纯格式）直接改，跳过以下全部台阶；闸门与 commit 照走。
 其余改动按台阶走；**台阶可以压缩，顺序不许倒**。落盘：spec 一份两段（需求 → 方案），
-plan 一份（任务清单）。本项目还没有 `docs/specs/` 目录 —— 需要落盘时再建，
-不落盘时 spec 的那句判据就是施工说明。
+plan 一份（任务清单）。落盘目录 `docs/specs/` 已存在；不落盘时 spec 的那句判据
+就是施工说明。
 
 | # | 台阶 | 做什么 | 默认方法（本会话可用 skill） | 产物 |
 |---|---|---|---|---|
@@ -106,5 +106,7 @@ plan 一份（任务清单）。本项目还没有 `docs/specs/` 目录 —— �
 本项目已完成初始化：`.gitignore`、`README.md`（含闸门命令）、首个 commit 均已就绪。
 新项目才需要走「先写 `.gitignore` 和 README → 首个 commit → 推 GitHub」这套。
 
-CI 尚未接入；接入时默认分支只接受全绿的合并，闸门命令直接复用
-`README.md` 的「常用命令」。
+CI 已接入：`.github/workflows/ci.yml` 在 PR 与 push 到 `main` 时跑同一套闸门命令
+（唯一真源仍是 `README.md` 的「常用命令」）。默认分支只接受全绿的合并；
+required checks 这类仓库设置不在版本控制里，需在 GitHub 的
+Settings → Branches 手动开启。

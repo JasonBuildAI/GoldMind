@@ -7,3 +7,9 @@
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 pytest-cov>=5.0.0
+
+# The quant backtest tests (tests/unit/quant/test_backtest*.py) hit pandas'
+# correlation paths, which import scipy.stats; without scipy they fail with
+# ModuleNotFoundError. Pinned to the version the suite was run against, same
+# policy as requirements.txt.
+scipy==1.17.0

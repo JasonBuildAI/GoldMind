@@ -1,0 +1,97 @@
+name: CI
+
+# 默认分支只接受全绿：PR 与 push 到 main 都跑同一套闸门命令
+# （命令的唯一真源是 README.md 的「常用命令」）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一分支的新 push 作废上一轮 —— CI 只关心最新一次提交。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      # fetch-depth 保持默认的 1：test_no_secrets_in_repo.py 直接跑 git ls-files，
+      # 只需要当前树的索引，不需要历史。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Test
+        run: python -m pytest
+
+  frontend:
+    name: Frontend (lint + test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: Browser E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+      # 本地复用已装的 Chrome；CI 的 runner 没有 Chrome，装 Playwright 自带的 Chromium。
+      - name: Install Chromium
+        working-directory: app
+        run: npx playwright install --with-deps chromium
+      - name: Build frontend
+        working-directory: app
+        run: npm run build
+      - name: Run browser end-to-end tests
+        working-directory: app
+        env:
+          E2E_PYTHON: python
+          E2E_BROWSER: chromium
+        run: npm run test:e2e

@@ -814,6 +814,28 @@ python scripts/smoke_llm.py
 > 只在 `LLM_SEARCH_ENABLED=true` 时才探测（默认跳过）。结果写入
 > `backend/scripts/smoke_llm_result.json`（已被 `.gitignore` 忽略）。
 
+### 持续集成（GitHub Actions）
+
+默认分支只接受全绿的合并：`.github/workflows/ci.yml` 在 PR 与 push 到 `main` 时
+跑三组并行任务，命令就是上面这几条闸门命令 ——
+
+| 任务 | 跑什么 | 环境 |
+|---|---|---|
+| `Backend (pytest)` | `python -m pytest` | Python 3.11 + 内存 SQLite（不连 MySQL） |
+| `Frontend (lint + test + build)` | `npm run lint` / `npm test` / `npm run build` | Node 22 |
+| `Browser E2E (Playwright)` | `npm run test:e2e` | Python 3.11 + Node 22 + Chromium + 假 LLM |
+
+浏览器端到端在 CI 里把 `E2E_BROWSER=chromium` 传进 `app/playwright.config.ts`，
+用 `npx playwright install --with-deps chromium` 装浏览器；本机跑时该变量留空，
+仍复用已安装的 Chrome。
+
+依赖更新交给 `.github/dependabot.yml`：pip / npm / github-actions 三个生态每周
+各开少量 PR，**不自动合并** —— 每个 PR 仍要过上面三组检查，由人决定合并时机。
+
+> 分支保护（required checks、必须走 PR）是 GitHub 仓库设置，不在版本控制里，
+> 需要在仓库的 Settings → Branches 里手动开启。工作流第一次成功跑过后，
+> 把三项检查勾成必需即可。
+
 ### 排障
 
 - **httpx 报 `Invalid port: ':1]'` 或 `Missing dependencies for SOCKS support`**
@@ -863,6 +885,9 @@ GoldMind/
 │   ├── 00-产品方向.md · 10-密钥与隐私.md · 20-前端设计规范.md
 │   ├── ARCHITECTURE.md · API.md
 │   └── images/screenshots/
+├── .github/
+│   ├── workflows/ci.yml          # CI 闸门：后端 / 前端 / 浏览器端到端
+│   └── dependabot.yml            # 依赖更新机器人
 ├── AGENTS.md                     # 怎么干活：规矩、闸门、流程
 ├── CHANGELOG.md / CHANGELOG_EN.md
 ├── CONTRIBUTING.md / CONTRIBUTING_EN.md
