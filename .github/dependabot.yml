@@ -1,5 +1,10 @@
 # 依赖机器人：每周检查一次，把可合并的更新合并成少量 PR。
 # 不自动合并 —— 每个 PR 仍要过 CI 闸门，由人决定合并时机。
+#
+# 忽略规则针对的是「当前工具链根本不支持」的版本，不是偏好：
+# - scipy >=1.18 要求 Python >=3.12，而本项目 CI 与文档口径是 Python 3.11；
+# - typescript >=6.1 超出 typescript-eslint 8 的 peer 范围（<6.1.0），npm ci 会 ERESOLVE。
+# 上游支持新主版本后，删除对应条目即可。
 version: 2
 updates:
   - package-ecosystem: pip
@@ -10,6 +15,9 @@ updates:
     groups:
       pip:
         patterns: ['*']
+    ignore:
+      - dependency-name: scipy
+        versions: ['>=1.18.0']
 
   - package-ecosystem: npm
     directory: /app
@@ -19,6 +27,9 @@ updates:
     groups:
       npm:
         patterns: ['*']
+    ignore:
+      - dependency-name: typescript
+        versions: ['>=6.1.0']
 
   - package-ecosystem: github-actions
     directory: /
