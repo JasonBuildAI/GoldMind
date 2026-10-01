@@ -92,6 +92,37 @@ def _start_date(db: Session, key: str, today: date, history_years: int) -> date:
     return latest - timedelta(days=INCREMENTAL_LOOKBACK_DAYS)
 
 
+# 单轮同步最多补的缺口年数：一年 = 两张 CSV（名义 + 实际），再多容易超时；
+# 剩下的缺口由下一轮（或 backfill 脚本）继续补。
+MAX_GAP_YEARS_PER_SYNC = 3
+
+
+def _years_to_fetch(
+    db: Session,
+    key: str,
+    today: date,
+    history_years: int,
+    *,
+    max_years: int = MAX_GAP_YEARS_PER_SYNC,
+) -> list[int]:
+    """要抓取的年份：优先补窗口内的缺口年（新的年份优先，单轮 ≤N 年）。
+
+    原实现是 ``sorted({start.year, today.year})`` —— 只请求首尾两年。增量路径里
+    start 就是「最近一条观测往回 10 天」，于是中间整段缺口永远补不上
+    （2026-10-02 实测：``real_yield_10y`` 在 2018–2025 无观测）。
+    """
+    window = list(range(today.year - history_years, today.year + 1))
+    gaps = storage.sparse_years(db, key, window=window)
+    if gaps:
+        return sorted(gaps, reverse=True)[:max_years]
+
+    latest = storage.latest_date(db, key)
+    if latest is None:
+        return window[-max_years:]
+    # 没有缺口：只刷新「最近一次观测所在年 + 今年」，覆盖跨年与历史回修。
+    return sorted({latest.year, today.year})
+
+
 def _fetch_source(
     name: str,
     db: Session,
@@ -104,8 +135,7 @@ def _fetch_source(
         return fetchers[name]()
 
     if name == "treasury":
-        start = _start_date(db, "real_yield_10y", today, history_years)
-        years = sorted({start.year, today.year})
+        years = _years_to_fetch(db, "real_yield_10y", today, history_years)
         return treasury.fetch(years)
     if name == "treasury_fiscal":
         start = _start_date(db, "tga", today, history_years)
@@ -124,8 +154,15 @@ def _fetch_source(
     if name == "sina_macro":
         return sina_macro.fetch()
     if name == "yahoo":
-        has_history = storage.latest_date(db, BENCHMARK_KEY) is not None
-        period = "3mo" if has_history else f"{history_years}y"
+        earliest = storage.earliest_date(db, BENCHMARK_KEY)
+        latest = storage.latest_date(db, BENCHMARK_KEY)
+        if earliest is None or latest is None:
+            period = f"{history_years}y"
+        else:
+            # 历史跨度不足请求窗口的 90%（新库，或早前只抓了 3 个月）时拉长周期，
+            # 否则只取最近 3 个月做增量 —— 回填与增量共用这一条路径。
+            long_enough = (latest - earliest).days >= int(history_years * 365 * 0.9)
+            period = "3mo" if long_enough else f"{history_years}y"
         return yahoo.fetch(period=period)
     if name == "news_geo":
         return news_geo.fetch(db)

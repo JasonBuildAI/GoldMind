@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Iterable, Optional
 
+import statistics
+
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -116,3 +118,48 @@ def latest_date(db: Session, factor_key: str) -> Optional[date]:
         .first()
     )
     return row[0] if row else None
+
+
+def earliest_date(db: Session, factor_key: str) -> Optional[date]:
+    row = (
+        db.query(FactorObservation.obs_date)
+        .filter(FactorObservation.factor_key == factor_key)
+        .order_by(FactorObservation.obs_date.asc())
+        .first()
+    )
+    return row[0] if row else None
+
+
+def year_counts(db: Session, factor_key: str) -> dict[int, int]:
+    """每个年份的观测数。一次查询、方言中立。"""
+    counts: dict[int, int] = {}
+    rows = (
+        db.query(FactorObservation.obs_date)
+        .filter(FactorObservation.factor_key == factor_key)
+        .all()
+    )
+    for (obs_date,) in rows:
+        counts[obs_date.year] = counts.get(obs_date.year, 0) + 1
+    return counts
+
+
+def sparse_years(
+    db: Session,
+    factor_key: str,
+    *,
+    window: Optional[Iterable[int]] = None,
+    ratio: float = 0.2,
+    min_obs: int = 1,
+) -> set[int]:
+    """相对年样本中位数明显偏低的年份 —— 含窗口内完全没有观测的年份。
+
+    「整年缺口」与「只有零星几行」都要能发现：增量抓取原实现只看首末两个年份，
+    ``real_yield_10y`` 在 2018–2025 整段缺失也永远补不上（2026-10-02 实测：
+    年份分布 2016=249、2017=1、2026=188）。
+    """
+    counts = year_counts(db, factor_key)
+    if not counts:
+        return set(window or ())
+    threshold = max(float(min_obs), statistics.median(counts.values()) * ratio)
+    years = list(window) if window is not None else list(counts)
+    return {year for year in years if counts.get(year, 0) < threshold}
