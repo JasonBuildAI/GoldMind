@@ -156,10 +156,43 @@ def sparse_years(
     「整年缺口」与「只有零星几行」都要能发现：增量抓取原实现只看首末两个年份，
     ``real_yield_10y`` 在 2018–2025 整段缺失也永远补不上（2026-10-02 实测：
     年份分布 2016=249、2017=1、2026=188）。
+
+    ``window`` 缺省取「首末观测之间的所有年份」；要检查观测范围之外的年份
+    （如今年尚未抓到数据）必须显式传入窗口。
     """
     counts = year_counts(db, factor_key)
     if not counts:
         return set(window or ())
     threshold = max(float(min_obs), statistics.median(counts.values()) * ratio)
-    years = list(window) if window is not None else list(counts)
+    if window is not None:
+        years = list(window)
+    else:
+        years = range(min(counts), max(counts) + 1)
     return {year for year in years if counts.get(year, 0) < threshold}
+
+
+def coverage(
+    db: Session,
+    factor_key: str,
+    *,
+    window: Optional[Iterable[int]] = None,
+    ratio: float = 0.2,
+    min_obs: int = 1,
+) -> dict:
+    """单因子的覆盖画像：年份计数、缺口年、是否仍在积累期。
+
+    守卫（`tests/unit/quant/test_factor_coverage.py`）与回填报告共用这一份口径：
+    少于 2 个年份有数据 → ``accumulating``（新序列允许先入库积累，单独报告）；
+    首末观测之间样本数低于年样本中位数 20% 的年份 → ``sparse_years``。
+    """
+    counts = year_counts(db, factor_key)
+    gaps = sorted(sparse_years(db, factor_key, window=window, ratio=ratio, min_obs=min_obs))
+    years = sorted(counts)
+    return {
+        "factor_key": factor_key,
+        "observations": sum(counts.values()),
+        "years": years,
+        "year_counts": counts,
+        "sparse_years": gaps,
+        "accumulating": len(years) < 2,
+    }
