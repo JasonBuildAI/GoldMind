@@ -26,13 +26,15 @@ def test_health_returns_expected_shape(client):
 
 
 @pytest.mark.integration
-def test_health_reports_mimo_as_provider(client):
-    """AI 配置段必须上报 MiMo，而不是迁移前的 deepseek/zhipu。"""
+def test_health_reports_the_configured_llm_provider(client):
+    """AI 配置段必须如实上报当前 .env 的配置，而不是迁移前的 deepseek/zhipu。"""
+    from app.config import settings
+
     ai = client.get("/health").json()["services"]["ai_config"]
 
     assert ai["status"] in ("ok", "unconfigured")
-    assert ai["provider"] == "mimo"
-    assert ai["model"]
+    assert ai["provider"] == settings.LLM_PROVIDER, "provider 必须来自配置而非写死"
+    assert ai["model"] == settings.LLM_MODEL
     assert "configured" in ai
     assert "deepseek_configured" not in ai
     assert "zhipu_configured" not in ai

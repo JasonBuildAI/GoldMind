@@ -1,6 +1,7 @@
-"""LLM 供应商工厂 —— 全项目唯一构造 LLM 客户端的地方。
+"""LLM 客户端工厂 —— 全项目唯一构造 LLM 客户端的地方。
 
-供应商：小米 MiMo（OpenAI 兼容协议）。
+供应商：任何 OpenAI 兼容端点。代码不绑定具体厂商 —— 端点、密钥、模型
+全部来自 `.env`（`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`）。
 
 为什么要有这个模块：迁移前有 6 处各自独立构造 `ChatOpenAI`、4 处各自拼
 `web_search` 工具参数，改一个供应商要动 9 个地方，且极易漏改。现在所有调用点
@@ -9,12 +10,13 @@
 约定：
     - 不要在业务代码里直接 `ChatOpenAI(...)` 或 `OpenAI(...)`，一律走本模块。
     - langchain / openai 都是延迟导入，避免拖慢进程启动。
+    - 密钥 / 端点 / 模型三项缺一即为「未配置」：调用方如实返回「暂不可用」，
+      不得编造内容（AGENTS.md 红线 1）。
 
-已知限制（实测，见 scripts/smoke_mimo.py）：
-    - 推理：可用。
-    - 联网搜索：Token Plan 的 `tp-` key 调用 `web_search` 工具一律返回
-      HTTP 400 `Param Incorrect`（已二分排除参数写法问题）。因此
-      `web_search_available()` 在运行时探测，搜索链路必须能降级而不是崩掉。
+联网搜索（可选，默认关闭，见 `LLM_SEARCH_ENABLED`）：
+    只有支持「MiMo 插件式 web_search 工具」的端点才能开启。账号未开通时
+    端点会返回 HTTP 400 `webSearchEnabled is false` —— 这是账号侧的开关
+    （控制台开通），不是参数写法问题；关闭时搜索链路直接走数据库 / RSS 回退。
 """
 from __future__ import annotations
 
@@ -65,14 +67,14 @@ def get_http_client() -> Any:
     由于上层把 LLM 异常吞掉并回退到硬编码默认值，最终表现成
     「页面有分析内容，其实一次模型都没调用」—— 极难排查。
 
-    默认 ``trust_env=False``（见 ``MIMO_TRUST_ENV``），需要走代理时再打开。
+    默认 ``trust_env=False``（见 ``LLM_TRUST_ENV``），需要走代理时再打开。
     """
     global _http_client
     if _http_client is None:
         import httpx
 
         _http_client = httpx.Client(
-            trust_env=settings.MIMO_TRUST_ENV,
+            trust_env=settings.LLM_TRUST_ENV,
             timeout=httpx.Timeout(120.0, connect=10.0),
         )
     return _http_client
@@ -90,56 +92,85 @@ def get_async_http_client() -> Any:
         import httpx
 
         _async_http_client = httpx.AsyncClient(
-            trust_env=settings.MIMO_TRUST_ENV,
+            trust_env=settings.LLM_TRUST_ENV,
             timeout=httpx.Timeout(120.0, connect=10.0),
         )
     return _async_http_client
 
 
 # --------------------------------------------------------------------------- #
-# 模型名
+# 配置读取
 # --------------------------------------------------------------------------- #
 def get_model_name() -> str:
     """推理模型名。"""
-    return settings.MIMO_MODEL
+    return settings.LLM_MODEL
 
 
 def get_search_model_name() -> str:
-    """联网搜索所用模型名。"""
-    return settings.MIMO_SEARCH_MODEL
+    """联网搜索所用模型名；未单独配置时跟随推理模型。"""
+    return settings.LLM_SEARCH_MODEL or settings.LLM_MODEL
+
+
+def get_search_api_key() -> str:
+    """联网搜索所用密钥；未单独配置时跟随推理密钥。"""
+    override = settings.LLM_SEARCH_API_KEY.get_secret_value()
+    return override or settings.LLM_API_KEY.get_secret_value()
+
+
+def get_search_base_url() -> str:
+    """联网搜索所用端点；未单独配置时跟随推理端点。"""
+    return settings.LLM_SEARCH_BASE_URL or settings.LLM_BASE_URL
 
 
 # --------------------------------------------------------------------------- #
 # 客户端构造
 # --------------------------------------------------------------------------- #
-def get_chat_llm(*, temperature: float = 0.7, max_tokens: int = 4096) -> Any:
+def get_chat_llm(*, temperature: float = 0.7, max_tokens: int | None = None) -> Any:
     """返回用于结构化推理的 ChatOpenAI 实例。
 
     Args:
         temperature: 采样温度。
-        max_tokens: 单次最大输出 token。实测 MiMo 同时接受 `max_tokens` 与
-            `max_completion_tokens`，这里沿用 `max_tokens` 以保持与迁移前一致。
+        max_tokens: 单次最大输出 token；留空取 `LLM_MAX_TOKENS`（默认 8192）。
+            推理模型的思考与正文共用这份额度 —— 调得太小，长 JSON 会在半途
+            被截断、解析失败，页面只能如实显示「暂不可用」。
 
     Returns:
-        已配置好 MiMo 端点与密钥的 ChatOpenAI，调用方式为 `llm.invoke(prompt)`，
+        已按 .env 配置好端点与密钥的 ChatOpenAI，调用方式为 `llm.invoke(prompt)`，
         取正文用 `response.content`。
+
+    Raises:
+        RuntimeError: 三项配置未齐 —— 消息直接说明缺什么，便于排查；
+            各分析服务会捕获它并如实返回「不可用」。
     """
+    if not is_configured():
+        raise RuntimeError(
+            "LLM 未配置：请在 .env 里同时设置 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL"
+        )
     return _chat_openai_class()(
         model=get_model_name(),
-        api_key=settings.MIMO_API_KEY.get_secret_value(),
-        base_url=settings.MIMO_BASE_URL,
+        api_key=settings.LLM_API_KEY.get_secret_value(),
+        base_url=settings.LLM_BASE_URL,
         temperature=temperature,
-        max_tokens=max_tokens,
+        max_tokens=max_tokens if max_tokens is not None else settings.LLM_MAX_TOKENS,
         http_client=get_http_client(),
         http_async_client=get_async_http_client(),
     )
 
 
 def get_search_client() -> Any:
-    """返回用于联网搜索的原生 OpenAI 客户端。"""
+    """返回用于联网搜索的原生 OpenAI 客户端。
+
+    凭据与端点默认跟随推理配置，可用 LLM_SEARCH_API_KEY /
+    LLM_SEARCH_BASE_URL 单独覆盖（推理与搜索不必是同一家）。
+    """
+    if not is_search_enabled():
+        raise RuntimeError(
+            "联网搜索未启用：如需使用请在 .env 里设置 LLM_SEARCH_ENABLED=true，"
+            "并确认端点支持 MiMo 插件式 web_search 工具"
+        )
     return _openai_class()(
-        api_key=settings.MIMO_API_KEY.get_secret_value(),
-        base_url=settings.MIMO_BASE_URL,
+        api_key=get_search_api_key(),
+        base_url=get_search_base_url(),
         http_client=get_http_client(),
     )
 
@@ -148,25 +179,85 @@ def get_search_client() -> Any:
 # 联网搜索
 # --------------------------------------------------------------------------- #
 def build_web_search_tool() -> dict[str, Any]:
-    """构造 MiMo 格式的 web_search 工具定义。
+    """构造 MiMo 插件格式的 web_search 工具定义（仅该格式的端点可用）。
 
     注意：该工具需要账号已开通「联网搜索插件」
     （https://platform.xiaomimimo.com/#/console/plugin），且按次独立计费。
+    未开通时端点返回 HTTP 400 `webSearchEnabled is false`（实测）。
     `max_keyword` 是一轮搜索并发展开的最大关键词数，是主要的成本旋钮。
     """
     return {
         "type": "web_search",
         "force_search": True,
-        "max_keyword": settings.MIMO_SEARCH_MAX_KEYWORD,
+        "max_keyword": settings.LLM_SEARCH_MAX_KEYWORD,
         "limit": 2,
         "user_location": {"type": "approximate", "country": "China"},
     }
 
 
 def is_configured() -> bool:
-    """是否已配置密钥。"""
-    # SecretStr 对象本身恒为真，必须看里面的值
-    return bool(settings.MIMO_API_KEY.get_secret_value())
+    """密钥 / 端点 / 模型三项齐备才算已配置。
+
+    SecretStr 对象本身恒为真，必须看里面的值。
+    """
+    return bool(
+        settings.LLM_API_KEY.get_secret_value()
+        and settings.LLM_BASE_URL.strip()
+        and settings.LLM_MODEL.strip()
+    )
+
+
+def is_search_enabled() -> bool:
+    """联网搜索是否开启（默认关闭；见模块文档）。"""
+    return bool(settings.LLM_SEARCH_ENABLED)
+
+
+def describe_completion(response: Any) -> str:
+    """把一次模型响应的「结束原因 + token 用量」压成一行，供解析失败时记日志。
+
+    截断（finish_reason=length）与格式错误是两类完全不同的故障：前者要调大
+    LLM_MAX_TOKENS，后者要修解析。日志里没有这一行，排查时只能靠猜。
+    取不到的字段如实省略，不猜。
+    """
+    if response is None:
+        return "无响应元数据"
+    meta = getattr(response, "response_metadata", None) or {}
+    usage = meta.get("token_usage") or getattr(response, "usage_metadata", None) or {}
+
+    bits: list[str] = []
+    finish = meta.get("finish_reason")
+    if finish:
+        bits.append(f"finish_reason={finish}")
+    output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
+    if output_tokens is not None:
+        bits.append(f"output_tokens={output_tokens}")
+    total_tokens = usage.get("total_tokens")
+    if total_tokens is not None:
+        bits.append(f"total_tokens={total_tokens}")
+    bits.append(f"content_chars={len(getattr(response, 'content', '') or '')}")
+    return ", ".join(bits)
+
+
+def retry_on_content_filter(llm: Any, prompt: str, *, attempts: int = 2) -> Any:
+    """调用一次模型；输出被端点内容风控拦截时重试一次。
+
+    MiMo 端点会对部分市场分析请求返回 `finish_reason=content_filter`，
+    正文固定为 "The request was rejected because it was considered high risk"。
+    实测触发与新闻语料里的冲突类内容相关，而且**不稳定** —— 同样长度的
+    prompt 有时通过、有时被拒（15 条新闻的看跌请求连续两次被拒，10 条通过）。
+    重试一次，避免把一次随机拒绝当成「分析不可用」；仍被拒时如实返回，
+    由上层记日志（describe_completion 会写下 finish_reason）并显示「暂不可用」。
+    """
+    response = llm.invoke(prompt)
+    for _ in range(max(0, attempts - 1)):
+        meta = getattr(response, "response_metadata", None) or {}
+        if meta.get("finish_reason") != "content_filter":
+            break
+        logger.warning(
+            "LLM 输出被端点内容风控拦截（finish_reason=content_filter），重试一次"
+        )
+        response = llm.invoke(prompt)
+    return response
 
 
 def describe() -> dict[str, Any]:
@@ -175,6 +266,6 @@ def describe() -> dict[str, Any]:
         "provider": settings.LLM_PROVIDER,
         "model": get_model_name(),
         "search_model": get_search_model_name(),
-        "base_url": settings.MIMO_BASE_URL,
+        "base_url": settings.LLM_BASE_URL,
         "configured": is_configured(),
     }

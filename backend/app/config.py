@@ -17,24 +17,39 @@ class Settings(BaseSettings):
     # repr/日志里不该出现。取用时用 `.get_secret_value()`。
     DATABASE_URL: SecretStr = SecretStr("mysql+pymysql://root@localhost:3306/gold_analysis")
     
-    # LLM 供应商（当前仅支持 mimo）
-    LLM_PROVIDER: str = "mimo"
-
-    # 小米 MiMo 配置
-    # 推理与联网搜索共用同一个端点与密钥；所有调用点统一走
-    # app/services/llm_provider.py 的工厂，不要在此之外直接构造客户端。
+    # ------------------------------------------------------------------
+    # LLM 接入 —— 任何 OpenAI 兼容端点，不绑定具体供应商
+    # ------------------------------------------------------------------
+    # 所有调用点统一走 app/services/llm_provider.py 的工厂，
+    # 不要在此之外直接构造 ChatOpenAI / OpenAI 客户端。
+    #
+    # 密钥、端点、模型三项必须**同时**存在才算「已配置」。
+    # 缺任意一项时各分析服务如实返回「暂不可用」，不会退回任何内置内容
+    # （AGENTS.md 红线 1：不许编造）。默认值全部为空 —— 不在代码里替用户
+    # 选定某一家供应商。
+    #
+    # 复制到 backend/.env 的示例（任选其一，换成自己的 key）：
+    #   OpenAI      LLM_BASE_URL=https://api.openai.com/v1    LLM_MODEL=gpt-4o-mini
+    #   DeepSeek    LLM_BASE_URL=https://api.deepseek.com/v1  LLM_MODEL=deepseek-chat
+    #   通义千问     LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+    #               LLM_MODEL=qwen-plus
+    #   Kimi        LLM_BASE_URL=https://api.moonshot.cn/v1    LLM_MODEL=moonshot-v1-8k
+    #   Ollama 本地  LLM_BASE_URL=http://localhost:11434/v1    LLM_MODEL=qwen2.5:14b
+    #   小米 MiMo   LLM_BASE_URL=https://api.xiaomimimo.com/v1 LLM_MODEL=mimo-v2.6-flash
+    #
     # `SecretStr` 而不是 `str`：pydantic 的 repr / str / model_dump
     # 都会把它显示成 `**********`。明文 str 的话，任何一句
     # `logger.info(settings)` 或包含 settings 的异常回溯都会把 key 打进日志。
-    MIMO_API_KEY: SecretStr = SecretStr("")  # 从.env文件读取
-    # Token Plan 端点。按量付费的普通 API 为 https://api.xiaomimimo.com/v1
-    MIMO_BASE_URL: str = "https://token-plan-cn.xiaomimimo.com/v1"
-    # 推理模型（mimo-v2.6-flash / mimo-v2.6-pro / mimo-v2.6-pro-ultraspeed）
-    MIMO_MODEL: str = "mimo-v2.6-flash"
-    # 联网搜索所用模型
-    MIMO_SEARCH_MODEL: str = "mimo-v2.6-flash"
-    # 单次搜索最大关键词数（每轮搜索会并发展开为多次插件调用，按次计费）
-    MIMO_SEARCH_MAX_KEYWORD: int = 2
+    LLM_API_KEY: SecretStr = SecretStr("")
+    LLM_BASE_URL: str = ""
+    LLM_MODEL: str = ""
+    # 仅用于界面展示（页脚「由 … 生成」），可留空 —— 拿不到就不猜。
+    LLM_PROVIDER: str = ""
+    # 单次输出的 token 上限。推理类模型把它同时用于思考与正文：
+    # 4096 会让「三档投资策略」这类大 JSON 被截断、解析失败，页面如实显示
+    # 「暂不可用」。8192 留出两倍余量（实测当前端点接受，且能完整返回
+    # 4600+ tokens 的 JSON）。
+    LLM_MAX_TOKENS: int = 8192
     # 是否让 httpx 读取宿主的代理环境变量（ALL_PROXY / HTTP_PROXY / NO_PROXY 等）。
     #
     # 默认 False。宿主环境里一个写坏的代理配置就足以让整个 AI 功能失效：
@@ -44,9 +59,28 @@ class Settings(BaseSettings):
     # 两者都会让所有 LLM 调用失败；而失败会被上层吞掉并回退到硬编码默认值，
     # 表现成「页面上有分析内容，其实一次模型都没调用」。
     #
-    # 如果你的网络确实必须经代理才能访问 MiMo，设为 true，
+    # 如果你的网络确实必须经代理才能访问 LLM 端点，设为 true，
     # 并确保已安装 httpx[socks]（见 requirements.txt）。
-    MIMO_TRUST_ENV: bool = False
+    LLM_TRUST_ENV: bool = False
+
+    # ------------------------------------------------------------------
+    # 联网搜索（可选，默认关闭）
+    # ------------------------------------------------------------------
+    # 开启后使用「MiMo 插件式」的 web_search 工具（请求体里带
+    # tools=[{"type": "web_search", ...}]）。这不是通用 OpenAI 能力：
+    # 只有声明支持该工具的端点可用。账号未开通时端点会返回
+    #   HTTP 400 · web search tool found in the request body,
+    #   but webSearchEnabled is false
+    # 此时保持关闭即可 —— 关闭时分析直接走数据库 / RSS 回退，不发起无效请求。
+    LLM_SEARCH_ENABLED: bool = False
+    # 搜索所用模型；留空则跟随 LLM_MODEL。
+    LLM_SEARCH_MODEL: str = ""
+    # 搜索专用凭据与端点；留空则跟随 LLM_API_KEY / LLM_BASE_URL。
+    # 分开配置是为了支持「推理用低成本端点、搜索用另一端点」的部署。
+    LLM_SEARCH_API_KEY: SecretStr = SecretStr("")
+    LLM_SEARCH_BASE_URL: str = ""
+    # 单次搜索最大关键词数（每轮搜索会并发展开为多次插件调用，按次计费）
+    LLM_SEARCH_MAX_KEYWORD: int = 2
 
     # ------------------------------------------------------------------
     # 迁移前的旧供应商配置（DeepSeek / 智谱AI）已全部移除。

@@ -422,7 +422,7 @@ async def get_market_summary_analysis(
     获取AI生成的黄金市场综合分析
 
     基于实时市场数据、看涨/看跌因子、机构预测和新闻，
-    使用 MiMo LLM 生成全面的市场总结和综合判断
+    使用 LLM 生成全面的市场总结和综合判断
 
     Args:
         refresh: 是否强制刷新（重新分析），默认使用缓存

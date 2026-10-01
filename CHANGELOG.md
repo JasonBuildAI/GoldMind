@@ -10,6 +10,28 @@
 
 ---
 
+## [Unreleased]
+
+### 新增
+
+- 通用 LLM 接入：任何 OpenAI 兼容端点都行，配置面是 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（三项齐备才算已配置），`LLM_PROVIDER` 仅作界面展示标签
+- 新增 `LLM_MAX_TOKENS`（默认 `8192`）、`LLM_SEARCH_ENABLED`（默认 `false`）、`LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` 与 `LLM_SEARCH_MAX_KEYWORD`
+
+### 变更（破坏性）
+
+- **LLM 配置改名：`MIMO_*` → `LLM_*`，不留兼容回退。** 升级时必须把 `backend/.env` 与部署环境里的 `MIMO_API_KEY` / `MIMO_BASE_URL` / `MIMO_MODEL` / `MIMO_SEARCH_MODEL` / `MIMO_SEARCH_MAX_KEYWORD` / `MIMO_TRUST_ENV` 换成 `LLM_*` 对应项
+
+### 修复
+
+- **投资策略长期显示「暂不可用」**：5 个分析服务硬编码 `max_tokens=4096`，三档策略的完整 JSON 被截断；改为取 `LLM_MAX_TOKENS`（默认 8192），解析失败时日志记录 `finish_reason` 与 token 用量
+- 端点返回 `finish_reason=content_filter` 时自动重试一次；新闻提示词默认上限收到 10 条
+- 冒烟脚本更名 `backend/scripts/smoke_llm.py`（原 `smoke_mimo.py`），联网搜索只在 `LLM_SEARCH_ENABLED=true` 时探测
+
+### 文档
+
+- README 修复复现缺口：Node 下限改为 ≥22.22.2（或 24.15+/26+）、补 Google Chrome 前置、删除并不存在的 `.\start_all.ps1`、补冷启动预期
+- 报头 / 走势 / 多空 / 机构 / 策略 / 总结截图全部重截；机构观点如实保留「暂无最新预测」空态，文档写明精确报错文案
+
 ## [2.0.0] - 2026-10-01
 
 2.0 的主线是**可核实**：预测收敛到一份可回测的分布，机构观点不再因为「当天没有新研报」

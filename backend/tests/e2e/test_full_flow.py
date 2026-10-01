@@ -198,9 +198,11 @@ def test_full_user_journey(client, seed_gold_prices, seed_news, smart_llm):
     seed_news(count=3)
 
     # --- 1. 健康检查 ---
+    from app.config import settings
+
     health = client.get("/health").json()
     assert health["services"]["database"]["status"] == "connected"
-    assert health["services"]["ai_config"]["provider"] == "mimo"
+    assert health["services"]["ai_config"]["provider"] == settings.LLM_PROVIDER
 
     # --- 2. 行情：日线 + 统计 + 相关性 ---
     daily = client.get("/api/gold/prices/daily").json()
@@ -348,9 +350,9 @@ def test_get_without_cache_returns_no_content_and_a_status(client, seed_gold_pri
 def test_llm_client_is_constructed_from_config_not_hardcoded(
     client, seed_gold_prices, seed_news, smart_llm
 ):
-    """LLM 必须以「配置里的 MiMo 端点」构造，而不是任何遗留供应商的硬编码地址。
+    """LLM 必须以「配置里的端点与模型」构造，而不是任何遗留供应商的硬编码地址。
 
-    测试环境把 MIMO_BASE_URL 指向 example.invalid，所以这里断言的是
+    测试环境把 LLM_BASE_URL 指向 example.invalid，所以这里断言的是
     「取值来自 settings」——即工厂确实读配置；再显式排除旧供应商域名。
     """
     from app.config import settings
@@ -360,9 +362,9 @@ def test_llm_client_is_constructed_from_config_not_hardcoded(
     assert client.post("/api/gold/bullish-factors-ai/refresh").status_code == 200
 
     assert smart_llm.last_kwargs, "没有捕获到 LLM 构造参数"
-    assert smart_llm.last_kwargs["base_url"] == settings.MIMO_BASE_URL
-    assert smart_llm.last_kwargs["model"] == settings.MIMO_MODEL
-    assert smart_llm.last_kwargs["api_key"] == settings.MIMO_API_KEY.get_secret_value()
+    assert smart_llm.last_kwargs["base_url"] == settings.LLM_BASE_URL
+    assert smart_llm.last_kwargs["model"] == settings.LLM_MODEL
+    assert smart_llm.last_kwargs["api_key"] == settings.LLM_API_KEY.get_secret_value()
     assert smart_llm.last_kwargs["max_tokens"] == 4096
     for stale in ("deepseek.com", "bigmodel.cn"):
         assert stale not in smart_llm.last_kwargs["base_url"]

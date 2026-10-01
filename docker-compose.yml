@@ -56,13 +56,13 @@ services:
       - DB_USER=root
       - DB_PASSWORD=${MYSQL_ROOT_PASSWORD:-goldmind123}
       - DB_NAME=gold_analysis
-      # 注意：这里**不要**再写 MIMO_API_KEY / MIMO_BASE_URL / MIMO_MODEL。
+      # 注意：这里**不要**再写 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL。
       #
-      # `environment` 的优先级高于 `env_file`，而 `${MIMO_API_KEY}` 这种插值只认
+      # `environment` 的优先级高于 `env_file`，而 `${LLM_API_KEY}` 这种插值只认
       # 宿主环境与 compose 项目目录下的 .env —— 不认 env_file。本仓库根目录没有 .env，
-      # 所以原来那句 `- MIMO_API_KEY=${MIMO_API_KEY}` 会插值成**空串**，
+      # 所以在这里再写一句 `- LLM_API_KEY=${LLM_API_KEY}` 只会插值成**空串**，
       # 反过来把 backend/.env 里配好的 key 覆盖掉，容器里的 LLM 直接不可用。
-      # 这三个值由 env_file 提供即可；缺省值 config.py 里也有。
+      # LLM_* 各值由 env_file 提供即可（默认就是「未配置」，不会退回任何内置内容）。
       #
       # 应用配置
       - DEBUG=${DEBUG:-false}

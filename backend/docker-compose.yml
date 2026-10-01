@@ -29,9 +29,14 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://root:goldmind123@mysql:3306/gold_analysis}
-      - MIMO_API_KEY=${MIMO_API_KEY}
-      - MIMO_BASE_URL=${MIMO_BASE_URL:-https://token-plan-cn.xiaomimimo.com/v1}
-      - MIMO_MODEL=${MIMO_MODEL:-mimo-v2.6-flash}
+      # LLM 接入：密钥 / 端点 / 模型三项齐备才算已配置，缺任意一项就如实
+      # 显示「暂不可用」。取值来自宿主环境，或本目录（backend/）下的 .env。
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-8192}
+      - LLM_SEARCH_ENABLED=${LLM_SEARCH_ENABLED:-false}
       - DEBUG=${DEBUG:-true}
     ports:
       - "8000:8000"

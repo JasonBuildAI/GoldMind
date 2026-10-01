@@ -90,8 +90,12 @@ Views / Investment Strategy / Quant Prediction / Conclusion), all left-aligned, 
 no shadows and no card grid; numbers live in tables, rising is red and falling is green, and the
 direction always carries both a sign and a word.
 
-It is currently driven by a single model, **Xiaomi MiMo** (`mimo-v2.6-flash`), and every LLM
-client is constructed through `backend/app/services/llm_provider.py`.
+The LLM provider is **not hardcoded**: any OpenAI-compatible endpoint (OpenAI / DeepSeek /
+Qwen / Kimi / a local Ollama / Xiaomi MiMo …) works — just set `LLM_BASE_URL` /
+`LLM_API_KEY` / `LLM_MODEL` in `backend/.env`, and every LLM client is constructed through
+`backend/app/services/llm_provider.py`. When any one of the three is missing the project counts
+as "unconfigured": each section honestly shows "temporarily unavailable" and no built-in
+content is used as a fallback.
 
 > You only need to: open the page
 > GoldMind returns: today's gold price, the dollar index, and a bullish/bearish analysis and
@@ -106,7 +110,7 @@ client is constructed through `backend/app/services/llm_provider.py`.
 Market data ──► MySQL ──┐
 RSS news ───► MySQL ────┼──► assemble prompt ──► llm.invoke() ──► parse JSON ──► cache ──► frontend dashboard
                         │
-                        └──► (optional) MiMo web_search, skipped when unavailable
+                        └──► (optional) plugin-style web_search (LLM_SEARCH_ENABLED, off by default)
 
 Public data sources ──► factor store ──► rolling z-score ──► per-horizon weighted composite ──► one calibrated distribution ──► quant prediction
 (Treasury / NY Fed / CFTC /                                                                     │
@@ -158,20 +162,26 @@ If this project has been helpful or inspiring to you, a ⭐ **Star** is the best
 </p>
 
 > The two sides fetch and refresh independently; one side failing does not affect the other.
-> When the screenshot was taken the bearish side had no result yet, so the page states
-> "temporarily unavailable"; press "re-analyse" to retry. It never shows built-in bearish copy.
+> On the day the screenshot was taken the model returned only 2 bearish factors that had news
+> support — the prompt explicitly says "give fewer rather than inventing any to fill a quota";
+> when not a single one can be found the page honestly shows "temporarily unavailable", and
+> "re-analyse" retries it. It never shows built-in copy.
 
 ### Institutional Views
 <p align="center">
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="Institutional views" width="800">
 </p>
 
-> The MiMo key deployed on this machine does not have web search enabled (the call returns
-> `HTTP 400`); in that case it falls back to the news window, extracts each institution's
-> **most recent verifiable** prediction, and lists under "prediction date" the date that prediction
-> was last verified, labelling anything older than 30 days as "stale N days". "None" appears only
-> when not a single one can be found, and **an empty target price never overwrites an existing real
-> record in the database**.
+> Web search is off by default (`LLM_SEARCH_ENABLED=false`): it uses MiMo's plugin-style
+> `web_search` tool, not a generic OpenAI capability, and the endpoint must have it enabled
+> first, otherwise the call returns
+> `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`
+> (verified in practice; reproduce it with `backend/scripts/smoke_llm.py`). When it is off the
+> section falls back to the news window, extracts each institution's **most recent verifiable**
+> prediction, and lists under "prediction date" the date that prediction was last verified,
+> labelling anything older than 30 days as "stale N days". "None" appears only when not a single
+> one can be found, and **an empty target price never overwrites an existing real record in the
+> database**.
 > When the screenshot was taken the 30-day news window held no verifiable institutional target
 > price, so all four institutions honestly show "no recent prediction".
 
@@ -180,9 +190,11 @@ If this project has been helpful or inspiring to you, a ⭐ **Star** is the best
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/investment-advice.jpeg" alt="Investment strategy" width="800">
 </p>
 
-> The screenshot above shows the state when the analysis has not been stored yet: when the model
-> output is truncated by the token limit, this section honestly says "temporarily unavailable"
-> rather than presenting a built-in strategy.
+> The three tiers come from one LLM call, and the output budget is controlled by
+> `LLM_MAX_TOKENS` (default 8192). A budget that is too small truncates this large JSON and
+> parsing fails — the page then honestly shows "temporarily unavailable" rather than a built-in
+> strategy; when parsing fails the backend log records `finish_reason` and token usage for the
+> next investigation.
 
 ### Quant Prediction
 <p align="center">
@@ -351,7 +363,8 @@ Each row's update frequency follows its own data source (daily / weekly / monthl
 
 1. **The 1-year horizon's drift term is systematically low.** The walk-forward error from 2023-10 to 2025-10 averages **+33.0%**, i.e. the model underestimated the 2024–2025 rally. This is a bias in μ and **widening the interval cannot compensate**: correcting μ again by the expanding mean of the errors was tried (250-day coverage over the most recent 500 samples 27.6% → 41.6%), but the 1–60 day hit rates all dropped (e.g. 60-day 64.5% → 60.5%), so it was **not adopted**. The page shows coverage side by side with "always long / momentum", leaving the judgement to you.
 2. **The Shanghai gold premium is unavailable.** The Shanghai Gold Exchange's AU9999 has no public key-less API and cannot be fetched in practice; the row honestly shows "unavailable + reason" and does not invent numbers.
-3. **Web search is currently unavailable.** A Token Plan `tp-` key calling MiMo's `web_search` always returns `HTTP 400 Param Incorrect`, so institutional views fall back to the RSS news window.
+3. **Web search is off by default.** It uses MiMo's plugin-style `web_search` tool, not a generic OpenAI capability; when the endpoint has not enabled it, it returns
+   `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false` (reproducible in practice). To enable it: `LLM_SEARCH_ENABLED=true` with the plugin enabled on the endpoint side; while it is off, institutional views fall back to the RSS news window and make no pointless requests.
 4. **Geopolitical risk intensity is a corpus proxy metric** (the share of related reports in recent news), not the official GPR index.
 5. **No auth, no multi-tenancy.** All endpoints are publicly accessible, including `POST .../refresh`, which triggers paid LLM calls.
 6. **It is not a trading system.** It does not place orders, does not connect to brokers and does not custody funds; all output carries a disclaimer.
@@ -363,9 +376,10 @@ Each row's update frequency follows its own data source (daily / weekly / monthl
 
 | Tool | Version required | Purpose | Install check |
 |------|----------|------|----------|
-| Node.js | 18+ | Frontend runtime, includes npm | `node -v` |
+| Node.js | ≥22.22.2 (or 24.15+/26+) | Frontend runtime, includes npm. The floor comes from the strictest dependency in the lockfile (jsdom `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`); Node 22.2.0 still runs, but Vite prints a version warning | `node -v` |
 | Python | 3.11 - 3.12 | Backend runtime | `python --version` |
 | MySQL | 8.0+ | Data storage | `mysql --version` |
+| Google Chrome | Any recent version | The frontend end-to-end tests reuse the Chrome already installed on the machine and do **not** download Playwright's bundled browser | Open Chrome → `chrome://version` |
 
 ### Method 1: Local Development (Recommended)
 
@@ -396,15 +410,27 @@ DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
 # (Those two scripts only fall back to DB_* when DATABASE_URL is missing.)
 
 # ============================================
-# AI API key configuration
+# LLM access (any OpenAI-compatible endpoint; all three must be set)
 # ============================================
-# Xiaomi MiMo - one key for both reasoning and web search
-# Get it at: https://platform.xiaomimimo.com/
-# Note: the Token Plan terms restrict usage to coding tools; using it for this project's
-# backend falls outside those terms. See docs/00-产品方向.md section 4.
-MIMO_API_KEY=your_mimo_api_key_here
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-MIMO_MODEL=mimo-v2.6-flash
+# No provider is hardcoded — switching to any of these (or self-hosted / local Ollama)
+# only changes these three lines:
+#   OpenAI        LLM_BASE_URL=https://api.openai.com/v1
+#                 LLM_MODEL=gpt-4o-mini
+#   DeepSeek      LLM_BASE_URL=https://api.deepseek.com/v1
+#                 LLM_MODEL=deepseek-chat
+#   Qwen          LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+#                 LLM_MODEL=qwen-plus
+#   Kimi          LLM_BASE_URL=https://api.moonshot.cn/v1
+#                 LLM_MODEL=moonshot-v1-8k
+#   Ollama (local) LLM_BASE_URL=http://localhost:11434/v1
+#                 LLM_MODEL=qwen2.5:14b
+#   Xiaomi MiMo    LLM_BASE_URL=https://api.xiaomimimo.com/v1
+#                 LLM_MODEL=mimo-v2.6-flash
+LLM_API_KEY=your_api_key_here
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+# Display-only provider label shown in the UI footer; may be left empty
+LLM_PROVIDER=
 ```
 
 **Optional environment variables** (full list in [`backend/.env.example`](backend/.env.example)):
@@ -416,7 +442,10 @@ MIMO_MODEL=mimo-v2.6-flash
 | `LOG_LEVEL` | `INFO` | Log level |
 | `CACHE_DIR` | `backend/cache` | On-disk directory for the file half of the two-level cache |
 | `NEWS_RSS_SOURCES` | Built-in defaults | Format: `name\|URL,name\|URL` |
-| `MIMO_TRUST_ENV` | `false` | Whether httpx reads the host's proxy environment variables; set to `true` when reaching MiMo through a proxy |
+| `LLM_MAX_TOKENS` | `8192` | Per-call output token cap; the reasoning model's thinking and its answer share this budget. Too small and a large JSON such as the three strategy tiers is truncated and fails to parse |
+| `LLM_SEARCH_ENABLED` | `false` | Whether to enable the plugin-style web search (MiMo `web_search`); the endpoint must have it enabled first |
+| `LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` | follows the reasoning config | Fill in only when search uses a separate model / endpoint / key |
+| `LLM_TRUST_ENV` | `false` | Whether httpx reads the host's proxy environment variables; set to `true` when reaching the LLM endpoint through a proxy |
 | `GOLDMIND_TEST_DATABASE_URL` | Unset | Test runs only: point at a MySQL test database, to catch "green on SQLite ≠ green on MySQL" |
 | `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | **The project's only time-zone convention**; scheduled tasks and "today" are all computed in it |
 
@@ -511,24 +540,30 @@ python scripts/migrate_quant.py
 
 #### 4. Start the Services
 
-**Start frontend and backend together (run from the project root):**
+Frontend and backend each take one terminal — the repository has **no** `start_all.ps1`
+one-click script:
 
 ```bash
-# Windows PowerShell
-.\start_all.ps1
-
-# Or start them separately
-```
-
-**Start them separately:**
-
-```bash
-# Backend (in the backend directory)
+# Terminal 1: backend (in the backend directory)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Frontend (in the app directory)
+# Terminal 2: frontend (in the app directory)
 npm run dev
 ```
+
+> You can also skip the second terminal and start only the frontend: when the backend is not
+> running the page honestly reports "API unavailable" and shows no built-in numbers.
+
+**What to expect on a cold start (the first time you open the page):**
+
+- The five analysis sections **will not have content immediately**: with no cache they return an
+  empty result first and run one analysis in the background (the page says "AI analysis in
+  progress; the first load may take 1-2 minutes") and it appears once done; you can also click
+  each section's "re-analyse / re-fetch" to trigger it manually.
+- The quant prediction needs a multi-year factor backfill on first run; it only turns from
+  "unavailable" into numbers after fetching finishes, and is incremental afterwards.
+- The page polls the market endpoint every 10 seconds; the default rate limit is 60 requests
+  per minute (6 per minute for LLM endpoints), which normal browsing will not hit.
 
 **Service addresses:**
 - Frontend: http://localhost:5173
@@ -549,7 +584,7 @@ npm run dev
 #### 1. Configure Environment Variables
 
 ```bash
-# Copy the example configuration file (variables for the backend application itself, e.g. MIMO_API_KEY)
+# Copy the example configuration file (variables for the backend application itself, e.g. LLM_API_KEY)
 cp backend/.env.example backend/.env
 
 # Edit backend/.env and fill in the required API keys
@@ -570,13 +605,12 @@ MYSQL_ROOT_PASSWORD=your_secure_password
 # ============================================
 # ② backend/.env — read by the application inside the container
 # ============================================
-# Xiaomi MiMo - one key for both reasoning and web search
-# Get it at: https://platform.xiaomimimo.com/
-# Note: the Token Plan terms restrict usage to coding tools; using it for this project's
-# backend falls outside those terms. See docs/00-产品方向.md section 4.
-MIMO_API_KEY=your_mimo_api_key_here
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-MIMO_MODEL=mimo-v2.6-flash
+# LLM access — any OpenAI-compatible endpoint; the key / endpoint / model must all be set.
+# No provider is hardcoded; see backend/.env.example for examples (OpenAI / DeepSeek /
+# Qwen / Kimi / Ollama / Xiaomi MiMo — your choice).
+LLM_API_KEY=your_api_key_here
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
 ```
 
 > 💡 `docker-compose.yml` loads `backend/.env` as the container environment (`env_file:`)
@@ -585,7 +619,7 @@ MIMO_MODEL=mimo-v2.6-flash
 > `${MYSQL_ROOT_PASSWORD}` and overrides it, so writing it there has no effect.
 >
 > Note that `environment:` takes priority over `env_file:`, so do **not** write
-> `- MIMO_API_KEY=${MIMO_API_KEY}` there: when the project root has no such variable it
+> `- LLM_API_KEY=${LLM_API_KEY}` there: when the project root has no such variable it
 > interpolates to an empty string and instead overwrites the key configured in `backend/.env`.
 
 #### 2. Start the Services
@@ -760,10 +794,14 @@ npm run test:e2e
 
 ```bash
 cd backend
-python scripts/smoke_mimo.py
+python scripts/smoke_llm.py
 ```
 
-> ⚠️ Requires `MIMO_API_KEY` to be configured in `backend/.env`, and it really consumes quota.
+> ⚠️ Requires `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` to be configured in `backend/.env`,
+> and it really consumes quota. The script first probes authentication, `max_tokens` and
+> Chinese JSON output; the web-search probe only runs when `LLM_SEARCH_ENABLED=true`
+> (skipped by default). Results are written to `backend/scripts/smoke_llm_result.json`
+> (already ignored by `.gitignore`).
 
 ### Troubleshooting
 
@@ -843,7 +881,7 @@ The single mapping table for "changing what → read which file". The Chinese an
 
 1. **Data collection**: Tencent Finance real-time gold price and Sina Finance ICE dollar index; historical backfill supports three sources — Sina / Eastmoney / Yahoo; news is fetched via RSS
 2. **Persistence**: gold prices, the dollar index and news are written to MySQL
-3. **Analysis**: 5 analysis services each assemble a prompt → call MiMo once → parse the JSON
+3. **Analysis**: 5 analysis services each assemble a prompt → call the LLM once (the endpoint is chosen by `LLM_*`) → parse the JSON
 4. **Quant**: public data sources → factor store → rolling z → per-horizon weights → one calibrated distribution → walk-forward backtest
 5. **Cache**: results are written into a two-level cache of memory + JSON files (TTL 2 hours), shared across restarts and processes
 6. **Display**: the frontend polls the market endpoint every 10 seconds, and analysis results are fetched on demand
@@ -862,7 +900,7 @@ Early documents described these 5 services as a "LangChain Agent", which does no
 | Investment advice | `app/services/investment_advice_service.py` | Market state + bullish/bearish factors + institutional views | Three strategy tiers + risk notes |
 | Market summary | `app/services/market_summary_service.py` | All of the above | Core logic + risks + overall judgement |
 
-**Model**: `mimo-v2.6-flash`, overridable via `MIMO_MODEL`.
+**Model**: decided by `LLM_MODEL` in `backend/.env` (and the provider likewise — see the environment variables under "Method 1"). The model name shown in the page footer comes from `/health`'s `ai_config` and is not hardcoded in the code.
 
 **Degradation behaviour**: when a data source or web search is unavailable, any service returns an explicit "unavailable" state and falls back to the database / RSS content; it does **not** fabricate data.
 
@@ -881,12 +919,12 @@ This section is for anyone who formed expectations after reading the project des
 | Multi-agent collaboration | 4 **independent single-turn LLM calls**, not agent collaboration: assemble a prompt → `llm.invoke(prompt)` → parse the JSON. No tool-calling loop, no inter-agent communication |
 | RAG / vector retrieval | No vector store, no embeddings, no retrieval step. Historical prices and news are pasted straight into the prompt as context |
 | ReAct reasoning loop | Not implemented; there is no Thought / Action / Observation loop |
-| Real-time web search | Usable by design (MiMo's `web_search`), but the current `tp-` key always returns `HTTP 400`, so in practice it always falls back to the RSS news window |
+| Real-time web search | Off by default (`LLM_SEARCH_ENABLED=false`). It uses MiMo's plugin-style `web_search`, not a generic OpenAI capability; when the endpoint has not enabled it, the call returns `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`, and the project falls back to the RSS news window |
 | Sentiment analysis | The `sentiment` field is always `NEUTRAL`, only to keep the API shape stable; the page does not show sentiment conclusions |
 | Redis / message bus / WebSocket / K8s / WAF / auth middleware | None of them. The cache is two-level: memory + JSON files |
 | Trade execution | No brokers, no orders, no custody of funds |
 
-**"A section sometimes shows temporarily unavailable" is designed behaviour, not a bug**: the analysis model is a reasoning model, and `max_tokens=4096` covers both its thinking and its answer. Investment advice asks for the complete JSON of three strategy tiers; when the output approaches the cap it is truncated and parsing fails, so per the hard rule it returns empty content — and the page honestly shows "investment strategy temporarily unavailable" rather than presenting a fabricated strategy. The same applies when the bullish/bearish factors occasionally come back empty; press "re-analyse" to retry.
+**"A section sometimes shows temporarily unavailable" is designed behaviour, not a bug**: the reasoning model's thinking and its answer share `LLM_MAX_TOKENS` (default 8192). A budget that is too small truncates a large JSON such as the three strategy tiers and parsing fails, so per the hard rule it returns empty content — and the page honestly shows "investment strategy temporarily unavailable" rather than presenting a fabricated strategy (older versions hardcoded 4096, which is why this section stayed empty). On top of that, the endpoint has its own content filter and occasionally returns `finish_reason=content_filter` (the body is "The request was rejected because it was considered high risk"): the backend retries once automatically, and if it is still rejected the section honestly shows "temporarily unavailable" — press "re-analyse" to retry. When parsing fails, the log records `finish_reason` and token usage for the next investigation.
 
 **Why so wordy**: this project's core promise is "**no fabrication**". When a data source or web search is unavailable, it returns "unavailable" with a reason, rather than letting the model generate institutional target prices, central-bank purchase volumes or gold price levels from its impressions. Better the page shows "data unavailable".
 
@@ -912,7 +950,7 @@ This project is open source under the [MIT License](./LICENSE).
 
 ## 🙏 Acknowledgements
 
-- [Xiaomi MiMo](https://platform.xiaomimimo.com/) - large language model and web-search capabilities
+- Any OpenAI-compatible LLM endpoint (during development this project used [Xiaomi MiMo](https://platform.xiaomimimo.com/)) - large language model and web-search capabilities
 - [FastAPI](https://fastapi.tiangolo.com/) - high-performance web framework
 - [React](https://react.dev/) - frontend UI framework
 - The US Treasury, the New York Fed, CFTC, Yahoo Finance and Sina Finance - free, key-less public data sources

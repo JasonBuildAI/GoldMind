@@ -1,4 +1,4 @@
-"""联网搜索服务 —— 小米 MiMo。
+"""联网搜索服务 —— MiMo 插件式的 web_search 工具（可选，默认关闭）。
 
 ## 为什么重写
 
@@ -21,9 +21,15 @@
 
 ## 已知限制（实测）
 
-Token Plan 的 `tp-` key 调用 MiMo 的 `web_search` 工具会返回
-HTTP 400 `Param Incorrect`（已用 scripts/smoke_mimo.py 二分排除参数写法问题）。
-也就是说当前凭证大概率拿不到联网搜索，此时本服务会明确报告不可用。
+该工具只有声明支持它的端点可用，且要求账号已开通联网搜索插件
+（https://platform.xiaomimimo.com/#/console/plugin）。未开通时端点返回
+
+    HTTP 400 · web search tool found in the request body,
+    but webSearchEnabled is false
+
+—— 这是账号侧的开关，不是参数写法问题。默认关闭（LLM_SEARCH_ENABLED=false）；
+关闭时本服务不发起任何请求，直接报告不可用，由调用方走数据库 / RSS 回退。
+探测脚本：scripts/smoke_llm.py。
 """
 from __future__ import annotations
 
@@ -68,29 +74,36 @@ def extract_json_object(content: str) -> Optional[Dict[str, Any]]:
     return None
 
 class WebSearchService:
-    """基于 MiMo `web_search` 工具的联网搜索服务。"""
+    """基于端点 `web_search` 插件工具的联网搜索服务。"""
 
     def __init__(self) -> None:
         # 刻意不构造任何客户端：密钥缺失时构造 openai 客户端会抛异常，
         # 而本类是在各分析服务的 __init__ 里被创建的。
-        self.model = settings.MIMO_SEARCH_MODEL
+        self.model = llm_provider.get_search_model_name()
 
     @property
     def is_available(self) -> bool:
-        """是否具备发起搜索的前提条件（已配置密钥）。"""
-        return llm_provider.is_configured()
+        """是否具备发起搜索的前提条件（开关已打开且 LLM 已配置）。"""
+        return llm_provider.is_search_enabled() and llm_provider.is_configured()
 
     # ------------------------------------------------------------------ #
     # 底层调用
     # ------------------------------------------------------------------ #
-    def _chat_with_search(self, prompt: str, max_tokens: int = 4096) -> tuple[bool, str, str]:
+    def _chat_with_search(
+        self, prompt: str, max_tokens: int | None = None
+    ) -> tuple[bool, str, str]:
         """执行一次带联网搜索的对话。
 
         Returns:
             (是否成功, 正文, 失败原因)
         """
+        if not llm_provider.is_search_enabled():
+            # 默认路径：不发起请求，直接如实报告，让调用方走回退链路。
+            return False, "", "联网搜索未启用（LLM_SEARCH_ENABLED=false）"
+        if not llm_provider.is_configured():
+            return False, "", "未配置 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL"
         if not self.is_available:
-            return False, "", "未配置 MIMO_API_KEY"
+            return False, "", "联网搜索不可用"
 
         try:
             client = llm_provider.get_search_client()
@@ -99,7 +112,9 @@ class WebSearchService:
                 messages=[{"role": "user", "content": prompt}],
                 tools=[llm_provider.build_web_search_tool()],
                 temperature=0.3,
-                max_tokens=max_tokens,
+                max_tokens=(
+                    max_tokens if max_tokens is not None else settings.LLM_MAX_TOKENS
+                ),
             )
             content = response.choices[0].message.content or ""
             if not content.strip():
@@ -111,7 +126,7 @@ class WebSearchService:
     # ------------------------------------------------------------------ #
     # 对外接口
     # ------------------------------------------------------------------ #
-    def search_json(self, prompt: str, max_tokens: int = 4096) -> Dict[str, Any]:
+    def search_json(self, prompt: str, max_tokens: int | None = None) -> Dict[str, Any]:
         """执行联网搜索并把结果解析为 JSON。
 
         失败时返回 ``{"available": False, "reason": ...}``，

@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
-"""小米 MiMo 接入探测脚本 —— 纯标准库，零依赖。
+"""LLM 接入探测脚本 —— 纯标准库，零依赖。
+
+适用于任何 **OpenAI 兼容端点**（OpenAI / DeepSeek / 通义 / Kimi / Ollama /
+小米 MiMo …），不绑定具体供应商。
 
 用途：在改动 GoldMind 的 LLM 调用点之前，先实测确认 4 件事：
 
     P0  鉴权方式（api-key 头 vs Authorization: Bearer）
     P1  推理请求该用 max_tokens 还是 max_completion_tokens
     P2  对照组（与 P1 二选一）
-    P3  tp- key 能否调用 web_search 联网搜索插件  ← 最大未知项
+    P3  （可选）端点能否调用 MiMo 插件式 web_search 联网搜索
     P4  中文 JSON 结构化输出是否稳定可解析
 
 为什么用标准库：本机到 PyPI 的网络被代理阻断，装不上 openai/langchain，
 所以只有零依赖脚本才能真正跑起来验证。
 
 用法：
-    1. 把 key 写入 backend/.env：  MIMO_API_KEY=tp-xxxxx
-       （可选）MIMO_BASE_URL=...   默认 https://token-plan-cn.xiaomimimo.com/v1
-       （可选）MIMO_MODEL=...      默认 mimo-v2.6-flash
-    2. cd backend && python scripts/smoke_mimo.py
+    1. 把 key / 端点 / 模型写入 backend/.env：
+           LLM_API_KEY=sk-xxxxx
+           LLM_BASE_URL=https://api.deepseek.com/v1
+           LLM_MODEL=deepseek-chat
+    2. cd backend && python scripts/smoke_llm.py
+
+    P3 默认跳过 —— 只有 backend/.env 里 LLM_SEARCH_ENABLED=true 时才探测
+    （联网搜索是 MiMo 插件式的专属能力，不是通用 OpenAI 能力）。
 
 脚本不会打印完整密钥。退出码 0 表示 P1~P4 全部通过。
 """
@@ -29,12 +36,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-DEFAULT_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
-DEFAULT_MODEL = "mimo-v2.6-flash"
 TIMEOUT = 120
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-RESULT_FILE = Path(__file__).resolve().parent / "smoke_mimo_result.json"
+RESULT_FILE = Path(__file__).resolve().parent / "smoke_llm_result.json"
 
 
 # --------------------------------------------------------------------------- #
@@ -131,7 +136,13 @@ def brief_error(status: int, resp: object) -> str:
         if isinstance(err, dict):
             code = err.get("code") or err.get("type") or ""
             msg = err.get("message") or ""
-            return f"HTTP {status} · {code} · {msg}"[:300]
+            # 端点常把真正的原因放在 `param` 里（例如 web_search 的
+            # "web search tool found in the request body, but
+            # webSearchEnabled is false"），只看 message 会得到无用的
+            # "Param Incorrect"。
+            param = err.get("param") or ""
+            detail = f"{msg} · {param}" if param else msg
+            return f"HTTP {status} · {code} · {detail}"[:300]
         if err:
             return f"HTTP {status} · {err}"[:300]
         return f"HTTP {status} · {json.dumps(resp, ensure_ascii=False)[:250]}"
@@ -183,10 +194,11 @@ def probe_max_tokens(base_url: str, model: str, api_key: str, auth: str, results
 
 
 def probe_web_search(base_url: str, model: str, api_key: str, auth: str, results: dict) -> bool:
-    """P3：tp- key 能否调用联网搜索插件 —— 本次改动最大的未知项。
+    """P3：该端点能否调用 MiMo 插件式 web_search（仅 LLM_SEARCH_ENABLED=true 时执行）。
 
-    400 Param Incorrect 可能来自三种原因，逐变体二分定位：
-      (a) 工具参数写法不对  (b) 需要配合 thinking 关闭  (c) 该 key/账号无权调用插件
+    端点若返回 HTTP 400 `web search tool found in the request body, but
+    webSearchEnabled is false`，那是**账号侧的插件开关**没开（控制台开通），
+    逐变体二分也绕不过去；此时应保持 LLM_SEARCH_ENABLED=false，走数据库/RSS 回退。
     """
     print("  P3 联网搜索 —— 逐变体二分：")
     variants: list[tuple[str, dict, dict]] = [
@@ -255,8 +267,9 @@ def probe_web_search(base_url: str, model: str, api_key: str, auth: str, results
         print(f"  P3 结论 → ✅ 可用（有效变体：{working}）")
     else:
         print("  P3 结论 → ❌ 全部变体均失败。最可能的原因：")
-        print("             · 该 key 无权调用联网搜索插件（tp- key 可能不支持）")
-        print("             · 或插件未在控制台开通：https://platform.xiaomimimo.com/#/console/plugin")
+        print("             · 账号未开通联网搜索插件（报错：webSearchEnabled is false）")
+        print("             · 或该端点本身不支持 MiMo 插件式 web_search 工具")
+        print("             → 保持 LLM_SEARCH_ENABLED=false，搜索链路走数据库/RSS 回退")
     return working is not None
 
 
@@ -310,20 +323,31 @@ def main() -> int:
     setup_console()
     load_env_file(BACKEND_DIR / ".env")
 
-    api_key = os.environ.get("MIMO_API_KEY", "").strip()
-    base_url = os.environ.get("MIMO_BASE_URL", DEFAULT_BASE_URL).strip()
-    model = os.environ.get("MIMO_MODEL", DEFAULT_MODEL).strip()
+    api_key = os.environ.get("LLM_API_KEY", "").strip()
+    base_url = os.environ.get("LLM_BASE_URL", "").strip()
+    model = os.environ.get("LLM_MODEL", "").strip()
+    search_enabled = os.environ.get("LLM_SEARCH_ENABLED", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
     print("=" * 68)
-    print("小米 MiMo 接入探测")
+    print("LLM 接入探测（OpenAI 兼容端点）")
     print("=" * 68)
     print(f"  BASE_URL : {base_url}")
     print(f"  MODEL    : {model}")
     print(f"  API_KEY  : {mask(api_key)}")
+    print(f"  联网搜索 : {'探测' if search_enabled else '跳过（LLM_SEARCH_ENABLED 未开启）'}")
 
     if not api_key:
-        print("\n❌ 未找到 MIMO_API_KEY。")
-        print(f"   请写入 {BACKEND_DIR / '.env'}：MIMO_API_KEY=tp-你的key")
+        print("\n❌ 未找到 LLM_API_KEY。")
+        print(f"   请写入 {BACKEND_DIR / '.env'}：LLM_API_KEY=你的key")
+        return 2
+    if not base_url or not model:
+        print("\n❌ 缺少 LLM_BASE_URL 或 LLM_MODEL（三项齐备才算已配置）。")
+        print(f"   请写入 {BACKEND_DIR / '.env'}：LLM_BASE_URL=... / LLM_MODEL=...")
         return 2
 
     print("-" * 68)
@@ -339,7 +363,12 @@ def main() -> int:
     print("-" * 68)
     max_tokens_ok = probe_max_tokens(base_url, model, api_key, auth, results)
     print("-" * 68)
-    search_ok = probe_web_search(base_url, model, api_key, auth, results)
+    if search_enabled:
+        search_ok = probe_web_search(base_url, model, api_key, auth, results)
+    else:
+        search_ok = True
+        results["P3_web_search"] = {"ok": None, "skipped": "LLM_SEARCH_ENABLED=false"}
+        print("  P3 联网搜索 → ⏭ 跳过（LLM_SEARCH_ENABLED 未开启，分析走数据库/RSS 回退）")
     print("-" * 68)
     json_ok = probe_json_output(base_url, model, api_key, auth, results)
 
@@ -347,7 +376,10 @@ def main() -> int:
     print("结论")
     print("=" * 68)
     print(f"  P1 采样参数   : {'可用' if max_tokens_ok else '全部失败'}")
-    print(f"  P3 联网搜索   : {'可用' if search_ok else '不可用 → 搜索链路需降级处理'}")
+    if search_enabled:
+        print(f"  P3 联网搜索   : {'可用' if search_ok else '不可用 → 保持开关关闭，走数据库/RSS 回退'}")
+    else:
+        print("  P3 联网搜索   : 跳过（LLM_SEARCH_ENABLED 未开启）")
     print(f"  P4 中文 JSON  : {'稳定可解析' if json_ok else '不可解析 → 需改用结构化输出或加强容错'}")
     print(f"\n  详细结果已写入：{RESULT_FILE}")
 

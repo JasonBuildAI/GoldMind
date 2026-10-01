@@ -46,9 +46,12 @@ export default defineConfig({
         DATABASE_URL: 'sqlite:///./e2e.db',
         CACHE_DIR: './e2e-cache',
         SCHEDULER_ENABLED: 'false',
-        MIMO_API_KEY: 'e2e-mock-key',
-        MIMO_BASE_URL: `http://127.0.0.1:${MOCK_PORT}/v1`,
-        MIMO_MODEL: 'mimo-v2.6-flash',
+        LLM_API_KEY: 'e2e-mock-key',
+        LLM_BASE_URL: `http://127.0.0.1:${MOCK_PORT}/v1`,
+        LLM_MODEL: 'e2e-mock-model',
+        LLM_PROVIDER: 'e2e',
+        // 搜索默认就是关的；这里显式写死，避免误改默认值后 e2e 去打真实搜索端点
+        LLM_SEARCH_ENABLED: 'false',
         // 前端 e2e 会在一次跑动里连续触发多次分析（远超默认的 6 次/分钟）。
         // 那个上限保护的是真实额度，这里打的是假 LLM，放开以消除与被测行为无关的 429。
         RATE_LIMIT_AI_PER_MINUTE: '100',

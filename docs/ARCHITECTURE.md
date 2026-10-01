@@ -22,8 +22,8 @@
                                     │ llm_provider（唯一出口）
                                     ▼
                              ┌──────────────┐
-                             │  小米 MiMo   │
-                             │ OpenAI 兼容  │
+                             │ 任意 OpenAI  │
+                             │   兼容端点   │
                              └──────────────┘
 ```
 
@@ -65,7 +65,7 @@ GoldMind/
     │   ├── routers/       4 个路由模块
     │   ├── services/      业务逻辑（见下）
         │   └── utils/         rate_limit 等
-    ├── scripts/           smoke_mimo / dev_mock_llm / dev_seed_sqlite
+    ├── scripts/           smoke_llm / dev_mock_llm / dev_seed_sqlite
     └── tests/             unit / integration / e2e
 ```
 
@@ -81,7 +81,7 @@ MySQL(gold_news, gold_prices)
         ▼
   拼装 prompt ──► llm.invoke() ──► 解析 JSON ──► 两级缓存 ──► HTTP 响应
         ▲
-        └── 可选：MiMo web_search（当前凭证不可用，见下）
+        └── 可选：插件式 web_search（LLM_SEARCH_ENABLED，默认关）
 ```
 
 | 服务 | 文件 | 输出 |
@@ -108,13 +108,14 @@ MySQL(gold_news, gold_prices)
 关键设计：
 
 - **显式传入 httpx 客户端**（`http_client` + `http_async_client`，`trust_env` 由
-  `MIMO_TRUST_ENV` 控制）。宿主若设置了 SOCKS 代理或 `NO_PROXY` 里含 `[::1]`，
+  `LLM_TRUST_ENV` 控制）。宿主若设置了 SOCKS 代理或 `NO_PROXY` 里含 `[::1]`，
   httpx 会在**构造阶段**抛异常；而 `ChatOpenAI` 会同时准备同步与异步两个客户端，
   只给同步的那个仍会去建默认异步客户端并读环境。异常会被上层吞掉并回退到默认值，
   表现为「页面上有分析内容，其实一次模型都没调用」。
-- **`web_search` 工具当前不可用**：Token Plan 的 `tp-` key 调用它一律返回
-  HTTP 400（实测见 `scripts/smoke_mimo.py`）。搜索不可用时回退到数据库与 RSS，
-  **不编造数据**。
+- **`web_search` 工具默认关闭**：它是 MiMo 插件式能力（不是通用 OpenAI 能力），
+  需端点侧开通并用 `LLM_SEARCH_ENABLED=true` 显式开启；未开通时返回
+  `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`
+  （实测见 `scripts/smoke_llm.py`）。搜索不可用时回退到数据库与 RSS，**不编造数据**。
 
 ---
 
@@ -186,8 +187,10 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `DATABASE_URL` | MySQL 本地 | 也可指向 SQLite |
-| `MIMO_API_KEY` / `MIMO_BASE_URL` / `MIMO_MODEL` | — / Token Plan 端点 / `mimo-v2.6-flash` | LLM 接入 |
-| `MIMO_TRUST_ENV` | `false` | 是否读取宿主代理环境变量 |
+| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | —（必须自填） | LLM 接入；任何 OpenAI 兼容端点，三项齐备才算已配置 |
+| `LLM_MAX_TOKENS` | `8192` | 单次输出上限，模型思考与正文共用 |
+| `LLM_SEARCH_ENABLED` | `false` | 插件式联网搜索开关（端点侧未开通时无效） |
+| `LLM_TRUST_ENV` | `false` | 是否读取宿主代理环境变量 |
 | `CACHE_DIR` | `backend/cache` | 文件缓存目录 |
 | `NEWS_RSS_SOURCES` | 内置四个源 | 格式 `名称\|URL,名称\|URL` |
 | `CORS_ALLOW_ORIGINS` | 本地开发地址 | 不要填 `*` |
@@ -291,7 +294,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 
 - 后端入口脚本会等待数据库就绪，再跑 `init_db.py`，然后启动 uvicorn
 - 前端由 nginx 提供构建产物，`/api/` 与 `/health` 都反代到后端
-- LLM 凭证经 `backend/.env` 注入（`MIMO_*`）
+- LLM 凭证经 `backend/.env` 注入（`LLM_*`）
 
 - MySQL 首次启动时会执行 `backend/schema.sql`（只读挂载为
   `/docker-entrypoint-initdb.d/01-schema.sql`）；该脚本自带 `CREATE DATABASE`

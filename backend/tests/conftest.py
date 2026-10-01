@@ -47,9 +47,11 @@ for _var in (
 # 注意必须指向**独立的测试库**：用例会清空所有表。
 os.environ["DATABASE_URL"] = os.environ.get("GOLDMIND_TEST_DATABASE_URL", "sqlite://")
 os.environ["SCHEDULER_ENABLED"] = "false"
-os.environ.setdefault("MIMO_API_KEY", "test-key-not-real")
-os.environ.setdefault("MIMO_BASE_URL", "https://example.invalid/v1")
-os.environ.setdefault("MIMO_MODEL", "mimo-v2.6-flash")
+os.environ.setdefault("LLM_API_KEY", "test-key-not-real")
+os.environ.setdefault("LLM_BASE_URL", "https://example.invalid/v1")
+os.environ.setdefault("LLM_MODEL", "test-model")
+os.environ.setdefault("LLM_PROVIDER", "test")
+# LLM_SEARCH_ENABLED 故意不设置：默认关闭，测试不得访问真实外部服务。
 
 import pytest  # noqa: E402
 

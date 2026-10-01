@@ -51,7 +51,8 @@ git checkout -b fix/short-description
 - Tailwind CSS 3
 
 **AI**
-- Xiaomi MiMo (OpenAI-compatible protocol) - every call goes through `backend/app/services/llm_provider.py`
+- Any OpenAI-compatible LLM endpoint (OpenAI / DeepSeek / Qwen / Kimi / Ollama / Xiaomi MiMo, …;
+  configuration is in `README_EN.md`) - every call goes through `backend/app/services/llm_provider.py`
 
 ### Code style
 
@@ -116,7 +117,7 @@ GoldMind/
 
 **Important**: never commit any of the following
 
-- API keys (Xiaomi MiMo, etc.)
+- LLM API keys (any provider)
 - Database passwords
 - Private keys or certificates
 

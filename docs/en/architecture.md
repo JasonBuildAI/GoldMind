@@ -24,8 +24,8 @@ This document describes the **current implementation**. What the product should 
                                     │ llm_provider (the only exit)
                                     ▼
                              ┌──────────────┐
-                             │  Xiaomi MiMo │
-                             │ OpenAI compat│
+                             │  any OpenAI  │
+                             │  compatible  │
                              └──────────────┘
 ```
 
@@ -68,7 +68,7 @@ GoldMind/
     │   ├── routers/       4 router modules
     │   ├── services/      business logic (see below)
         │   └── utils/     rate_limit and so on
-    ├── scripts/           smoke_mimo / dev_mock_llm / dev_seed_sqlite
+    ├── scripts/           smoke_llm / dev_mock_llm / dev_seed_sqlite
     └── tests/             unit / integration / e2e
 ```
 
@@ -85,7 +85,7 @@ MySQL(gold_news, gold_prices)
         ▼
   assemble prompt ──► llm.invoke() ──► parse JSON ──► two-level cache ──► HTTP response
         ▲
-        └── optional: MiMo web_search (the current credentials cannot use it, see below)
+        └── optional: plugin-style web_search (LLM_SEARCH_ENABLED, off by default)
 ```
 
 | Service | File | Output |
@@ -114,13 +114,16 @@ To switch provider, endpoint or model, change only `config.py` or `.env`.
 Key design points:
 
 - **httpx clients are passed explicitly** (`http_client` + `http_async_client`; `trust_env` is
-  controlled by `MIMO_TRUST_ENV`). If the host sets a SOCKS proxy or has `[::1]` in `NO_PROXY`,
+  controlled by `LLM_TRUST_ENV`). If the host sets a SOCKS proxy or has `[::1]` in `NO_PROXY`,
   httpx raises during **construction**; `ChatOpenAI` prepares both a sync and an async client, so
   supplying only the sync one still builds a default async client and reads the environment. The
   exception is swallowed by the layer above and replaced with defaults, which shows up as "the page
   has analysis content, but not a single model call ever happened".
-- **The `web_search` tool is currently unavailable**: a Token Plan `tp-` key always gets HTTP 400
-  from it (measurements in `scripts/smoke_mimo.py`). When search is unavailable the system falls
+- **The `web_search` tool is off by default**: it is a MiMo plugin-style capability (not a generic
+  OpenAI one) and requires the endpoint to have it enabled plus an explicit
+  `LLM_SEARCH_ENABLED=true`; otherwise it returns
+  `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`
+  (measurements in `scripts/smoke_llm.py`). When search is unavailable the system falls
   back to the database and RSS, and **never fabricates data**.
 
 ---
@@ -198,8 +201,10 @@ variables. Commonly used items:
 | Variable | Default | Notes |
 |---|---|---|
 | `DATABASE_URL` | local MySQL | can also point at SQLite |
-| `MIMO_API_KEY` / `MIMO_BASE_URL` / `MIMO_MODEL` | — / Token Plan endpoint / `mimo-v2.6-flash` | LLM access |
-| `MIMO_TRUST_ENV` | `false` | whether to read the host's proxy environment variables |
+| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | — (you must fill these in) | LLM access; any OpenAI-compatible endpoint, configured only when all three are set |
+| `LLM_MAX_TOKENS` | `8192` | Per-call output cap, shared by the model's thinking and its answer |
+| `LLM_SEARCH_ENABLED` | `false` | Plugin-style web-search switch (no effect until the endpoint enables it) |
+| `LLM_TRUST_ENV` | `false` | whether to read the host's proxy environment variables |
 | `CACHE_DIR` | `backend/cache` | file cache directory |
 | `NEWS_RSS_SOURCES` | four built-in sources | format `name\|URL,name\|URL` |
 | `CORS_ALLOW_ORIGINS` | local development addresses | do not put `*` in it |
@@ -313,7 +318,7 @@ Middleware in `app/main.py`, implemented in `app/utils/rate_limit.py`:
   then starts uvicorn
 - The frontend serves the build output through nginx, with both `/api/` and `/health`
   reverse-proxied to the backend
-- LLM credentials are injected through `backend/.env` (`MIMO_*`)
+- LLM credentials are injected through `backend/.env` (`LLM_*`)
 
 - On first start, MySQL executes `backend/schema.sql` (mounted read-only as
   `/docker-entrypoint-initdb.d/01-schema.sql`); the script carries its own `CREATE DATABASE` and

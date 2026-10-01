@@ -85,8 +85,11 @@
 量化预测 / 总结）全部左对齐，无渐变、无阴影、无卡片套件；数字表格化，红涨绿跌，且方向同时给
 符号与文字。
 
-当前由**小米 MiMo**（`mimo-v2.6-flash`）单模型驱动，所有 LLM 客户端统一经
-`backend/app/services/llm_provider.py` 构造。
+LLM 供应商**不写死**：任何 OpenAI 兼容端点（OpenAI / DeepSeek / 通义 / Kimi /
+Ollama 本地模型 / 小米 MiMo ……）都能接 —— 改 `backend/.env` 里的
+`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` 三项即可，所有 LLM 客户端统一经
+`backend/app/services/llm_provider.py` 构造。三项缺任意一项都算「未配置」，
+各区块如实显示「暂不可用」，不会退回任何内置内容。
 
 > 你只需：打开页面
 > GoldMind 将返回：当天金价、美元指数，以及基于最近新闻生成的多空分析与策略建议，
@@ -101,7 +104,7 @@
 行情采集 ──► MySQL ──┐
 RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke() ──► 解析 JSON ──► 缓存 ──► 前端看板
                      │
-                     └──► （可选）MiMo web_search，不可用时跳过
+                     └──► （可选）插件式 web_search（LLM_SEARCH_ENABLED，默认关）
 
 公开数据源 ──► 因子库 ──► 滚动 z 分数 ──► 分尺度权重合成 ──► 一份校准分布 ──► 量化预测
 （财政部 / 纽联储 / CFTC /                                        │
@@ -152,17 +155,21 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-down.jpeg" alt="看跌因素" width="400">
 </p>
 
-> 两侧独立取数、独立刷新，一侧取不到结果不影响另一侧。截图拍摄时看跌一侧尚未取到结果，
-> 页面如实显示「暂不可用」，点「重新分析」可重试，不摆内置的看跌文案。
+> 两侧独立取数、独立刷新，一侧取不到结果不影响另一侧。截图拍摄当天模型只给出 2 个
+> 有新闻支撑的看跌因素 —— prompt 明确要求「宁可少给几个，也不要为了凑满数量而凭常识
+> 编造」；一条都取不到时页面如实显示「暂不可用」，点「重新分析」重试，不摆内置文案。
 
 ### 机构观点
 <p align="center">
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="机构观点" width="800">
 </p>
 
-> 本机部署的 MiMo key 未开通联网搜索（调用返回 `HTTP 400`）；此时回退到新闻窗口，
-> 提取每家机构**最近一次可核实**的预测，并在「预测日期」列出该预测最近一次被核实的日期，
-> 超过 30 天标注「已滞后 N 天」。一条都找不到才显示「暂无」，
+> 联网搜索默认关闭（`LLM_SEARCH_ENABLED=false`）：它用的是 MiMo 插件式的 `web_search`
+> 工具，不是通用 OpenAI 能力，开启前需在端点侧开通，否则返回
+> `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`
+> （实测，可用 `backend/scripts/smoke_llm.py` 复现）。
+> 关闭时回退到新闻窗口，提取每家机构**最近一次可核实**的预测，并在「预测日期」列出该预测
+> 最近一次被核实的日期，超过 30 天标注「已滞后 N 天」。一条都找不到才显示「暂无」，
 > 而且**空目标价不会覆盖库里已有的真实记录**。
 > 截图拍摄时 30 天新闻窗口内没有任何可核实的机构目标价，四家机构都如实显示「暂无最新预测」。
 
@@ -171,8 +178,9 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/investment-advice.jpeg" alt="投资策略" width="800">
 </p>
 
-> 上图为分析尚未落库时的状态：模型输出被 token 上限截断时，这一节如实说明「暂不可用」，
-> 而不是摆一份内置策略。
+> 三档策略由一次 LLM 调用生成，输出预算由 `LLM_MAX_TOKENS` 控制（默认 8192）。
+> 预算太小会把这份大 JSON 截断、解析失败 —— 页面如实显示「暂不可用」，而不是摆一份
+> 内置策略；解析失败时后端日志会记下 `finish_reason` 与 token 用量，便于下次定位。
 
 ### 量化预测
 <p align="center">
@@ -374,8 +382,10 @@ t 时刻的回归系数只用 `s ≤ t−1` 的已实现样本；样本不足 12
    64.5% → 60.5%），因此**未采用**。页面把覆盖率与「永远看多 / 动量」并排展示，让你自己判断。
 2. **上海金溢价不可用**。上海黄金交易所 AU9999 没有公开免密钥接口，实测取不到数，
    该行如实显示「不可用 + 原因」，不编数字。
-3. **联网搜索当前不可用**。Token Plan 的 `tp-` key 调用 MiMo 的 `web_search` 一律返回
-   `HTTP 400 Param Incorrect`，机构观点因此回退到 RSS 新闻窗口。
+3. **联网搜索默认关闭**。它用的是 MiMo 插件式的 `web_search` 工具，不是通用 OpenAI 能力；
+   端点侧未开通时返回 `HTTP 400 · web search tool found in the request body, but
+   webSearchEnabled is false`（实测可复现）。开启方式：`LLM_SEARCH_ENABLED=true`
+   且端点侧已开通插件；未开启时机构观点回退到 RSS 新闻窗口，不发起无效请求。
 4. **地缘风险强度是语料代理指标**（最近新闻中相关报道占比），不是 GPR 官方指数。
 5. **无鉴权、无多租户**。所有接口公开可访问，包括会触发付费 LLM 调用的 `POST .../refresh`。
 6. **不是交易系统**。不下单、不接券商、不托管资金；所有产出都带免责声明。
@@ -388,9 +398,10 @@ t 时刻的回归系数只用 `s ≤ t−1` 的已实现样本；样本不足 12
 
 | 工具 | 版本要求 | 说明 | 安装检查 |
 |------|----------|------|----------|
-| Node.js | 18+ | 前端运行环境，包含 npm | `node -v` |
+| Node.js | ≥22.22.2（或 24.15+/26+） | 前端运行环境，包含 npm。下限来自 lockfile 里最严的依赖（jsdom `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`）；Node 22.2.0 能跑起来，但 Vite 会打印版本告警 | `node -v` |
 | Python | 3.11 - 3.12 | 后端运行环境 | `python --version` |
 | MySQL | 8.0+ | 数据存储 | `mysql --version` |
+| Google Chrome | 任意近期版本 | 前端端到端测试复用本机已装的 Chrome，**不下载** Playwright 自带浏览器 | 打开 Chrome → `chrome://version` |
 
 ### 方式一：本地开发（推荐）
 
@@ -419,15 +430,26 @@ DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
 # （那两个脚本只在 DATABASE_URL 缺失时才退回 DB_*。）
 
 # ============================================
-# AI API 密钥配置
+# LLM 接入（任何 OpenAI 兼容端点，三项必须同时填）
 # ============================================
-# 小米 MiMo - 推理与联网搜索统一使用同一个 key
-# 获取地址: https://platform.xiaomimimo.com/
-# 注意：Token Plan 条款限定仅可用于编程工具，用于本项目后端属于条款外用法，
-# 详见 docs/00-产品方向.md 第四节。
-MIMO_API_KEY=your_mimo_api_key_here
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-MIMO_MODEL=mimo-v2.6-flash
+# 供应商不写死 —— 换下面任意一家（或自建、本地 Ollama）都只改这三行：
+#   OpenAI        LLM_BASE_URL=https://api.openai.com/v1
+#                 LLM_MODEL=gpt-4o-mini
+#   DeepSeek      LLM_BASE_URL=https://api.deepseek.com/v1
+#                 LLM_MODEL=deepseek-chat
+#   通义千问       LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+#                 LLM_MODEL=qwen-plus
+#   Kimi          LLM_BASE_URL=https://api.moonshot.cn/v1
+#                 LLM_MODEL=moonshot-v1-8k
+#   Ollama（本地） LLM_BASE_URL=http://localhost:11434/v1
+#                 LLM_MODEL=qwen2.5:14b
+#   小米 MiMo      LLM_BASE_URL=https://api.xiaomimimo.com/v1
+#                 LLM_MODEL=mimo-v2.6-flash
+LLM_API_KEY=your_api_key_here
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+# 仅用于界面展示的供应商标签，可留空
+LLM_PROVIDER=
 ```
 
 **可选的环境变量**（完整清单见 [`backend/.env.example`](backend/.env.example)）：
@@ -439,7 +461,10 @@ MIMO_MODEL=mimo-v2.6-flash
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 | `CACHE_DIR` | `backend/cache` | 两级缓存里文件缓存的落盘目录 |
 | `NEWS_RSS_SOURCES` | 内置默认源 | 形如 `名称\|URL,名称\|URL` |
-| `MIMO_TRUST_ENV` | `false` | 是否让 httpx 读宿主的代理环境变量；走代理访问 MiMo 时设为 `true` |
+| `LLM_MAX_TOKENS` | `8192` | 单次输出 token 上限；推理模型的思考与正文共用这份额度，调小会让三档策略这类大 JSON 被截断、解析失败 |
+| `LLM_SEARCH_ENABLED` | `false` | 是否启用插件式联网搜索（MiMo `web_search`）；开启前需端点侧已开通 |
+| `LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` | 跟随推理配置 | 搜索单独使用另一套模型 / 端点 / 密钥时才填 |
+| `LLM_TRUST_ENV` | `false` | 是否让 httpx 读宿主的代理环境变量；走代理访问 LLM 端点时设为 `true` |
 | `GOLDMIND_TEST_DATABASE_URL` | 未设置 | 只在跑测试时用：指定 MySQL 测试库，避免「SQLite 全绿 ≠ MySQL 全绿」 |
 | `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | **全项目唯一的时区口径**，定时任务与「今天」都按它算 |
 
@@ -532,24 +557,26 @@ python scripts/migrate_quant.py
 
 #### 4. 启动服务
 
-**同时启动前后端（在项目根目录执行）：**
+前后端各占一个终端 —— 仓库里**没有** `start_all.ps1` 这类一键脚本：
 
 ```bash
-# Windows PowerShell
-.\start_all.ps1
-
-# 或者分别启动
-```
-
-**单独启动：**
-
-```bash
-# 后端（在 backend 目录）
+# 终端 1：后端（在 backend 目录）
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# 前端（在 app 目录）
+# 终端 2：前端（在 app 目录）
 npm run dev
 ```
+
+> 想省掉第二个终端也可以只开前端：后端没起来时页面会如实报「接口不可用」，
+> 不会展示任何内置数字。
+
+**冷启动预期（第一次打开页面时）：**
+
+- 五个分析区块**不会立刻有内容**：无缓存时先返回空结果并在后台跑一次分析
+  （页面提示「AI 分析进行中，首次加载可能需要 1-2 分钟」），跑完自动出现；
+  也可以点各区块的「重新分析 / 重新抓取」手动触发。
+- 量化预测首次需要回填多年历史因子，要等抓取完成才会从「不可用」变成有数字；之后是增量更新。
+- 页面每 10 秒轮询行情接口；默认限流 60 次/分（LLM 接口 6 次/分），正常浏览不会触发。
 
 **服务地址：**
 - 前端: http://localhost:5173
@@ -570,7 +597,7 @@ npm run dev
 #### 1. 配置环境变量
 
 ```bash
-# 复制示例配置文件（后端应用自己的变量，比如 MIMO_API_KEY）
+# 复制示例配置文件（后端应用自己的变量，比如 LLM_API_KEY）
 cp backend/.env.example backend/.env
 
 # 编辑 backend/.env，填入必要的 API 密钥
@@ -590,13 +617,12 @@ MYSQL_ROOT_PASSWORD=your_secure_password
 # ============================================
 # ② backend/.env —— 供容器内的应用读取
 # ============================================
-# 小米 MiMo - 推理与联网搜索统一使用同一个 key
-# 获取地址: https://platform.xiaomimimo.com/
-# 注意：Token Plan 条款限定仅可用于编程工具，用于本项目后端属于条款外用法，
-# 详见 docs/00-产品方向.md 第四节。
-MIMO_API_KEY=your_mimo_api_key_here
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-MIMO_MODEL=mimo-v2.6-flash
+# LLM 接入 —— 任何 OpenAI 兼容端点，密钥 / 端点 / 模型三项必须同时填。
+# 供应商不写死，示例见 backend/.env.example（OpenAI / DeepSeek / 通义 / Kimi /
+# Ollama / 小米 MiMo 任选）。
+LLM_API_KEY=your_api_key_here
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
 ```
 
 > 💡 `docker-compose.yml` 会加载 `backend/.env` 作为容器环境（`env_file:`），
@@ -604,8 +630,8 @@ MIMO_MODEL=mimo-v2.6-flash
 > **`DATABASE_URL` 不必写进 `backend/.env`** —— compose 会用
 > `${MYSQL_ROOT_PASSWORD}` 拼好并覆盖它，写在那里也不会生效。
 >
-> 注意 `environment:` 的优先级高于 `env_file:`，所以那里**不要**写
-> `- MIMO_API_KEY=${MIMO_API_KEY}`：项目根目录没有该变量时它会插值成空串，
+> 注意 `environment:` 的优先级高于 `env_file:`，所以那里**不要**再写
+> `- LLM_API_KEY=${LLM_API_KEY}`：项目根目录没有该变量时它会插值成空串，
 > 反过来把 `backend/.env` 里配好的 key 覆盖掉。
 
 #### 2. 启动服务
@@ -780,10 +806,13 @@ npm run test:e2e
 
 ```bash
 cd backend
-python scripts/smoke_mimo.py
+python scripts/smoke_llm.py
 ```
 
-> ⚠️ 需要 `backend/.env` 已配置 `MIMO_API_KEY`，且会真实消耗额度。
+> ⚠️ 需要 `backend/.env` 已配置 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`，
+> 且会真实消耗额度。脚本先探测鉴权、`max_tokens` 与中文 JSON 输出；联网搜索
+> 只在 `LLM_SEARCH_ENABLED=true` 时才探测（默认跳过）。结果写入
+> `backend/scripts/smoke_llm_result.json`（已被 `.gitignore` 忽略）。
 
 ### 排障
 
@@ -870,7 +899,7 @@ GoldMind/
 
 1. **数据采集**：腾讯财经实时金价、新浪财经 ICE 美元指数；历史数据回填支持新浪 / 东方财富 / Yahoo 三源；新闻经 RSS 抓取
 2. **持久化**：金价、美元指数、新闻写入 MySQL
-3. **分析**：5 个分析服务各自拼装 prompt → 调用一次 MiMo → 解析 JSON
+3. **分析**：5 个分析服务各自拼装 prompt → 调用一次 LLM（端点由 `LLM_*` 决定）→ 解析 JSON
 4. **量化**：公开数据源 → 因子库 → 滚动 z → 分尺度权重 → 一份校准分布 → 走查式回测
 5. **缓存**：结果写入内存 + JSON 文件两级缓存（TTL 2 小时），供重启与多进程共享
 6. **展示**：前端每 10 秒轮询行情接口，分析结果按需拉取
@@ -891,7 +920,8 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 | 投资建议 | `app/services/investment_advice_service.py` | 市场状态 + 多空因子 + 机构观点 | 三档策略 + 风险提示 |
 | 市场总结 | `app/services/market_summary_service.py` | 上述全部 | 核心逻辑 + 风险 + 综合判断 |
 
-**模型**：`mimo-v2.6-flash`，可用 `MIMO_MODEL` 覆盖。
+**模型**：由 `backend/.env` 的 `LLM_MODEL` 决定（供应商同理，见「方式一」的环境变量）；
+页面页脚显示的型号来自 `/health` 的 `ai_config`，不写死在代码里。
 
 **降级行为**：任一服务在数据源或联网搜索不可用时，返回明确的「不可用」状态并回退到
 数据库 / RSS 内容，**不会**编造数据。
@@ -917,15 +947,18 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 | 多 Agent 协作 | 4 个**独立的单轮 LLM 调用**，不是 Agent 协作：拼 prompt → `llm.invoke(prompt)` → 解析 JSON。没有工具调用循环、没有 Agent 间通信 |
 | RAG / 向量检索 | 没有向量库、没有 embedding、没有检索步骤。历史价格与新闻是直接拼进 prompt 的上下文 |
 | ReAct 推理循环 | 未实现，没有 Thought / Action / Observation 循环 |
-| 实时联网搜索 | 设计上可用（MiMo 的 `web_search`），但当前 `tp-` key 调用一律返回 `HTTP 400`，实际总是回退到 RSS 新闻窗口 |
+| 实时联网搜索 | 默认关闭（`LLM_SEARCH_ENABLED=false`）。它用的是 MiMo 插件式 `web_search`，不是通用 OpenAI 能力；端点未开通时返回 `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`，此时回退到 RSS 新闻窗口 |
 | 情感分析 | `sentiment` 字段恒为 `NEUTRAL`，只为接口形状稳定，页面不展示情感结论 |
 | Redis / 消息总线 / WebSocket / K8s / WAF / 认证中间件 | 都没有。缓存是内存 + JSON 文件两级 |
 | 交易执行 | 不接券商、不下单、不托管资金 |
 
-**「某一节显示暂不可用」是设计行为，不是 bug**：分析模型是推理模型，`max_tokens=4096`
-同时覆盖思考与正文。投资策略要求三档策略的完整 JSON，输出逼近上限时会被截断、解析失败，
-于是按红线返回空内容 —— 页面如实显示「投资策略暂不可用」，而不是摆一份编造的策略。
-看涨 / 看跌因子偶发为空时同理，点「重新分析」重试即可。
+**「某一节显示暂不可用」是设计行为，不是 bug**：推理模型的思考与正文共用
+`LLM_MAX_TOKENS`（默认 8192）。这份额度太小，投资策略那种三档完整 JSON 会被截断、
+解析失败，于是按红线返回空内容 —— 页面如实显示「投资策略暂不可用」，而不是摆一份
+编造的策略（旧版本写死 4096，所以这一节长期为空）。此外端点自带内容风控，
+偶发返回 `finish_reason=content_filter`（正文是 "The request was rejected because it
+was considered high risk"）：后端会自动重试一次，仍被拒时如实显示「暂不可用」，
+点「重新分析」重试；解析失败时日志里有 `finish_reason` 与 token 用量可查。
 
 **为什么这么啰嗦**：这个项目的核心承诺是「**不编造**」。数据源或联网搜索不可用时，
 它返回「不可用」并说明原因，而不是让模型凭印象生成机构目标价、央行购金量或金价点位。
@@ -954,7 +987,7 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 
 ## 🙏 致谢
 
-- [小米 MiMo](https://platform.xiaomimimo.com/) - 提供大语言模型与联网搜索能力
+- 任何 OpenAI 兼容的 LLM 端点（本项目开发期用的是[小米 MiMo](https://platform.xiaomimimo.com/)）- 提供大语言模型与联网搜索能力
 - [FastAPI](https://fastapi.tiangolo.com/) - 高性能Web框架
 - [React](https://react.dev/) - 前端UI框架
 - 美国财政部、纽约联储、CFTC、Yahoo Finance、新浪财经 - 提供免密钥的公开数据源

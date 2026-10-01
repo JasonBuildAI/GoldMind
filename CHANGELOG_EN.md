@@ -10,6 +10,28 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Generic LLM access: any OpenAI-compatible endpoint works, configured through `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` (all three must be set); `LLM_PROVIDER` is a display-only label
+- New `LLM_MAX_TOKENS` (default `8192`), `LLM_SEARCH_ENABLED` (default `false`), `LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` and `LLM_SEARCH_MAX_KEYWORD`
+
+### Changed (breaking)
+
+- **LLM settings renamed: `MIMO_*` → `LLM_*`, with no compatibility fallback.** On upgrade, rename `MIMO_API_KEY` / `MIMO_BASE_URL` / `MIMO_MODEL` / `MIMO_SEARCH_MODEL` / `MIMO_SEARCH_MAX_KEYWORD` / `MIMO_TRUST_ENV` in `backend/.env` and in the deployment environment to their `LLM_*` equivalents
+
+### Fixed
+
+- **Investment strategy showed "temporarily unavailable" for a long time**: the 5 analysis services hardcoded `max_tokens=4096`, truncating the full three-tier JSON; they now take `LLM_MAX_TOKENS` (default 8192), and a failed parse logs `finish_reason` and token usage
+- Automatic single retry when the endpoint returns `finish_reason=content_filter`; the default news prompt cap is now 10 items
+- Smoke script renamed to `backend/scripts/smoke_llm.py` (was `smoke_mimo.py`); the web-search probe only runs when `LLM_SEARCH_ENABLED=true`
+
+### Docs
+
+- README reproduction gaps fixed: the Node floor is now ≥22.22.2 (or 24.15+/26+), a Google Chrome prerequisite was added, the non-existent `.\start_all.ps1` was removed, and cold-start expectations were added
+- The masthead / trend / bullish-bearish / institutional / strategy / summary screenshots were all retaken; institutional views keeps its honest "no recent prediction" empty state and the docs state the exact error message
+
 ## [2.0.0] - 2026-10-01
 
 2.0 is about **verifiability**: predictions converge on one backtestable distribution,

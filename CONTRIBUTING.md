@@ -50,7 +50,8 @@ git checkout -b fix/bug描述
 - Tailwind CSS 3
 
 **AI**
-- 小米 MiMo（OpenAI 兼容协议）—— 所有调用只经 `backend/app/services/llm_provider.py`
+- 任何 OpenAI 兼容的 LLM 端点（OpenAI / DeepSeek / 通义 / Kimi / Ollama / 小米 MiMo 等，
+  配置面见 `README.md`）—— 所有调用只经 `backend/app/services/llm_provider.py`
 
 ### 代码风格
 
@@ -106,7 +107,7 @@ GoldMind/
 
 **重要**：永远不要提交以下敏感信息
 
-- API 密钥（小米 MiMo 等）
+- LLM API 密钥（任何供应商）
 - 数据库密码
 - 私钥或证书
 

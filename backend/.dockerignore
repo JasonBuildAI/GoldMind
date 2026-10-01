@@ -29,7 +29,7 @@ cache/
 e2e-cache/
 logs/
 *.log
-scripts/smoke_mimo_result.json
+scripts/smoke_llm_result.json
 
 # 开发工具
 .vscode

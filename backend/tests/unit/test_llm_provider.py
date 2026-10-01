@@ -1,7 +1,7 @@
 """llm_provider 工厂的单元测试。
 
 工厂是全项目唯一构造 LLM 客户端的地方，所以这里的断言就是
-「供应商是否真的切到了 MiMo」的判据。
+「.env 里的配置是否真的生效」与「没配置时是否如实拒绝」的判据。
 """
 from pydantic import SecretStr
 import pytest
@@ -12,13 +12,21 @@ from app.services import llm_provider
 
 @pytest.mark.unit
 def test_model_name_comes_from_settings():
-    assert llm_provider.get_model_name() == settings.MIMO_MODEL
-    assert llm_provider.get_search_model_name() == settings.MIMO_SEARCH_MODEL
+    assert llm_provider.get_model_name() == settings.LLM_MODEL
 
 
 @pytest.mark.unit
-def test_get_chat_llm_passes_mimo_endpoint_and_key(monkeypatch):
-    """ChatOpenAI 必须以 MiMo 的端点、密钥、模型构造。"""
+def test_search_model_falls_back_to_the_reasoning_model(monkeypatch):
+    monkeypatch.setattr(settings, "LLM_SEARCH_MODEL", "")
+    assert llm_provider.get_search_model_name() == settings.LLM_MODEL
+
+    monkeypatch.setattr(settings, "LLM_SEARCH_MODEL", "search-model-x")
+    assert llm_provider.get_search_model_name() == "search-model-x"
+
+
+@pytest.mark.unit
+def test_get_chat_llm_passes_configured_endpoint_and_key(monkeypatch):
+    """ChatOpenAI 必须以 .env 的端点、密钥、模型构造。"""
     captured: dict = {}
 
     class _FakeChatOpenAI:
@@ -29,9 +37,9 @@ def test_get_chat_llm_passes_mimo_endpoint_and_key(monkeypatch):
 
     llm_provider.get_chat_llm(temperature=0.3, max_tokens=128)
 
-    assert captured["model"] == settings.MIMO_MODEL
-    assert captured["base_url"] == settings.MIMO_BASE_URL
-    assert captured["api_key"] == settings.MIMO_API_KEY.get_secret_value()
+    assert captured["model"] == settings.LLM_MODEL
+    assert captured["base_url"] == settings.LLM_BASE_URL
+    assert captured["api_key"] == settings.LLM_API_KEY.get_secret_value()
     assert captured["temperature"] == 0.3
     assert captured["max_tokens"] == 128
 
@@ -49,11 +57,31 @@ def test_get_chat_llm_defaults(monkeypatch):
     llm_provider.get_chat_llm()
 
     assert captured["temperature"] == 0.7
-    assert captured["max_tokens"] == 4096
+    # 默认输出上限来自配置：写死的 4096 曾把三档策略这类大 JSON 截断。
+    assert captured["max_tokens"] == settings.LLM_MAX_TOKENS
 
 
 @pytest.mark.unit
-def test_get_search_client_passes_mimo_endpoint(monkeypatch):
+def test_get_chat_llm_refuses_when_unconfigured(monkeypatch):
+    """三项配置缺任意一项都必须明确报错，而不是构造一个半成品客户端。"""
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr(""))
+    with pytest.raises(RuntimeError, match="LLM 未配置"):
+        llm_provider.get_chat_llm()
+
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr("test-key"))
+    monkeypatch.setattr(settings, "LLM_BASE_URL", "")
+    with pytest.raises(RuntimeError, match="LLM 未配置"):
+        llm_provider.get_chat_llm()
+
+    monkeypatch.setattr(settings, "LLM_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setattr(settings, "LLM_MODEL", "")
+    with pytest.raises(RuntimeError, match="LLM 未配置"):
+        llm_provider.get_chat_llm()
+
+
+@pytest.mark.unit
+def test_get_search_client_uses_search_overrides(monkeypatch):
+    """搜索凭据默认跟随推理配置，可被 LLM_SEARCH_* 单独覆盖。"""
     captured: dict = {}
 
     class _FakeOpenAI:
@@ -61,21 +89,38 @@ def test_get_search_client_passes_mimo_endpoint(monkeypatch):
             captured.update(kwargs)
 
     monkeypatch.setattr(llm_provider, "_openai_class", lambda: _FakeOpenAI)
+    monkeypatch.setattr(settings, "LLM_SEARCH_ENABLED", True)
 
     llm_provider.get_search_client()
+    assert captured["base_url"] == settings.LLM_BASE_URL
+    assert captured["api_key"] == settings.LLM_API_KEY.get_secret_value()
 
-    assert captured["base_url"] == settings.MIMO_BASE_URL
-    assert captured["api_key"] == settings.MIMO_API_KEY.get_secret_value()
+    captured.clear()
+    monkeypatch.setattr(
+        settings, "LLM_SEARCH_BASE_URL", "https://search.example.invalid/v1"
+    )
+    monkeypatch.setattr(settings, "LLM_SEARCH_API_KEY", SecretStr("search-key"))
+    llm_provider.get_search_client()
+    assert captured["base_url"] == "https://search.example.invalid/v1"
+    assert captured["api_key"] == "search-key"
 
 
 @pytest.mark.unit
-def test_build_web_search_tool_matches_mimo_format():
-    """工具定义必须是 MiMo 的格式（不是智谱那套 enable/search_result）。"""
+def test_get_search_client_requires_the_switch(monkeypatch):
+    """默认关闭时不得构造搜索客户端 —— 也就不会产生无效的 400 请求。"""
+    monkeypatch.setattr(settings, "LLM_SEARCH_ENABLED", False)
+    with pytest.raises(RuntimeError, match="联网搜索未启用"):
+        llm_provider.get_search_client()
+
+
+@pytest.mark.unit
+def test_build_web_search_tool_matches_plugin_format():
+    """工具定义必须是端点插件的那套格式（不是智谱的 enable/search_result）。"""
     tool = llm_provider.build_web_search_tool()
 
     assert tool["type"] == "web_search"
     assert tool["force_search"] is True
-    assert tool["max_keyword"] == settings.MIMO_SEARCH_MAX_KEYWORD
+    assert tool["max_keyword"] == settings.LLM_SEARCH_MAX_KEYWORD
     assert "web_search" not in tool  # 智谱的嵌套写法不应出现
     assert tool["user_location"]["country"] == "China"
 
@@ -84,21 +129,47 @@ def test_build_web_search_tool_matches_mimo_format():
 def test_describe_exposes_no_secret():
     info = llm_provider.describe()
 
-    assert info["provider"] == "mimo"
-    assert info["model"] == settings.MIMO_MODEL
+    assert info["provider"] == settings.LLM_PROVIDER
+    assert info["model"] == settings.LLM_MODEL
     assert set(info) == {"provider", "model", "search_model", "base_url", "configured"}
     # 任何字段都不得包含密钥
-    secret = settings.MIMO_API_KEY.get_secret_value()
+    secret = settings.LLM_API_KEY.get_secret_value()
     assert all(secret not in str(v) for v in info.values())
 
 
 @pytest.mark.unit
-def test_is_configured_follows_api_key(monkeypatch):
-    monkeypatch.setattr(settings, "MIMO_API_KEY", SecretStr(""))
+def test_is_configured_requires_key_url_and_model(monkeypatch):
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr(""))
     assert llm_provider.is_configured() is False
 
-    monkeypatch.setattr(settings, "MIMO_API_KEY", SecretStr("tp-fake"))
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr("test-key"))
+    monkeypatch.setattr(settings, "LLM_BASE_URL", "")
+    assert llm_provider.is_configured() is False
+
+    monkeypatch.setattr(settings, "LLM_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setattr(settings, "LLM_MODEL", "")
+    assert llm_provider.is_configured() is False
+
+    monkeypatch.setattr(settings, "LLM_MODEL", "test-model")
     assert llm_provider.is_configured() is True
+
+
+@pytest.mark.unit
+def test_no_legacy_provider_fields_remain():
+    """守卫：配置面不得再出现写死的供应商变量名。
+
+    变异验证：把任一 MIMO_* 字段加回 Settings —— 本用例立刻变红。
+    """
+    fields = set(type(settings).model_fields)
+    for legacy in (
+        "MIMO_API_KEY",
+        "MIMO_BASE_URL",
+        "MIMO_MODEL",
+        "MIMO_SEARCH_MODEL",
+        "MIMO_SEARCH_MAX_KEYWORD",
+        "MIMO_TRUST_ENV",
+    ):
+        assert legacy not in fields, f"{legacy} 应已删除，不再有旧供应商配置"
 
 
 # --------------------------------------------------------------------------- #
@@ -129,12 +200,14 @@ def test_llm_clients_construct_under_hostile_proxy_env(monkeypatch):
     """
     monkeypatch.setattr(llm_provider, "_http_client", None)
     monkeypatch.setattr(llm_provider, "_async_http_client", None)
+    monkeypatch.setattr(settings, "LLM_SEARCH_ENABLED", True)
     monkeypatch.setenv("ALL_PROXY", "socks5://127.0.0.1:9")
     monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1,::1,[::1]")
 
     # 构造阶段必须不抛异常
     assert llm_provider.get_chat_llm() is not None
     assert llm_provider.get_search_client() is not None
+
 
 # --------------------------------------------------------------------------- #
 # 密钥不得从 repr / str / model_dump 泄露
@@ -150,7 +223,7 @@ def test_settings_repr_masks_secrets(monkeypatch):
 
     from app.config import settings
 
-    monkeypatch.setattr(settings, "MIMO_API_KEY", SecretStr("tp-CANARY-abcdef"))
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr("sk-CANARY-abcdef"))
     monkeypatch.setattr(
         settings, "DATABASE_URL", SecretStr("mysql+pymysql://root:canarypw@h/db")
     )
@@ -161,7 +234,7 @@ def test_settings_repr_masks_secrets(monkeypatch):
         ("model_dump", str(settings.model_dump())),
         ("model_dump_json", settings.model_dump_json()),
     ):
-        assert "tp-CANARY-abcdef" not in rendered, f"{label} 泄露了 API key"
+        assert "sk-CANARY-abcdef" not in rendered, f"{label} 泄露了 API key"
         assert "canarypw" not in rendered, f"{label} 泄露了数据库密码"
 
 
@@ -172,13 +245,13 @@ def test_secrets_are_still_readable_when_needed(monkeypatch):
 
     from app.config import settings
 
-    monkeypatch.setattr(settings, "MIMO_API_KEY", SecretStr("tp-real-value"))
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr("sk-real-value"))
 
-    assert settings.MIMO_API_KEY.get_secret_value() == "tp-real-value"
+    assert settings.LLM_API_KEY.get_secret_value() == "sk-real-value"
 
 
 @pytest.mark.unit
-def test_is_configured_reads_the_value_not_the_object():
+def test_is_configured_reads_the_value_not_the_object(monkeypatch):
     """`SecretStr("")` 这个**对象**是真值 —— 判断有没有配置必须看里面的值。
 
     这是个很容易写错的地方：`bool(SecretStr(""))` 是 True。
@@ -188,8 +261,89 @@ def test_is_configured_reads_the_value_not_the_object():
     from app.config import settings
     from app.services.llm_provider import is_configured
 
-    settings.MIMO_API_KEY = SecretStr("")
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr(""))
     assert is_configured() is False, "空密钥被判成「已配置」"
 
-    settings.MIMO_API_KEY = SecretStr("tp-x")
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr("sk-x"))
     assert is_configured() is True
+
+
+@pytest.mark.unit
+def test_describe_completion_reports_truncation_and_usage():
+    """解析失败时日志里要能看到 finish_reason —— 截断与格式错误是两类故障。"""
+
+    class _Message:
+        content = "abc"
+        response_metadata = {
+            "finish_reason": "length",
+            "token_usage": {"completion_tokens": 8192, "total_tokens": 9000},
+        }
+
+    text = llm_provider.describe_completion(_Message())
+
+    assert "finish_reason=length" in text
+    assert "output_tokens=8192" in text
+    assert "content_chars=3" in text
+
+
+@pytest.mark.unit
+def test_describe_completion_tolerates_missing_metadata():
+    assert llm_provider.describe_completion(None) == "无响应元数据"
+
+    class _Bare:
+        content = ""
+
+    assert "finish_reason" not in llm_provider.describe_completion(_Bare())
+
+
+# --------------------------------------------------------------------------- #
+# 端点内容风控
+# --------------------------------------------------------------------------- #
+class _FakeResponse:
+    def __init__(self, finish_reason: str) -> None:
+        self.content = "{}"
+        self.response_metadata = {"finish_reason": finish_reason}
+
+
+class _ScriptedLLM:
+    """按预设的 finish_reason 序列返回响应，并记录调用次数。"""
+
+    def __init__(self, *finish_reasons: str) -> None:
+        self._reasons = list(finish_reasons)
+        self.calls = 0
+
+    def invoke(self, prompt: str):
+        self.calls += 1
+        reason = self._reasons.pop(0) if self._reasons else "stop"
+        return _FakeResponse(reason)
+
+
+@pytest.mark.unit
+def test_retry_on_content_filter_retries_once():
+    """MiMo 端点会把部分市场分析请求判成高风险；重试一次再决定。"""
+    llm = _ScriptedLLM("content_filter", "stop")
+
+    response = llm_provider.retry_on_content_filter(llm, "prompt")
+
+    assert llm.calls == 2, "被内容风控拒绝后必须重试一次"
+    assert response.response_metadata["finish_reason"] == "stop"
+
+
+@pytest.mark.unit
+def test_retry_on_content_filter_keeps_a_good_answer():
+    llm = _ScriptedLLM("stop")
+
+    llm_provider.retry_on_content_filter(llm, "prompt")
+
+    assert llm.calls == 1, "正常返回不该多花一次调用"
+
+
+@pytest.mark.unit
+def test_retry_on_content_filter_gives_up_after_one_retry():
+    """仍被拒就如实返回 —— 上层据此显示「暂不可用」，不编内容。"""
+    llm = _ScriptedLLM("content_filter", "content_filter", "stop")
+
+    response = llm_provider.retry_on_content_filter(llm, "prompt")
+
+    assert llm.calls == 2
+    assert response.response_metadata["finish_reason"] == "content_filter"

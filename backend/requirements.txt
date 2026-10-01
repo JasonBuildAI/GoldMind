@@ -52,5 +52,5 @@ tzdata==2026.4
 python-dotenv==1.2.3
 loguru==0.7.3
 # [socks] pulls in socksio. If the host sets a SOCKS proxy, httpx raises while
-# building a client without it, which makes every LLM call fail (see MIMO_TRUST_ENV).
+# building a client without it, which makes every LLM call fail (see LLM_TRUST_ENV).
 httpx[socks]==0.28.1

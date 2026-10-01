@@ -38,8 +38,8 @@ Thumbs.db
 *.log
 logs/
 
-# 冒烟探测结果（由 backend/scripts/smoke_mimo.py 生成）
-backend/scripts/smoke_mimo_result.json
+# 冒烟探测结果（由 backend/scripts/smoke_llm.py 生成）
+backend/scripts/smoke_llm_result.json
 
 # Database
 *.db

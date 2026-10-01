@@ -45,7 +45,11 @@ and what the bullish and bearish arguments are".
 | Frontend dashboard | React single page: masthead + 6 sections (Market / Bullish vs Bearish / Institutions / Strategy / Quant Prediction / Conclusion), with 10-second quote polling |
 | Cache | Two-level cache: in-process memory + JSON files, supporting multiple processes and sharing across restarts |
 
-**LLM provider**: Xiaomi MiMo (`mimo-v2.6-flash`), constructed uniformly through `app/services/llm_provider.py`.
+**LLM provider**: not hardcoded — any OpenAI-compatible endpoint (OpenAI / DeepSeek / Qwen /
+Kimi / Ollama / Xiaomi MiMo …) works, decided by `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`
+in `backend/.env` (missing any one of the three counts as "unconfigured": each section honestly
+shows "temporarily unavailable"), and constructed uniformly through
+`app/services/llm_provider.py`.
 
 ---
 
@@ -62,14 +66,19 @@ and what the bullish and bearish arguments are".
 
 ## 4. Known Limitations (Must Be Honestly Reflected in the UI and Docs)
 
-1. **Web search is currently unavailable**. A Token Plan `tp-` key calling MiMo's `web_search`
-   tool always returns `HTTP 400 Param Incorrect` (parameter-formatting issues were ruled out by
-   bisection with `backend/scripts/smoke_mimo.py`). Therefore, when search is unavailable, "Institutional Views" **can only fall back to
-   the database and RSS news**, and must not fabricate institutional price targets from the model's impressions.
-2. **Credential use compliance risk**. The Xiaomi Token Plan terms restrict it to "programming tools only;
-   use in custom application backends is prohibited". Using this project's `tp-` key for backend calls is outside
-   those terms and risks the service being suspended or the key being banned. The compliant approach is to switch to pay-as-you-go
-   `https://api.xiaomimimo.com/v1` + an `sk-` key.
+1. **Web search is off by default**. It uses MiMo's plugin-style `web_search` tool (not a generic
+   OpenAI capability) and must be explicitly enabled with `LLM_SEARCH_ENABLED=true` on an endpoint
+   where the plugin has been enabled; otherwise the endpoint returns
+   `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`
+   (verified in practice; see `backend/scripts/smoke_llm.py`). Therefore, when search is
+   unavailable, "Institutional Views" **can only fall back to the database and RSS news**, and
+   must not fabricate institutional price targets from the model's impressions.
+2. **Mind the usage terms of whichever endpoint you pick**. Before connecting, confirm the
+   provider's terms allow backend calls. Example: the Xiaomi Token Plan terms restrict it to
+   "programming tools only; use in custom application backends is prohibited", so using a `tp-`
+   key for backend calls is outside those terms and risks the service being suspended or the key
+   being banned; the compliant approach is a pay-as-you-go endpoint (for MiMo,
+   `https://api.xiaomimimo.com/v1` + an `sk-` key).
 3. **The news sources are mainly English financial media**. The built-in default RSS sources (FXStreet / MarketWatch /
    CNBC / WSJ) are the set verified as usable in practice; the public
    RSS addresses of the Chinese sources (Sina, FX168, Jin10) have all expired and can be configured

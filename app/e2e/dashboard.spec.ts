@@ -45,13 +45,15 @@ test.describe('GoldMind 看板端到端', () => {
     expect(news[0].title).toContain('端到端新闻')
   })
 
-  test('健康检查经代理可达，且上报 MiMo', async ({ request }) => {
+  test('健康检查经代理可达，且上报当前配置的 LLM', async ({ request }) => {
     const resp = await request.get('/health')
     expect(resp.ok()).toBeTruthy()
 
     const body = await resp.json()
     expect(body.services.database.status).toBe('connected')
-    expect(body.services.ai_config.provider).toBe('mimo')
+    // 与 playwright.config.ts 注入的 LLM_PROVIDER 保持一致
+    expect(body.services.ai_config.provider).toBe('e2e')
+    expect(body.services.ai_config.model).toBe('e2e-mock-model')
   })
 
   test('首屏渲染，且没有未捕获的前端异常', async ({ page }) => {

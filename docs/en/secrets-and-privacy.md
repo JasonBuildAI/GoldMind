@@ -189,6 +189,6 @@ git push --force-with-lease origin --tags
 
 | Purpose | Location | Description |
 |------|------|------|
-| LLM (reasoning + web search) | `MIMO_API_KEY` in `backend/.env` | Xiaomi MiMo. **Note the usage compliance risk**; see Section 4, item 2 of `docs/00-产品方向.md`. |
+| LLM (reasoning + web search) | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` in `backend/.env` | Any OpenAI-compatible endpoint. **Before connecting, confirm the chosen endpoint's terms allow backend use**; see Section 4, item 2 of `docs/00-产品方向.md`. |
 
 `backend/.env` is not under version control. Under no circumstances paste its contents into commits, logs or issues.

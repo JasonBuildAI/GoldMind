@@ -11,7 +11,7 @@ JSON 解析、缓存写入），而不消耗任何真实 LLM 额度，也不需�
     python scripts/dev_mock_llm.py --port 8099
 
 然后让后端指向它：
-    MIMO_BASE_URL=http://127.0.0.1:8099/v1
+    LLM_BASE_URL=http://127.0.0.1:8099/v1
 
 注意：这是**测试替身**，不要用于任何真实场景。
 """
