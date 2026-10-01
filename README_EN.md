@@ -157,6 +157,10 @@ If this project has been helpful or inspiring to you, a ⭐ **Star** is the best
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-down.jpeg" alt="Bearish factors" width="400">
 </p>
 
+> The two sides fetch and refresh independently; one side failing does not affect the other.
+> When the screenshot was taken the bearish side had no result yet, so the page states
+> "temporarily unavailable"; press "re-analyse" to retry. It never shows built-in bearish copy.
+
 ### Institutional Views
 <p align="center">
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="Institutional views" width="800">
@@ -168,6 +172,8 @@ If this project has been helpful or inspiring to you, a ⭐ **Star** is the best
 > was last verified, labelling anything older than 30 days as "stale N days". "None" appears only
 > when not a single one can be found, and **an empty target price never overwrites an existing real
 > record in the database**.
+> When the screenshot was taken the 30-day news window held no verifiable institutional target
+> price, so all four institutions honestly show "no recent prediction".
 
 ### Investment Strategy
 <p align="center">
@@ -177,6 +183,29 @@ If this project has been helpful or inspiring to you, a ⭐ **Star** is the best
 > The screenshot above shows the state when the analysis has not been stored yet: when the model
 > output is truncated by the token limit, this section honestly says "temporarily unavailable"
 > rather than presenting a built-in strategy.
+
+### Quant Prediction
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-prediction.jpeg" alt="Quant prediction: direction, probability and scenarios across five horizons" width="800">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-fair-value.jpeg" alt="Fair value decomposition" width="800">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-monitor.jpeg" alt="Monitor dashboard (weekly table)" width="800">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-accuracy.jpeg" alt="Backtest hit rate against benchmarks" width="800">
+</p>
+
+> The quant engine calls no LLM: all 14 factors come from free public data sources. A factor or
+> indicator that cannot be fetched is labelled "unavailable" with its reason, and fewer than three
+> usable factors means "prediction unavailable" outright. When the screenshot was taken 12/14
+> factors were usable; direction, probability, target price and the three scenarios all derive from
+> the same calibrated distribution (see "Quant Strategy").
 
 ### Conclusion
 <p align="center">

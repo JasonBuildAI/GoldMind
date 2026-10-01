@@ -152,6 +152,9 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-down.jpeg" alt="看跌因素" width="400">
 </p>
 
+> 两侧独立取数、独立刷新，一侧取不到结果不影响另一侧。截图拍摄时看跌一侧尚未取到结果，
+> 页面如实显示「暂不可用」，点「重新分析」可重试，不摆内置的看跌文案。
+
 ### 机构观点
 <p align="center">
   <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="机构观点" width="800">
@@ -161,6 +164,7 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
 > 提取每家机构**最近一次可核实**的预测，并在「预测日期」列出该预测最近一次被核实的日期，
 > 超过 30 天标注「已滞后 N 天」。一条都找不到才显示「暂无」，
 > 而且**空目标价不会覆盖库里已有的真实记录**。
+> 截图拍摄时 30 天新闻窗口内没有任何可核实的机构目标价，四家机构都如实显示「暂无最新预测」。
 
 ### 投资策略
 <p align="center">
@@ -169,6 +173,27 @@ RSS 新闻 ──► MySQL ──┼──► 拼装 prompt ──► llm.invoke
 
 > 上图为分析尚未落库时的状态：模型输出被 token 上限截断时，这一节如实说明「暂不可用」，
 > 而不是摆一份内置策略。
+
+### 量化预测
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-prediction.jpeg" alt="量化预测：五个尺度的方向、概率与三情景" width="800">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-fair-value.jpeg" alt="公允价值分解" width="800">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-monitor.jpeg" alt="监测仪表盘（周更表）" width="800">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-accuracy.jpeg" alt="回测命中率与基准对照" width="800">
+</p>
+
+> 量化引擎不调用大模型：14 个因子全部来自免费公开数据源，取不到的因子与指标如实标「不可用」
+> 并说明原因，可用因子少于 3 个时直接显示「预测不可用」。截图拍摄时 12/14 个因子可用；
+> 方向、概率、目标价与三情景全部派生自同一份校准分布（口径见「量化策略」一节）。
 
 ### 总结
 <p align="center">
