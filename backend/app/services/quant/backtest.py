@@ -149,7 +149,7 @@ def evaluate_horizon(
     window_end = mask[mask].index[-1].date()
 
     coverage_indicator = interval_coverage_indicator(
-        forward[mask], frame["expected_return"][mask], frame["uncertainty"][mask]
+        forward[mask], frame["lower_return"][mask], frame["upper_return"][mask]
     )
     interval_coverage = float(coverage_indicator.mean()) if coverage_indicator is not None else None
     in_pre = realized.index < pd.Timestamp(REGIME_SPLIT)
@@ -270,29 +270,29 @@ def _per_factor_metrics(
 
 def interval_coverage_indicator(
     forward: pd.Series,
-    expected: pd.Series,
-    sigma: pd.Series,
+    lower: pd.Series,
+    upper: pd.Series,
 ) -> Optional[pd.Series]:
-    """已实现收益是否落在 μ ± 1.2816σ 内的 0/1 序列（区间口径只在这里定义）。
+    """已实现收益是否落在 [lower, upper] 内的 0/1 序列（区间口径只在这里定义）。
 
-    样本不足时返回 None —— 覆盖率低于名义值说明不确定性被低估，
-    要让页面能看见，而不是用一个数字掩盖。
+    边界由 ``engine`` 的非对称经验分位 + ACI 给出；样本不足时返回 None ——
+    覆盖率低于名义值说明不确定性被低估，要让页面能看见，而不是用一个数字掩盖。
     """
-    frame = pd.DataFrame({"forward": forward, "expected": expected, "sigma": sigma}).dropna()
+    frame = pd.DataFrame({"forward": forward, "lower": lower, "upper": upper}).dropna()
     if len(frame) < MIN_EVALUATION_SAMPLES:
         return None
-    lower = frame["expected"] - INTERVAL_Z_80 * frame["sigma"]
-    upper = frame["expected"] + INTERVAL_Z_80 * frame["sigma"]
-    return ((frame["forward"] >= lower) & (frame["forward"] <= upper)).astype("float64")
+    return ((frame["forward"] >= frame["lower"]) & (frame["forward"] <= frame["upper"])).astype(
+        "float64"
+    )
 
 
 def interval_coverage_80(
     forward: pd.Series,
-    expected: pd.Series,
-    sigma: pd.Series,
+    lower: pd.Series,
+    upper: pd.Series,
 ) -> Optional[float]:
     """80% 名义区间的实际覆盖率（区间定义见 ``interval_coverage_indicator``）。"""
-    indicator = interval_coverage_indicator(forward, expected, sigma)
+    indicator = interval_coverage_indicator(forward, lower, upper)
     if indicator is None:
         return None
     return float(indicator.mean())

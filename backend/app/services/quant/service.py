@@ -78,6 +78,7 @@ def _prediction_payload(snapshot: engine.SignalSnapshot, close: pd.Series) -> di
         "scale_label": spec.label if spec else None,
         "scale": spec.scale if spec else None,
         "scale_description": spec.description if spec else None,
+        "headline": spec.headline if spec else None,
         "status": snapshot.status,
         "reason": snapshot.reason,
         "direction": snapshot.direction,

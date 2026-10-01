@@ -47,8 +47,21 @@ MIN_OLS_SAMPLES = 60
 MIN_ERRORS_FOR_SIGMA = 60
 # 80% 名义区间的双侧分位点 Φ⁻¹(0.90)；区间 = μ ± INTERVAL_Z_80 × σ
 INTERVAL_Z_80 = NormalDist().inv_cdf(0.90)
-# 经验校准分位：误差的 80% 分位对应「八成误差都落在里面」
+# 经验校准分位：误差的 80% 分位对应「八成误差都落在里面」（对称版本，
+# 仍用于 σ 的刻度校准；区间边界改用下面的非对称分位 + ACI）
 ERROR_QUANTILE = 0.80
+# 80% 名义区间的目标错失率（α = 0.20）
+INTERVAL_ALPHA = 0.20
+# ACI（自适应保形推断，Gibbs & Candès 2021）的步长：误差连续落在区间外就把
+# α 调小（区间变宽），连续落在区间内就把 α 调大（区间收紧）
+ACI_GAMMA = 0.01
+# 指数权重半衰期（交易日）：250 日前的样本权重减半 —— 允许分布缓慢漂移
+ACI_HALF_LIFE = 250
+# 校准样本最长回看：半衰期之外再老的数据权重过低，只增加计算量
+CALIBRATION_WINDOW = 750
+# α 的安全范围：太小的 α 会让区间退化成「永远覆盖」，太大则失去意义
+ACI_ALPHA_FLOOR = 0.005
+ACI_ALPHA_CAP = 0.6
 
 EPS = 1e-12
 
@@ -212,6 +225,72 @@ def expanding_ols(
     )
 
 
+def _weighted_quantile(values: np.ndarray, weights: np.ndarray, level: float) -> float:
+    """加权分位数：按权重累计到 ``level`` 处的样本值（线性插值不做，取阶梯值）。"""
+    order = np.argsort(values, kind="stable")
+    sorted_values = values[order]
+    cumulative = np.cumsum(weights[order])
+    total = cumulative[-1]
+    index = int(np.searchsorted(cumulative, level * total, side="left"))
+    return float(sorted_values[min(index, len(sorted_values) - 1)])
+
+
+def calibrate_interval_factors(
+    ratio: pd.Series,
+    *,
+    alpha: float = INTERVAL_ALPHA,
+    gamma: float = ACI_GAMMA,
+    half_life: int = ACI_HALF_LIFE,
+    window: int = CALIBRATION_WINDOW,
+    min_samples: int = MIN_ERRORS_FOR_SIGMA,
+) -> pd.DataFrame:
+    """非对称经验分位 + ACI：studentized 误差 → 逐日的上下分位因子。
+
+    区间口径：``μ + σ × lower`` ～ ``μ + σ × upper``。分位因子只从**已经实现**
+    的误差里取（``ratio`` 序列已按实现时间右移），并带指数权重（半衰期
+    ``half_life`` 个交易日，允许分布缓慢漂移）。名义错失率 α 按 ACI 在线递推：
+    ``α ← α + γ × (α_target − miss)`` —— 误差落在区间外（miss=1）就把 α 调小
+    使下一次区间更宽，落回区间内则逐步收紧。
+
+    样本不足 ``min_samples`` 的行返回 NaN，由调用方回退到正态分位。
+    """
+    values = ratio.to_numpy(dtype="float64")
+    count = len(values)
+    lower = np.full(count, np.nan, dtype="float64")
+    upper = np.full(count, np.nan, dtype="float64")
+    alphas = np.full(count, np.nan, dtype="float64")
+    history: list[float] = []
+    current_alpha = float(alpha)
+
+    for position in range(count):
+        if len(history) >= min_samples:
+            tail = history[-window:]
+            ages = np.arange(len(tail) - 1, -1, -1, dtype="float64")
+            weights = np.power(0.5, ages / float(half_life))
+            sample = np.asarray(tail, dtype="float64")
+            q_low = _weighted_quantile(sample, weights, current_alpha / 2.0)
+            q_high = _weighted_quantile(sample, weights, 1.0 - current_alpha / 2.0)
+            lower[position] = q_low
+            upper[position] = q_high
+            alphas[position] = current_alpha
+            value = values[position]
+            if np.isfinite(value):
+                miss = 1.0 if (value < q_low or value > q_high) else 0.0
+                current_alpha = float(
+                    np.clip(
+                        current_alpha + gamma * (alpha - miss),
+                        ACI_ALPHA_FLOOR,
+                        ACI_ALPHA_CAP,
+                    )
+                )
+        if np.isfinite(values[position]):
+            history.append(float(values[position]))
+
+    return pd.DataFrame(
+        {"lower": lower, "upper": upper, "alpha": alphas}, index=ratio.index
+    )
+
+
 def build_prediction_frame(
     score: pd.Series,
     close: pd.Series,
@@ -240,12 +319,23 @@ def build_prediction_frame(
     fallback = forward.shift(horizon).expanding(min_periods=MIN_SCORES_FOR_SIGMA).std()
     sigma = sigma.fillna(fallback)
 
+    # 区间边界：非对称经验分位 + ACI，作用在未乘对称因子的误差刻度上。
+    # studentized 误差在样本不足时先回退到正态分位，保证早期也有区间。
+    error_scale = errors.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).std()
+    scale = error_scale.fillna(fallback)
+    calibration = calibrate_interval_factors(errors / scale)
+    lower_factor = calibration["lower"].fillna(-INTERVAL_Z_80)
+    upper_factor = calibration["upper"].fillna(INTERVAL_Z_80)
+
     frame = pd.DataFrame(
         {
             "score": score,
             "expected_return": expected,
             "uncertainty": sigma,
             "base_price": close,
+            "lower_return": expected + scale * lower_factor,
+            "upper_return": expected + scale * upper_factor,
+            "interval_alpha": calibration["alpha"],
         }
     )
     frame["probability_up"] = probability_up(frame["expected_return"], frame["uncertainty"])

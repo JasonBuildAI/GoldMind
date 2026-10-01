@@ -14,26 +14,25 @@ def _series(value: float, count: int = 40) -> pd.Series:
     return pd.Series([value] * count, index=pd.RangeIndex(count))
 
 
-def test_interval_band_uses_the_80_percent_quantile():
-    # 1.2816×0.01 = 0.012816：0.0127 在内、0.0129 在外。
-    # 若把分位点换成 1.0（或别的常数），这两条断言必翻转。
-    sigma = _series(0.01)
-    expected = _series(0.0)
+def test_interval_band_uses_the_calibrated_bounds():
+    # 边界是显式传入的校准分位：0.0127 在内、0.0129 在外。
+    lower = _series(-0.012816)
+    upper = _series(0.012816)
 
-    assert backtest.interval_coverage_80(_series(0.0127), expected, sigma) == 1.0
-    assert backtest.interval_coverage_80(_series(0.0129), expected, sigma) == 0.0
+    assert backtest.interval_coverage_80(_series(0.0127), lower, upper) == 1.0
+    assert backtest.interval_coverage_80(_series(0.0129), lower, upper) == 0.0
 
 
 def test_interval_coverage_counts_misses_exactly():
     forward = pd.Series([0.0] * 10 + [0.05] * 30, index=pd.RangeIndex(40))
 
-    coverage = backtest.interval_coverage_80(forward, _series(0.0), _series(0.01))
+    coverage = backtest.interval_coverage_80(forward, _series(-0.01), _series(0.01))
 
     assert coverage == 10 / 40
 
 
 def test_interval_coverage_is_unavailable_below_the_sample_floor():
-    assert backtest.interval_coverage_80(_series(0.0, 10), _series(0.0, 10), _series(0.01, 10)) is None
+    assert backtest.interval_coverage_80(_series(0.0, 10), _series(-0.01, 10), _series(0.01, 10)) is None
 
 
 def test_metrics_report_nominal_and_realized_coverage(panel):
@@ -160,3 +159,40 @@ def test_holdout_start_is_the_preregistered_constant():
     from app.services.quant.definitions import HOLDOUT_START
 
     assert backtest.HOLDOUT_START == HOLDOUT_START == date(2023, 10, 2)
+
+
+def test_backtest_coverage_uses_the_calibrated_bounds(make_panel):
+    """回测覆盖率必须来自校准后的非对称边界，而不是 σ 的正态区间。
+
+    变异验证：把 evaluate_horizon 的覆盖计算换回 μ ± 1.2816σ，本用例必红。
+    """
+    horizon = 20
+    factors, close = make_panel(_long_calendar())
+    evaluation = backtest.evaluate_horizon(factors, close, horizon=horizon)
+
+    calendar = close.index
+    signals = engine.build_signals(engine.align_factors(factors, calendar), calendar)
+    score = engine.composite_score(signals, horizon=horizon)
+    frame = engine.build_prediction_frame(score, close, horizon)
+    forward = close.shift(-horizon) / close - 1.0
+    outcome = np.sign(forward)
+    available = signals.notna().sum(axis=1) >= engine.MIN_AVAILABLE_FACTORS
+    mask = (
+        score.notna()
+        & frame["expected_return"].notna()
+        & forward.notna()
+        & (outcome != 0)
+        & available
+    )
+
+    calibrated = backtest.interval_coverage_80(
+        forward[mask], frame["lower_return"][mask], frame["upper_return"][mask]
+    )
+    symmetric = backtest.interval_coverage_80(
+        forward[mask],
+        frame["expected_return"][mask] - backtest.INTERVAL_Z_80 * frame["uncertainty"][mask],
+        frame["expected_return"][mask] + backtest.INTERVAL_Z_80 * frame["uncertainty"][mask],
+    )
+
+    assert evaluation.metrics["interval_coverage_80"] == pytest.approx(calibrated)
+    assert calibrated != pytest.approx(symmetric), "两者必须不同，否则守卫对「换回正态区间」的变异不敏感"
