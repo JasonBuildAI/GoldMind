@@ -8,6 +8,11 @@ import { expect, test, type Page } from '@playwright/test'
  *
  * 因此这里断言的都是「只有整条链路都通才可能成立」的事实，
  * 而不是可以用 mock 轻易伪造的界面文案。
+ *
+ * 用例顺序有硬约束：E2E 关掉了后端启动预热（SCHEDULER_ENABLED=false），
+ * 「无缓存 → 正在分析中」只可能出现在**整个会话的第一次页面加载**。
+ * 那条断言必须排在所有 page.goto 之前 —— 它曾经排在第 5 位，
+ * 前面的用例先加载页面把分析跑完、缓存变热，CI 上这条断言随机失败。
  */
 
 /**
@@ -56,6 +61,24 @@ test.describe('GoldMind 看板端到端', () => {
     expect(body.services.ai_config.model).toBe('e2e-mock-model')
   })
 
+  test('无缓存首屏显示「正在分析中」，点击刷新后渲染 LLM 结果', async ({ page }) => {
+    // 必须第一个加载页面：此前没有任何请求触发过因子分析，缓存必定为空。
+    await page.goto('/')
+
+    const section = bullishSection(page)
+
+    // 初始没有缓存时，后端返回**空内容 + status=analyzing**，页面显示「正在分析中」。
+    // 它不会先摆一份内置因子：编造的结论与真实分析长得一样，用户分不出来。
+    await expect(section.getByText('看涨因素正在分析中')).toBeVisible()
+
+    // 触发一次真实分析：前端 → 后端 → 假 LLM → 解析 → 缓存 → 渲染
+    await section.getByRole('button', { name: '重新分析' }).click()
+
+    await expect(section.getByText('端到端看涨因子').first()).toBeVisible({ timeout: 30_000 })
+    // 「正在分析中」应当已被真实结果替换
+    await expect(section.getByText('看涨因素正在分析中')).toHaveCount(0)
+  })
+
   test('首屏渲染，且没有未捕获的前端异常', async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (err) => errors.push(err.message))
@@ -72,23 +95,6 @@ test.describe('GoldMind 看板端到端', () => {
     await expect(page.getByText('美元指数', { exact: true })).toBeVisible()
 
     expect(errors).toEqual([])
-  })
-
-  test('点击刷新后，页面渲染出来自 LLM 的分析结果', async ({ page }) => {
-    await page.goto('/')
-
-    const section = bullishSection(page)
-
-    // 初始没有缓存时，后端返回**空内容 + status=analyzing**，页面显示「正在分析中」。
-    // 它不会先摆一份内置因子：编造的结论与真实分析长得一样，用户分不出来。
-    await expect(section.getByText('看涨因素正在分析中')).toBeVisible()
-
-    // 触发一次真实分析：前端 → 后端 → 假 LLM → 解析 → 缓存 → 渲染
-    await section.getByRole('button', { name: '重新分析' }).click()
-
-    await expect(section.getByText('端到端看涨因子').first()).toBeVisible({ timeout: 30_000 })
-    // 「正在分析中」应当已被真实结果替换
-    await expect(section.getByText('看涨因素正在分析中')).toHaveCount(0)
   })
 
   test('刷新后重新加载页面，命中缓存而不是回退默认值', async ({ page }) => {
