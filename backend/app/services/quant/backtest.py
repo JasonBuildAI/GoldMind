@@ -18,14 +18,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from app.services.quant import engine
-from app.services.quant.definitions import FACTORS, HORIZONS, factor_by_key
+from app.services.quant import engine, stats
+from app.services.quant.definitions import FACTORS, HOLDOUT_START, HORIZONS, factor_by_key
 
 # 低于这个样本数就不给命中率（避免「3 天里对了 2 天 = 67%」这种数字）
 MIN_EVALUATION_SAMPLES = 30
@@ -38,6 +38,8 @@ INTERVAL_Z_80 = engine.INTERVAL_Z_80
 INTERVAL_NOMINAL_80 = 0.80
 # 「2022 年后定价函数变了」的分段口径（央行购金放量）
 REGIME_SPLIT = date(2022, 1, 1)
+# 置信区间/覆盖率自助的重采样次数（种子固定 → 同一输入产出同一条区间）
+BOOTSTRAP_DRAWS = 1000
 
 
 @dataclass(frozen=True)
@@ -113,14 +115,16 @@ def evaluate_horizon(
     # test_backtest_metrics.py::test_accuracy_scores_the_calibrated_direction）
     direction = np.sign(expected_return[mask])
     realized = outcome[mask]
-    accuracy = float((direction == realized).mean())
+    correct = direction == realized
+    accuracy = float(correct.mean())
 
     # 未校准的因子偏向单独记一份成绩，与「本模型」并排展示，不混为一谈
     score_direction = np.sign(score[mask])
     score_direction_accuracy = float((score_direction == realized).mean())
 
     up_direction = pd.Series(1.0, index=realized.index)
-    baseline_up = float((up_direction == realized).mean())
+    up_correct = up_direction == realized
+    baseline_up = float(up_correct.mean())
 
     momentum = np.sign(close / close.shift(MOMENTUM_LOOKBACK) - 1.0).reindex(realized.index)
     momentum_mask = momentum.notna()
@@ -132,16 +136,22 @@ def evaluate_horizon(
     probability = frame["probability_up"][mask]
     probability_mask = probability.notna()
     brier = None
+    brier_skill = None
+    reliability = None
     if probability_mask.sum() >= MIN_EVALUATION_SAMPLES:
         win = (realized[probability_mask] > 0).astype("float64")
-        brier = float(((probability[probability_mask] - win) ** 2).mean())
+        usable_probability = probability[probability_mask]
+        brier = float(((usable_probability - win) ** 2).mean())
+        brier_skill = stats.brier_skill_score(usable_probability, win)
+        reliability = stats.reliability_bins(usable_probability, win, bins=10)
 
     window_start = mask[mask].index[0].date()
     window_end = mask[mask].index[-1].date()
 
-    interval_coverage = interval_coverage_80(
+    coverage_indicator = interval_coverage_indicator(
         forward[mask], frame["expected_return"][mask], frame["uncertainty"][mask]
     )
+    interval_coverage = float(coverage_indicator.mean()) if coverage_indicator is not None else None
     in_pre = realized.index < pd.Timestamp(REGIME_SPLIT)
     regimes = {
         "split_date": REGIME_SPLIT.isoformat(),
@@ -150,10 +160,45 @@ def evaluate_horizon(
         "post": _regime_block("2022-01-01 起", direction, realized, momentum, ~in_pre),
     }
 
+    # 显著性：重叠样本用 HAC（滞后 = h−1），「优于基准」用单尾。
+    lags = horizon - 1 if horizon > 1 else None
+    accuracy_ci = stats.block_bootstrap_ci(
+        correct.astype("float64"), block=max(1, horizon), n=BOOTSTRAP_DRAWS
+    )
+    vs_up = stats.hac_t_statistic(
+        correct.astype("float64") - up_correct.astype("float64"),
+        lags=lags,
+        alternative="greater",
+    )
+    momentum_correct = (momentum == realized).astype("float64").where(momentum.notna())
+    p_value_vs_momentum = None
+    if int(momentum_correct.notna().sum()) >= MIN_EVALUATION_SAMPLES:
+        usable = momentum_correct.notna()
+        p_value_vs_momentum = stats.hac_t_statistic(
+            correct[usable].astype("float64") - momentum_correct[usable],
+            lags=lags,
+            alternative="greater",
+        )["p_value"]
+    coverage_ci = None
+    if coverage_indicator is not None:
+        coverage_ci = stats.block_bootstrap_ci(
+            coverage_indicator, block=max(1, horizon), n=BOOTSTRAP_DRAWS
+        )
+
     metrics = {
         "coin_flip_accuracy": 0.5,
         "horizon_days": horizon,
         "score_direction_accuracy": score_direction_accuracy,
+        "accuracy_ci95": [accuracy_ci[0], accuracy_ci[1]],
+        "accuracy_diff_vs_up": float(correct.mean() - up_correct.mean()),
+        "p_value_vs_up": vs_up["p_value"],
+        "p_value_vs_momentum": p_value_vs_momentum,
+        "effective_sample_size": stats.effective_sample_size(samples, horizon),
+        "hac_lags": lags,
+        "brier_skill_score": brier_skill,
+        "reliability_bins": reliability,
+        "interval_coverage_ci95": list(coverage_ci) if coverage_ci is not None else None,
+        "holdout_start": HOLDOUT_START.isoformat(),
         "up_share": float((realized > 0).mean()),
         "mean_score": float(score[mask].mean()),
         "mean_absolute_score": float(score[mask].abs().mean()),
@@ -223,12 +268,12 @@ def _per_factor_metrics(
     return result
 
 
-def interval_coverage_80(
+def interval_coverage_indicator(
     forward: pd.Series,
     expected: pd.Series,
     sigma: pd.Series,
-) -> Optional[float]:
-    """80% 名义区间的实际覆盖率：已实现收益落在 μ ± 1.2816σ 内的比例。
+) -> Optional[pd.Series]:
+    """已实现收益是否落在 μ ± 1.2816σ 内的 0/1 序列（区间口径只在这里定义）。
 
     样本不足时返回 None —— 覆盖率低于名义值说明不确定性被低估，
     要让页面能看见，而不是用一个数字掩盖。
@@ -238,7 +283,19 @@ def interval_coverage_80(
         return None
     lower = frame["expected"] - INTERVAL_Z_80 * frame["sigma"]
     upper = frame["expected"] + INTERVAL_Z_80 * frame["sigma"]
-    return float(((frame["forward"] >= lower) & (frame["forward"] <= upper)).mean())
+    return ((frame["forward"] >= lower) & (frame["forward"] <= upper)).astype("float64")
+
+
+def interval_coverage_80(
+    forward: pd.Series,
+    expected: pd.Series,
+    sigma: pd.Series,
+) -> Optional[float]:
+    """80% 名义区间的实际覆盖率（区间定义见 ``interval_coverage_indicator``）。"""
+    indicator = interval_coverage_indicator(forward, expected, sigma)
+    if indicator is None:
+        return None
+    return float(indicator.mean())
 
 
 def _regime_block(
@@ -304,6 +361,27 @@ def evaluate_all(
     ]
 
 
+def evaluate_periods(
+    factors: dict[str, pd.Series],
+    close: pd.Series,
+    *,
+    horizon: int,
+    holdout_start: date = HOLDOUT_START,
+) -> dict[str, HorizonEvaluation]:
+    """开发期 / 留出期 / 全样本三列。
+
+    留出期（``HOLDOUT_START`` 起）只用于汇报与预注册裁决，不参与任何调参 ——
+    否则「样本外」就不再是样本外。
+    """
+    return {
+        "development": evaluate_horizon(
+            factors, close, horizon=horizon, end=holdout_start - timedelta(days=1)
+        ),
+        "holdout": evaluate_horizon(factors, close, horizon=horizon, start=holdout_start),
+        "full": evaluate_horizon(factors, close, horizon=horizon),
+    }
+
+
 def _empty(horizon: int, reason: str, *, universe: int = 0) -> HorizonEvaluation:
     return HorizonEvaluation(
         horizon_days=horizon,
@@ -328,12 +406,16 @@ def factor_summary(evaluation: HorizonEvaluation) -> list[dict]:
 
 
 __all__ = [
+    "BOOTSTRAP_DRAWS",
     "HorizonEvaluation",
+    "HOLDOUT_START",
     "INTERVAL_NOMINAL_80",
     "REGIME_SPLIT",
     "evaluate_all",
     "evaluate_horizon",
+    "evaluate_periods",
     "factor_summary",
     "interval_coverage_80",
+    "interval_coverage_indicator",
     "FACTORS",
 ]

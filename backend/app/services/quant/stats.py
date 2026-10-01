@@ -61,10 +61,27 @@ def newey_west_se(values: Sequence[float], *, lags: Optional[int] = None) -> flo
     return float(math.sqrt(variance / count))
 
 
+def _normal_survival(statistic: float) -> float:
+    """标准正态的右尾概率 P(Z ≥ statistic)。"""
+    if not math.isfinite(statistic):
+        return float("nan")
+    return 0.5 * math.erfc(statistic / math.sqrt(2.0))
+
+
 def _two_sided_normal_p(statistic: float) -> float:
     if not math.isfinite(statistic):
         return float("nan")
     return float(math.erfc(abs(statistic) / math.sqrt(2.0)))
+
+
+def _p_value(statistic: float, alternative: str) -> float:
+    if alternative == "two-sided":
+        return _two_sided_normal_p(statistic)
+    if alternative == "greater":
+        return _normal_survival(statistic)
+    if alternative == "less":
+        return _normal_survival(-statistic)
+    raise ValueError(f"未知的备择假设：{alternative}")
 
 
 def hac_t_statistic(
@@ -72,11 +89,14 @@ def hac_t_statistic(
     *,
     mu: float = 0.0,
     lags: Optional[int] = None,
+    alternative: str = "two-sided",
 ) -> dict:
-    """「均值 = mu」的 HAC t 检验（双尾、正态近似）。
+    """「均值 = mu」的 HAC t 检验（正态近似）。
 
-    ``values`` 传的是**已经减去被检验对象**的序列时最方便；例如 DM 检验传入
-    两个模型的损失差。返回 ``statistic`` / ``p_value`` / ``lags`` / ``se``。
+    ``alternative`` 取 ``two-sided`` / ``greater`` / ``less``；
+    「模型是否优于基准」用 ``greater``。``values`` 传的是**已经减去被检验对象**
+    的序列时最方便；例如 DM 检验传入两个模型的损失差。
+    返回 ``statistic`` / ``p_value`` / ``lags`` / ``se`` / ``alternative``。
     """
     array = _clean(values)
     count = len(array)
@@ -94,9 +114,10 @@ def hac_t_statistic(
     statistic = float((array.mean() - mu) / se)
     return {
         "statistic": statistic,
-        "p_value": _two_sided_normal_p(statistic),
+        "p_value": _p_value(statistic, alternative),
         "se": se,
         "lags": lags,
+        "alternative": alternative,
         "sample_size": count,
     }
 
@@ -106,6 +127,7 @@ def diebold_mariano(
     loss_b: Sequence[float],
     *,
     lags: Optional[int] = None,
+    alternative: str = "two-sided",
 ) -> dict:
     """两个预测的 Diebold–Mariano 检验（双尾）。
 
@@ -125,7 +147,7 @@ def diebold_mariano(
             "sample_size": count,
         }
     difference = left[:count] - right[:count]
-    result = hac_t_statistic(difference, lags=lags)
+    result = hac_t_statistic(difference, lags=lags, alternative=alternative)
     return {
         "statistic": result["statistic"],
         "p_value": result["p_value"],

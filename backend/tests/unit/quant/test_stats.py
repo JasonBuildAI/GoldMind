@@ -129,3 +129,16 @@ def test_hac_t_statistic_rejects_a_shifted_mean():
     assert result["statistic"] > 5.0
     assert result["p_value"] < 1e-6
     assert result["sample_size"] == 500
+
+
+@pytest.mark.unit
+def test_one_sided_alternative_halves_the_tail():
+    rng = np.random.default_rng(12)
+    values = rng.normal(0.35, 1.0, 600)
+
+    greater = stats.hac_t_statistic(values, alternative="greater")
+    two_sided = stats.hac_t_statistic(values)
+
+    assert greater["p_value"] == pytest.approx(two_sided["p_value"] / 2.0, rel=0.02)
+    with pytest.raises(ValueError):
+        stats.hac_t_statistic(values, alternative="sideways")

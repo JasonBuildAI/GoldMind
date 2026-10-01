@@ -1,6 +1,8 @@
 """回测新指标：80% 区间覆盖率与 2022 前后分段。"""
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 import numpy as np
 import pytest
@@ -117,3 +119,44 @@ def test_regime_without_samples_says_so(panel):
     assert "没有可评估样本" in pre["reason"]
     assert evaluation.metrics["regimes"]["post"]["accuracy"] is not None
 
+
+def test_metrics_report_confidence_and_significance(make_panel):
+    factors, close = make_panel(_long_calendar())
+
+    evaluation = backtest.evaluate_horizon(factors, close, horizon=20)
+    metrics = evaluation.metrics
+
+    lower, upper = metrics["accuracy_ci95"]
+    assert lower <= evaluation.accuracy <= upper, "命中率的 95% 区间必须包住点估计"
+    assert 0.0 <= metrics["p_value_vs_up"] <= 1.0
+    assert metrics["p_value_vs_momentum"] is None or 0.0 <= metrics["p_value_vs_momentum"] <= 1.0
+    assert metrics["effective_sample_size"] == pytest.approx(evaluation.sample_size / 20)
+    assert metrics["accuracy_diff_vs_up"] == pytest.approx(
+        evaluation.accuracy - evaluation.baseline_up_accuracy
+    )
+    assert metrics["brier_skill_score"] is not None
+    assert len(metrics["reliability_bins"]) == 10
+    assert sum(row["count"] for row in metrics["reliability_bins"]) <= evaluation.sample_size
+    if metrics["interval_coverage_80"] is not None:
+        coverage_lower, coverage_upper = metrics["interval_coverage_ci95"]
+        assert coverage_lower <= metrics["interval_coverage_80"] <= coverage_upper
+
+
+def test_periods_split_development_and_holdout(make_panel):
+    factors, close = make_panel(_long_calendar())
+
+    periods = backtest.evaluate_periods(factors, close, horizon=20)
+
+    assert set(periods) == {"development", "holdout", "full"}
+    development, holdout, full = periods["development"], periods["holdout"], periods["full"]
+    assert development.window_end < backtest.HOLDOUT_START
+    assert holdout.window_start >= backtest.HOLDOUT_START
+    assert holdout.accuracy is not None, "留出期样本足够时必须给出独立的成绩"
+    assert development.sample_size + holdout.sample_size == full.sample_size
+    assert holdout.metrics["holdout_start"] == backtest.HOLDOUT_START.isoformat()
+
+
+def test_holdout_start_is_the_preregistered_constant():
+    from app.services.quant.definitions import HOLDOUT_START
+
+    assert backtest.HOLDOUT_START == HOLDOUT_START == date(2023, 10, 2)

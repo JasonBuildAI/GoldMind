@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Optional
 
 # 四类因素（与产品文档、前端分区一一对应）
@@ -44,6 +45,11 @@ CATEGORY_NAMES = {
 # v3：方向 / 概率 / 区间出自同一个走查校准分布（见 docs/specs/2026-10-01-预测口径统一.md）
 # v4：区间宽度再按预测误差的经验分位校准（正态分位在长尺度系统性偏窄）。
 MODEL_VERSION = "quant-v4"
+
+# 留出期起点：此日期起的样本只用于汇报与预注册裁决，不参与任何调参。
+# 「开发期 / 留出期 / 全样本」三列的口径见 backtest.evaluate_periods；
+# 预注册硬规则写死在 docs/specs/2026-10-02-量化策略提升路线图.md。
+HOLDOUT_START = date(2023, 10, 2)
 
 # 用于计算收益与目标价的基准价格序列（COMEX 主力期货日收盘）
 BENCHMARK_KEY = "gold_close"
