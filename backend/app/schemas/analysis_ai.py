@@ -97,6 +97,10 @@ class InvestmentAdviceAIResponse(BaseModel):
     core_principles: List[Dict[str, Any]]
     risk_warning: str
     disclaimer: str
+    # 降级通道：输入不足时不调 LLM，只给行情统计与说明。前端据
+    # `analysis_status`（与 metadata.status 对应）显示「数据不足」状态。
+    analysis_status: Optional[str] = None
+    price_snapshot: Optional[Dict[str, Any]] = None
     metadata: Optional[AIMetadata] = None
 
 

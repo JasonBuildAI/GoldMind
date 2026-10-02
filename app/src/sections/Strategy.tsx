@@ -10,6 +10,7 @@ import { describeApiError } from '@/lib/apiError'
 import { isPlaceholder } from '@/lib/placeholder'
 import {
   investmentAdviceApi,
+  type AdvicePriceSnapshot,
   type CorePrinciple,
   type InvestmentStrategy,
   type MarketAssessment,
@@ -28,6 +29,8 @@ interface AdviceData {
   riskWarning: string
   generatedAt: string
   placeholder: boolean
+  degraded: boolean
+  priceSnapshot: AdvicePriceSnapshot | null
 }
 
 /**
@@ -61,6 +64,11 @@ export default function Strategy() {
         // 先记占位标记：后端在「正在分析」时返回的是空内容，
         // 放在长度判断里面就永远设不上，页面会把「正在分析」错报成「暂不可用」。
         placeholder: isPlaceholder(response.metadata),
+        // 数据不足是第三种状态：不是「正在分析」，也不是「不可用」。
+        degraded:
+          response.metadata?.status === 'insufficient_data' ||
+          response.analysis_status === 'insufficient_data',
+        priceSnapshot: response.price_snapshot ?? null,
       })
     } catch (err) {
       setError(
@@ -92,7 +100,48 @@ export default function Strategy() {
 
   let body
 
-  if (!data || (data.strategies.length === 0 && data.principles.length === 0 && !assessment)) {
+  if (data && data.degraded) {
+    // 输入不足时后端不调模型，只给行情统计；这里如实展示，不摆任何策略。
+    body = (
+      <div className="space-y-8">
+        <StateBlock
+          kind="unavailable"
+          testId="strategy-insufficient"
+          title="数据不足，暂不生成策略"
+          detail={data.riskWarning || '缺少可分析的数据输入，未调用模型。'}
+        />
+        {data.priceSnapshot ? (
+          <div className="panel">
+            <h3 className="panel__title">行情统计（仅供参考）</h3>
+            <dl className="metrics">
+              <div>
+                <dt>最新收盘</dt>
+                <dd>${data.priceSnapshot.latest_price.toFixed(2)}</dd>
+              </div>
+              <div>
+                <dt>{data.priceSnapshot.label}涨跌</dt>
+                <dd>
+                  {data.priceSnapshot.change_pct >= 0 ? '+' : ''}
+                  {data.priceSnapshot.change_pct.toFixed(2)}%
+                </dd>
+              </div>
+              <div>
+                <dt>期间最高 / 最低</dt>
+                <dd>
+                  ${data.priceSnapshot.high.toFixed(2)} / ${data.priceSnapshot.low.toFixed(2)}
+                </dd>
+              </div>
+              <div>
+                <dt>高低振幅</dt>
+                <dd>{data.priceSnapshot.amplitude_pct.toFixed(2)}%</dd>
+              </div>
+            </dl>
+          </div>
+        ) : null}
+        <SignOff generatedAt={data.generatedAt} />
+      </div>
+    )
+  } else if (!data || (data.strategies.length === 0 && data.principles.length === 0 && !assessment)) {
     if (loading) {
       body = <StateBlock title="正在读取投资策略…" testId="strategy-loading" />
     } else if (data?.placeholder) {

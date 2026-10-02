@@ -397,12 +397,27 @@ export interface MarketAssessment {
   key_considerations: string[];
 }
 
+/** 数据不足降级时随附的行情统计（确定性数据，非模型输出）。 */
+export interface AdvicePriceSnapshot {
+  label: string;
+  window_start: string;
+  window_end: string;
+  latest_price: number;
+  change_pct: number;
+  high: number;
+  low: number;
+  amplitude_pct: number;
+  full_window: boolean;
+}
+
 export interface InvestmentAdviceResponse {
   market_assessment: MarketAssessment;
   strategies: InvestmentStrategy[];
   core_principles: CorePrinciple[];
   risk_warning: string;
   disclaimer: string;
+  analysis_status?: string;
+  price_snapshot?: AdvicePriceSnapshot | null;
   metadata?: ApiMetadata;
 }
 

@@ -12,6 +12,7 @@ from app.models.gold_price import GoldPrice
 from app.config import settings
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
+from app.services.institution_prediction_service import usable_institution_predictions
 from app.services.llm_provider import (
     describe_completion,
     get_chat_llm,
@@ -108,6 +109,53 @@ class InvestmentAdviceAnalyzer:
             formatted.append(f"- {price.date.strftime('%Y-%m-%d')}: ${price.close_price:.2f}")
         return "\n".join(formatted)
 
+    def has_analyzable_inputs(
+        self,
+        db: Session,
+        bullish_factors: List[Dict],
+        bearish_factors: List[Dict],
+        institution_predictions: List[Dict],
+    ) -> bool:
+        """是否存在任何值得分析的输入。
+
+        四类输入（多空因子 / 可核实机构预测 / 近期新闻）全空时，LLM 没有任何
+        依据可依 —— 调用它只会得到编造的策略与点位。此时整条链路直接降级。
+        """
+        if bullish_factors or bearish_factors:
+            return True
+        if usable_institution_predictions(institution_predictions):
+            return True
+        return bool(self._fetch_recent_news(db))
+
+    def insufficient_data_advice(self, window) -> Dict[str, Any]:
+        """降级结果：只给行情统计与「数据不足」说明，不给任何策略与点位。"""
+        snapshot = None
+        if window is not None:
+            snapshot = {
+                "label": window.label,
+                "window_start": window.window_start.isoformat(),
+                "window_end": window.window_end.isoformat(),
+                "latest_price": round(window.end_price, 2),
+                "change_pct": round(window.change_pct, 2),
+                "high": round(window.high, 2),
+                "low": round(window.low, 2),
+                "amplitude_pct": round(window.amplitude_pct, 2),
+                "full_window": window.full_window,
+            }
+        detail = (
+            "当前没有可分析的数据输入（多空因子 / 可核实机构预测 / 近期新闻均为空），"
+            "因此不生成任何策略与点位建议，也不调用模型。"
+        )
+        return {
+            "analysis_status": "insufficient_data",
+            "market_assessment": {},
+            "strategies": [],
+            "core_principles": [],
+            "risk_warning": detail,
+            "disclaimer": "行情统计不构成投资建议。",
+            "price_snapshot": snapshot,
+        }
+
     def analyze(
         self,
         db: Session,
@@ -128,9 +176,20 @@ class InvestmentAdviceAnalyzer:
 
             news_content = self._format_news(recent_news)
             prices_content = self._format_prices(recent_prices)
+
+            if not (
+                bullish_factors
+                or bearish_factors
+                or usable_institution_predictions(institution_predictions)
+                or recent_news
+            ):
+                logger.info("[InvestmentAdvice] 缺少可分析输入，跳过 LLM，返回数据不足说明")
+                return self.insufficient_data_advice(window)
+
             bullish_content = json.dumps(bullish_factors, ensure_ascii=False, indent=2) if bullish_factors else "暂无数据"
             bearish_content = json.dumps(bearish_factors, ensure_ascii=False, indent=2) if bearish_factors else "暂无数据"
-            institution_content = json.dumps(institution_predictions, ensure_ascii=False, indent=2) if institution_predictions else "暂无数据"
+            usable_institutions = usable_institution_predictions(institution_predictions)
+            institution_content = json.dumps(usable_institutions, ensure_ascii=False, indent=2) if usable_institutions else "暂无数据"
             
             prompt_template = f"""你是一位资深的黄金投资顾问，拥有20年以上的贵金属市场分析经验。你的投资风格偏向保守稳健，注重风险控制和长期价值投资。
 
@@ -163,7 +222,7 @@ class InvestmentAdviceAnalyzer:
 
 请基于以上数据，生成三个层级的投资策略建议。你的建议必须：
 1. **保守稳健** - 优先考虑资本保全，而非追求高收益
-2. **具体可操作** - 给出明确的配置比例、入场价位、止损设置
+2. **具体可操作** - 在数据支持的前提下给出配置比例与点位；数据不足时如实说明
 3. **风险导向** - 充分提示每种策略的风险和适用条件
 4. **结合当前市场** - 根据当前金价位置和市场状态调整建议
 
@@ -272,8 +331,8 @@ class InvestmentAdviceAnalyzer:
 重要提示：
 1. 所有建议必须基于提供的市场数据，不能编造
 2. 配置比例要保守，建议不超过资产的15-20%
-3. 必须给出具体的入场价位区间，而非模糊建议
-4. 必须明确止损和止盈设置
+3. 入场价位区间只能来自数据可支持的位置；数据不足时如实写「数据不足，无法给出区间」，不得为了满足格式编造精确数字
+4. 止盈 / 止损同理：给不出可靠依据时如实说明，不得编造
 5. 风险提示要充分且具体"""
             
             response = retry_on_content_filter(self.llm, prompt_template)
@@ -321,6 +380,31 @@ class InvestmentAdviceService:
         self.analyzer = InvestmentAdviceAnalyzer()
         self.cache = CacheManager("investment_advice", ttl=AI_ANALYSIS_CACHE_TTL)
 
+    def _build_metadata(
+        self, result: Dict[str, Any], *, cached: bool, cache_source: str
+    ) -> Dict[str, Any]:
+        """统一的 metadata 装配；降级结果如实标注 insufficient_data。
+
+        否则前端只能看到空数组，会把「数据不足」错报成「暂不可用」。
+        """
+        if result.get("analysis_status") == "insufficient_data":
+            return {
+                "cached": cached,
+                "status": "insufficient_data",
+                "cache_source": "insufficient_data",
+                "message": result.get("risk_warning") or "",
+                "generated_at": timeutil.now_iso(),
+                "data_sources": ["行情统计"],
+                "analysis_method": "确定性降级（未调用 LLM）",
+            }
+        return {
+            "cached": cached,
+            "cache_source": cache_source,
+            "generated_at": timeutil.now_iso(),
+            "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
+            "analysis_method": "LLM 实时分析" if cache_source == "llm_realtime" else "LLM 综合分析",
+        }
+
     def get_investment_advice(
         self,
         market_status: str = "",
@@ -347,6 +431,23 @@ class InvestmentAdviceService:
         Returns:
             投资建议分析结果
         """
+        # 降级语义：四类输入全空时不调 LLM、不读旧缓存 —— 没有任何依据时，
+        # 模型能给出的只有编造；此时只返回行情统计 +「数据不足」说明。
+        if not self.analyzer.has_analyzable_inputs(
+            self.db,
+            bullish_factors or [],
+            bearish_factors or [],
+            institution_predictions or [],
+        ):
+            logger.info("[InvestmentAdvice] 缺少可分析输入，跳过 LLM，返回数据不足说明")
+            degraded = self.analyzer.insufficient_data_advice(
+                self.analyzer._fetch_window_data(self.db)
+            )
+            degraded["metadata"] = self._build_metadata(
+                degraded, cached=False, cache_source="insufficient_data"
+            )
+            return degraded
+
         # 如果强制刷新，直接执行实时 LLM 分析
         if not use_cache:
             logger.info("[InvestmentAdvice] 强制刷新，执行实时 LLM 分析...")
@@ -359,13 +460,9 @@ class InvestmentAdviceService:
                     institution_predictions or []
                 )
                 self.cache.set(result)
-                result["metadata"] = {
-                    "cached": False,
-                    "cache_source": "llm_realtime",
-                    "generated_at": timeutil.now_iso(),
-                    "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
-                    "analysis_method": "LLM 实时分析"
-                }
+                result["metadata"] = self._build_metadata(
+                    result, cached=False, cache_source="llm_realtime"
+                )
                 return result
             except Exception as e:
                 logger.error(f"[InvestmentAdvice] 实时分析失败: {e}")
@@ -375,13 +472,9 @@ class InvestmentAdviceService:
         # 1. 首先尝试文件缓存（最快，支持多进程共享）
         cached_data = self.cache.get()
         if cached_data:
-            cached_data["metadata"] = {
-                "cached": True,
-                "cache_source": "file",
-                "generated_at": timeutil.now_iso(),
-                "data_sources": ["实时金价数据", "市场因子分析", "机构预测", "24小时新闻"],
-                "analysis_method": "LLM 综合分析"
-            }
+            cached_data["metadata"] = self._build_metadata(
+                cached_data, cached=True, cache_source="file"
+            )
             return cached_data
 
         # 2. 无缓存时，返回默认数据并触发后台更新

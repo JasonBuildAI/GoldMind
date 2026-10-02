@@ -107,6 +107,38 @@ describe('Strategy', () => {
     expect(await screen.findByText('投资策略正在分析中')).toBeInTheDocument()
   })
 
+  it('数据不足时如实说明，只展示行情统计', async () => {
+    mocked.getInvestmentAdvice.mockResolvedValue({
+      // 降级响应：不调模型、不给策略，只给行情统计与说明。
+      market_assessment: {},
+      strategies: [],
+      core_principles: [],
+      risk_warning: '当前没有可分析的数据输入（多空因子 / 可核实机构预测 / 近期新闻均为空）。',
+      disclaimer: '',
+      analysis_status: 'insufficient_data',
+      price_snapshot: {
+        label: '近12个月',
+        window_start: '2025-10-01',
+        window_end: '2026-10-01',
+        latest_price: 4245.14,
+        change_pct: 11.71,
+        high: 4400,
+        low: 3100,
+        amplitude_pct: 41.94,
+        full_window: true,
+      },
+      metadata: { cached: false, status: 'insufficient_data' },
+    } as unknown as InvestmentAdviceResponse)
+
+    render(<Strategy />)
+
+    expect(await screen.findByText('数据不足，暂不生成策略')).toBeInTheDocument()
+    expect(screen.getByText('$4245.14')).toBeInTheDocument()
+    expect(screen.getByText('+11.71%')).toBeInTheDocument()
+    expect(screen.getByText('41.94%')).toBeInTheDocument()
+    expect(screen.queryByTestId('strategy-columns')).not.toBeInTheDocument()
+  })
+
   it('接口失败时如实说「暂不可用」，不摆内置策略', async () => {
     mocked.getInvestmentAdvice.mockRejectedValue(new Error('boom'))
 

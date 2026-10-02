@@ -132,6 +132,31 @@ def canonical_name(name: Any) -> Optional[str]:
     return inst.name if inst else None
 
 
+# 「暂无最新预测」是 `save_to_database` 在窗口期内找不到可核实预测时写的
+# 占位文案。占位行只用于页面显示跟踪状态，**不是**「机构给出中性评级」。
+PLACEHOLDER_INSTITUTION_REASONINGS = {"暂无最新预测"}
+
+
+def usable_institution_predictions(predictions: Optional[List[Dict]]) -> List[Dict]:
+    """只保留可核实的机构行；占位行（无目标价、无日期、占位理由）不算数据。
+
+    消费方（市场总结 / 投资建议）据此决定：哪些行可以喂给 LLM、哪些机构
+    可以被引用。占位行被当成评级会产出「四大投行集体中性」这类幻觉。
+    """
+    usable: List[Dict] = []
+    for pred in predictions or []:
+        if not isinstance(pred, dict):
+            continue
+        reasoning = str(pred.get("reasoning") or "").strip()
+        if (
+            pred.get("target_price") is not None
+            or pred.get("as_of_date")
+            or (reasoning and reasoning not in PLACEHOLDER_INSTITUTION_REASONINGS)
+        ):
+            usable.append(pred)
+    return usable
+
+
 # 数据库那一列是 ENUM('bullish','bearish','neutral')，前端也只认这三种。
 # 但模型里它只是 String —— 也就是说**约束只在数据库层**，见 normalize_rating。
 VALID_RATINGS = ("bullish", "bearish", "neutral")

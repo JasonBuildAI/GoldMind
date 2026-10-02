@@ -144,8 +144,12 @@ def test_placeholder_responses_are_marked_as_such(client):
         metadata = body.get("metadata")
 
         assert metadata is not None, f"{path} 的响应没有 metadata"
-        assert metadata.get("status") == "analyzing" or metadata.get("cache_source") == "default", (
-            f"{path} 的占位标记无法被 isPlaceholder 识别：{metadata}"
+        # insufficient_data 是 2026-10-02 新增的第三态：输入不足时不调模型、
+        # 只给行情统计 —— 同样必须让前端能识别出「这不是分析结论」。
+        assert metadata.get("status") in ("analyzing", "insufficient_data") or metadata.get(
+            "cache_source"
+        ) == "default", (
+            f"{path} 的占位标记无法被前端识别：{metadata}"
         )
 
 

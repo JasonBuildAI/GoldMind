@@ -17,6 +17,7 @@ from app.services.institution_prediction_service import (
     INSTITUTIONS,
     _normalize_text,
     match_institution,
+    usable_institution_predictions,
 )
 from app.services.llm_provider import (
     describe_completion,
@@ -36,29 +37,12 @@ logger = logging.getLogger(__name__)
 # 「四大投行集体中性」这类不存在的机构判断 —— 缓存里真实发生过。
 # --------------------------------------------------------------------------- #
 
-PLACEHOLDER_INSTITUTION_REASONINGS = {"暂无最新预测"}
+# 占位行的判定（`usable_institution_predictions`）在
+# institution_prediction_service —— 谁写占位行，谁定义什么算占位行。
 
 # 泛指机构的词：无法映射到具体机构时也按「不可核实」处理。
 # 「机构」从严保留在表内：宁可少展示一条要点，不展示无法核实的机构判断。
 GENERIC_INSTITUTION_TERMS = ("投行", "机构", "华尔街", "wall street")
-
-
-def usable_institution_predictions(
-    predictions: Optional[List[Dict]],
-) -> List[Dict]:
-    """只保留可核实的机构行；占位行（无目标价、无日期、占位理由）不算数据。"""
-    usable: List[Dict] = []
-    for pred in predictions or []:
-        if not isinstance(pred, dict):
-            continue
-        reasoning = str(pred.get("reasoning") or "").strip()
-        if (
-            pred.get("target_price") is not None
-            or pred.get("as_of_date")
-            or (reasoning and reasoning not in PLACEHOLDER_INSTITUTION_REASONINGS)
-        ):
-            usable.append(pred)
-    return usable
 
 
 def _text_of(item: Any) -> str:
