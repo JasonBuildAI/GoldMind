@@ -302,6 +302,25 @@ def _evaluate(
         else None
     )
 
+    # 「相对永远看多的增量」：单边牛市里绝对方向被基准压死（路线图 §四.3 点到的目标定义问题）。
+    # 唯一还能证伪的说法是「模型敢在看空的时候看空」，所以单列看空喊话的次数与命中率：
+    # 次数为 0 就是「没有可评估的下注」，必须给 None，不许把「从没喊过跌」算成「喊跌全对」。
+    down_mask = direction < 0
+    down_calls = int(down_mask.sum())
+    down_call_accuracy = (
+        float((realized[down_mask] < 0).mean()) if down_calls >= MIN_EVALUATION_SAMPLES else None
+    )
+    # 幅度技能：把「目标价偏离基准价多少」与「实际偏离多少」放在一起看 ——
+    # 基准是「永远回答基准价」（预测不动）。它在方向上完全无从证伪，但在幅度上是有账可算的。
+    model_mape = float((expected_return[mask] - forward[mask]).abs().mean())
+    flat_mape = float(forward[mask].abs().mean())
+    magnitude_mape = model_mape if samples >= MIN_EVALUATION_SAMPLES else None
+    magnitude_skill_vs_flat = (
+        1.0 - model_mape / flat_mape if flat_mape > 0.0 and samples >= MIN_EVALUATION_SAMPLES else None
+    )
+    width = frame["upper_return"][mask] - frame["lower_return"][mask]
+    sharpness_80 = float(width.mean()) if int(width.notna().sum()) >= MIN_EVALUATION_SAMPLES else None
+
     metrics = {
         "coin_flip_accuracy": 0.5,
         "horizon_days": horizon,
@@ -311,6 +330,11 @@ def _evaluate(
         "p_value_vs_up": vs_up["p_value"],
         "p_value_vs_momentum": p_value_vs_momentum,
         "effective_sample_size": stats.effective_sample_size(samples, horizon),
+        "down_calls": down_calls,
+        "down_call_accuracy": down_call_accuracy,
+        "magnitude_mape": magnitude_mape,
+        "magnitude_skill_vs_flat": magnitude_skill_vs_flat,
+        "interval_sharpness_80": sharpness_80,
         "nonoverlapping_stride": horizon,
         "nonoverlapping_samples": int(len(nonoverlap_correct)),
         "accuracy_nonoverlapping": accuracy_nonoverlapping,

@@ -224,3 +224,75 @@ def test_long_horizon_reports_how_many_independent_bets_it_really_is(make_panel)
     assert short_run.metrics["accuracy_nonoverlapping"] == pytest.approx(
         short_run.accuracy, rel=1e-12
     )
+
+
+def test_timing_increment_metrics_refuse_to_score_an_untested_claim(make_panel):
+    """单边上涨行情里，「相对永远看多的增量」必须是**可证伪**的那几个数。
+
+    绝对方向命中率在牛市里天然被基准压死（2023-10 起的留出期五个尺度全是 +0.0pp），
+    所以这里单列三件有账可算的东西：敢不敢喊跌（次数与命中率）、幅度技能、区间锐度。
+    喊跌次数不足 30 次时命中率给 None —— 「从没喊过跌」不等于「喊跌全对」。
+
+    变异验证：把 ``down_call_accuracy`` 的样本门槛去掉（空集也算均值）→ 第二条断言红；
+    把 ``magnitude_skill_vs_flat`` 写成 ``1 - flat/model``（分子分母反了）→ 第三条断言红。
+    """
+    calendar = pd.date_range("2012-01-01", "2026-09-30", freq="B")
+    factors, close = make_panel(calendar)
+
+    evaluation = backtest.evaluate_horizon(factors, close, horizon=20)
+    metrics = evaluation.metrics
+    prepared = backtest.prepare_evaluation(factors, close, horizon=20)
+    mask = backtest._base_mask(prepared)
+    direction = np.sign(prepared["frame"]["median_return"][mask])
+    forward = prepared["forward"][mask]
+
+    assert metrics["down_calls"] == int((direction < 0).sum())
+    if metrics["down_calls"] < backtest.MIN_EVALUATION_SAMPLES:
+        assert metrics["down_call_accuracy"] is None
+    else:
+        assert metrics["down_call_accuracy"] == pytest.approx(
+            float((forward[direction < 0] < 0).mean()), rel=1e-12
+        )
+
+    model_mape = float((prepared["frame"]["expected_return"][mask] - forward).abs().mean())
+    flat_mape = float(forward.abs().mean())
+    assert metrics["magnitude_mape"] == pytest.approx(model_mape, rel=1e-12)
+    assert metrics["magnitude_skill_vs_flat"] == pytest.approx(
+        1.0 - model_mape / flat_mape, rel=1e-12
+    )
+    assert metrics["interval_sharpness_80"] == pytest.approx(
+        float(
+            (
+                prepared["frame"]["upper_return"][mask]
+                - prepared["frame"]["lower_return"][mask]
+            ).mean()
+        ),
+        rel=1e-12,
+    )
+
+
+def test_a_market_that_never_called_down_reports_no_bets_not_a_perfect_score(make_panel):
+    """单边行情里「从没喊过跌」必须显示成「没有可评估的下注」。
+
+    这条守的是留出期真正的形状：2023-10 起黄金单边上涨，模型 5 个尺度的方向与
+    「永远看多」逐日一致（+0.0pp），此时绝对方向命中率既不能证明有能力，
+    也不能反过来把「一次都没看空」读成「看空全对」。
+    """
+    calendar = pd.date_range("2012-01-01", "2026-09-30", freq="B")
+    rng = np.random.default_rng(3)
+    factors, _ = make_panel(calendar)
+    close = pd.Series(
+        2000.0 * np.cumprod(1.0 + 0.0009 + rng.normal(0, 0.0006, len(calendar))), index=calendar
+    )
+    trending = {
+        key: pd.Series(np.cumsum(rng.normal(0.02, 0.01, len(calendar))), index=calendar)
+        for key in factors
+    }
+
+    for horizon in (1, 20, 250):
+        metrics = backtest.evaluate_horizon(trending, close, horizon=horizon).metrics
+        assert metrics["down_calls"] == 0, f"h={horizon}"
+        assert metrics["down_call_accuracy"] is None, f"h={horizon}"
+        assert metrics["up_share"] > 0.9, f"h={horizon}"
+        # 幅度那一侧仍然有账可算：预测趋势优于预测「原地不动」
+        assert 0.0 < metrics["magnitude_skill_vs_flat"] < 1.0, f"h={horizon}"
