@@ -36,9 +36,13 @@ class InstitutionResponse(BaseModel):
     institution_name: str
     logo: Optional[str] = None
     rating: str
-    target_price: float
-    timeframe: str
-    reasoning: str
+    # 三列在模型里都可空：没有可核实目标价的机构会落一条**占位行**
+    # （target_price=None、reasoning="暂无最新预测"），用于表示「仍在跟踪」。
+    # 这里若按必填校验，整张 /institutions 表会因为这个诚实结果而 500 ——
+    # 实测于 2026-10-02。
+    target_price: Optional[float] = None
+    timeframe: Optional[str] = None
+    reasoning: Optional[str] = None
     key_points: List[str]
     created_at: datetime
     updated_at: datetime

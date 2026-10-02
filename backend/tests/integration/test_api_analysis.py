@@ -261,3 +261,34 @@ def test_ai_endpoints_return_200_without_any_data(client, path, stub_stats):
     stub_stats(value=None)
 
     assert client.get(path).status_code == 200
+
+
+@pytest.mark.integration
+def test_institution_list_tolerates_placeholder_rows(client, db_session):
+    """占位行（target_price=None）不得让 `/institutions` 整体 500。
+
+    实测（2026-10-02）：当天没有可核实目标价时，库里的四条占位行让这个
+    「读已入库观点」的端点直接 500 —— 一个诚实的结果反而打挂了接口。
+    """
+    from app.models.analysis import InstitutionView
+
+    db_session.add(
+        InstitutionView(
+            institution_name="高盛 (Goldman Sachs)",
+            logo="GS",
+            rating="neutral",
+            target_price=None,
+            timeframe=None,
+            reasoning="暂无最新预测",
+            key_points=[],
+            source="legacy",
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/api/gold/institutions")
+
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert rows and rows[0]["target_price"] is None
+    assert rows[0]["reasoning"] == "暂无最新预测"
