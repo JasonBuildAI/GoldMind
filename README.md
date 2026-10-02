@@ -642,6 +642,9 @@ cd backend
 # 安装依赖（首次）
 pip install -r requirements.txt -r requirements-dev.txt
 
+# 配置级自检（只读：不连库、不出网；失败项会给出修复命令，退出码 0/1）
+python scripts/verify_setup.py
+
 # 测试 —— 全档闸门
 python -m pytest
 

@@ -613,6 +613,9 @@ cd backend
 # Install dependencies (first time)
 pip install -r requirements.txt -r requirements-dev.txt
 
+# Configuration self-check (read-only: no DB, no network; failures come with fix commands, exit 0/1)
+python scripts/verify_setup.py
+
 # Tests — the full gate
 python -m pytest
 
