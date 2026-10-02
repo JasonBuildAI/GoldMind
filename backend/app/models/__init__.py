@@ -2,6 +2,7 @@
 from app.database import Base
 from app.models.gold_price import GoldPrice, DollarIndex
 from app.models.news import GoldNews
+from app.models.fetch_attempt import FetchAttempt
 from app.models.news_digest import NewsDigestItem
 from app.models.analysis import (
     FactorObservation,
@@ -17,6 +18,7 @@ __all__ = [
     "DollarIndex",
     "GoldNews",
     "NewsDigestItem",
+    "FetchAttempt",
     "MarketFactor",
     "InstitutionView",
     "Prediction",

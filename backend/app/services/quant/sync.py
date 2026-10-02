@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.news_digest import NewsDigestItem
+from app.services import source_status
 from app.services.cache_manager import CacheManager
 from app.services.quant import derive, storage
 from app.services.quant.definitions import BENCHMARK_KEY, EXTRA_SERIES, FACTORS
@@ -360,6 +361,9 @@ def run_sync(
                 "label": source_label(name),
                 "reason": "距上次抓取未超过该源的最小间隔",
             }
+            source_status.record_attempt(
+                channel="quant_sync", source_key=name, status=source_status.STATUS_SKIPPED
+            )
             continue
 
         try:
@@ -372,6 +376,12 @@ def run_sync(
                 "label": source_label(name),
                 "series": sorted(series),
             }
+            source_status.record_attempt(
+                channel="quant_sync",
+                source_key=name,
+                status=source_status.STATUS_OK,
+                items=len(series),
+            )
             _last_fetch_store(name).set({"at": timeutil.now().timestamp()})
         except Exception as exc:  # 网络、格式、空数据都算「该源不可用」
             logger.warning(f"[量化] 数据源 {name} 不可用：{type(exc).__name__}: {exc}")
@@ -380,6 +390,12 @@ def run_sync(
                 "label": source_label(name),
                 "error": f"{type(exc).__name__}: {exc}",
             }
+            source_status.record_attempt(
+                channel="quant_sync",
+                source_key=name,
+                status=source_status.STATUS_ERROR,
+                error=f"{type(exc).__name__}: {exc}",
+            )
 
     fallback_sources = _apply_local_price_fallbacks(db, raw, report)
 

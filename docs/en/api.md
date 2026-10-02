@@ -61,6 +61,7 @@ The running service also serves interactive documentation at `http://localhost:8
 | `GET` | `/api/gold/quant/predictions` | Quant forecast: direction, upside probability, target price and per-factor contributions. |
 | `POST` | `/api/gold/quant/refresh` | Fetch factors, recompute predictions and append one backtest run now (takes tens of seconds). (**heavy operation**, stricter rate limit) |
 | `GET` | `/api/gold/quant/research` | Research page: skill overview, reliability bins, coverage, regime scores, factor breakdown and the pre-registered verdict. |
+| `GET` | `/api/gold/sources/status` | get_sources_status |
 | `GET` | `/api/gold/stats` | Rolling 12-month gold price statistics (current price, window return, high-low amplitude, ...). |
 
 ### other

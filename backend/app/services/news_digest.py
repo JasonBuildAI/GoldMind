@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.news_digest import NewsDigestItem
+from app.services import source_status
 from app.services.cache_manager import CacheManager
 from app.services.news_service import normalize_url, to_local_naive
 from app.utils import timeutil
@@ -341,6 +342,21 @@ class NewsDigestService:
             with ThreadPoolExecutor(max_workers=min(8, len(specs))) as pool:
                 futures = [pool.submit(_fetch_source_safe, spec, limit) for spec in specs]
                 results = [future.result() for future in futures]
+
+        for result in results:
+            if result.error:
+                outcome = source_status.STATUS_ERROR
+            elif result.items:
+                outcome = source_status.STATUS_OK
+            else:
+                outcome = source_status.STATUS_EMPTY
+            source_status.record_attempt(
+                channel="news_digest",
+                source_key=result.spec.name,
+                status=outcome,
+                items=len(result.items),
+                error=result.error,
+            )
 
         fetched = [item for result in results for item in result.items]
         inserted, skipped_unstorable = self._save_items(fetched)

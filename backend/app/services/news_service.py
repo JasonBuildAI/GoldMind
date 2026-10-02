@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.utils import timeutil
 from app.models.news import GoldNews, SentimentType
+from app.services import source_status
 from app.utils.enum_values import resolve_enum
 from loguru import logger
 
@@ -305,9 +306,21 @@ class NewsService:
                         "source": source,
                     }
                 )
+            source_status.record_attempt(
+                channel="news_rss",
+                source_key=source,
+                status=source_status.STATUS_OK if news_list else source_status.STATUS_EMPTY,
+                items=len(news_list),
+            )
             return news_list
         except Exception as e:
             logger.error(f"RSS获取失败 {source}: {e}")
+            source_status.record_attempt(
+                channel="news_rss",
+                source_key=source,
+                status=source_status.STATUS_ERROR,
+                error=f"{type(e).__name__}: {e}",
+            )
             return []
 
     def fetch_all_rss_news(self, limit_per_source: int = 10) -> List[Dict]:

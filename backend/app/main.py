@@ -14,7 +14,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from app.utils import timeutil
 from app.config import settings
 from app.database import engine, Base
-from app.routers import gold_prices, analysis, news, predictions, quant
+from app.routers import gold_prices, analysis, news, predictions, quant, sources
 from app.scheduler import init_scheduler, shutdown_scheduler
 from app.utils.rate_limit import SlidingWindowRateLimiter
 
@@ -303,6 +303,7 @@ app.include_router(analysis.router, prefix="/api/gold", tags=["市场分析"])
 app.include_router(news.router, prefix="/api/gold", tags=["新闻资讯"])
 app.include_router(predictions.router, prefix="/api/gold", tags=["价格预测"])
 app.include_router(quant.router, prefix="/api/gold", tags=["量化预测"])
+app.include_router(sources.router, prefix="/api/gold", tags=["数据源状态"])
 
 @app.get("/")
 async def root():

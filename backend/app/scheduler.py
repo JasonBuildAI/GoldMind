@@ -252,6 +252,16 @@ async def update_prices_job():
         # 2. 获取伦敦金实时价格（包含完整OHLC数据）
         realtime_data = get_realtime_gold_price()
 
+        # 抓取尝试流水：行情通道（成功 / 无数据都记，供 /api/gold/sources/status 汇总）
+        from app.services import source_status
+
+        source_status.record_attempt(
+            channel="price",
+            source_key="gold_realtime",
+            status=source_status.STATUS_OK if realtime_data else source_status.STATUS_EMPTY,
+            items=1 if realtime_data else 0,
+        )
+
         if not realtime_data:
             logger.warning("未能获取实时金价，尝试使用备用数据源...")
             # 这里可以添加备用数据源逻辑

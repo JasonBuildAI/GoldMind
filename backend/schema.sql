@@ -166,6 +166,21 @@ CREATE TABLE IF NOT EXISTS factor_observation_revisions (
     INDEX ix_factor_observation_revisions_recorded_at (recorded_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 抓取通道的尝试流水：一行 = 一次尝试，只追加、不覆盖。
+-- /api/gold/sources/status 按 (channel, source_key) 取最近一行汇总可用性。
+CREATE TABLE IF NOT EXISTS fetch_attempts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    channel VARCHAR(50) NOT NULL,
+    source_key VARCHAR(100) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    started_at DATETIME NOT NULL,
+    finished_at DATETIME,
+    items INT,
+    error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX ix_fetch_attempts_channel_source (channel, source_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 走查式回测结果：每次评估追加一行，形成准确率的时间序列。
 CREATE TABLE IF NOT EXISTS model_evaluations (
     id INT AUTO_INCREMENT PRIMARY KEY,

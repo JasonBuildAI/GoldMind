@@ -61,6 +61,7 @@
 | `GET` | `/api/gold/quant/predictions` | 量化预测：方向、上行概率、目标价与逐因子贡献。 |
 | `POST` | `/api/gold/quant/refresh` | 立即抓取因子、重算预测并追加一次回测（耗时数十秒，已按付费档限流）。 （**重操作**，限流更严） |
 | `GET` | `/api/gold/quant/research` | 研究页：技能总览、可靠性分桶、覆盖率、分段成绩、因子拆解与预注册裁决。 |
+| `GET` | `/api/gold/sources/status` | 各抓取通道的最近一次尝试与可用性汇总。 |
 | `GET` | `/api/gold/stats` | 获取滚动窗口（默认近 12 个月）的金价统计（当前价、涨跌幅、高低振幅等）。 |
 
 ### 其他
