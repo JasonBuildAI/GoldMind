@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import argparse
-import io
+
 import sys
 from pathlib import Path
 from typing import Callable, Optional
@@ -97,8 +97,9 @@ def format_markdown(rows: list[dict], *, horizons: tuple[int, ...]) -> str:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    try:  # Windows 控制台可能是 GBK，中文输出要能降级而不是崩
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    try:  # Windows 控制台默认可能是 GBK，输出里的 ⚠ 与勾叉会直接抛 UnicodeEncodeError
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
     parser = argparse.ArgumentParser(description="因子候选筛选（三道闸门）")
