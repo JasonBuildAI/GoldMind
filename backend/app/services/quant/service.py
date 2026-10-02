@@ -21,6 +21,7 @@ from app.services.quant import (
     engine,
     preregistered,
     scenarios,
+    stats,
     storage,
     sync,
 )
@@ -302,7 +303,9 @@ def _evaluation_payload(row: Optional[ModelEvaluation], horizon: Optional[int] =
         "baseline_up_accuracy": row.baseline_up_accuracy,
         "baseline_momentum_accuracy": row.baseline_momentum_accuracy,
         "brier_score": row.brier_score,
-        "metrics": metrics,
+        # 历史行写库时已清洗过；这里再洗一次是给「旧版本写下的行」兜底 ——
+        # 读接口同样不该把 NaN 交给 JSON 序列化器。
+        "metrics": stats.json_safe(metrics),
         "factors": factors,
         "reason": metrics.get("reason"),
     }
@@ -682,16 +685,18 @@ def _store_prediction(db: Session, snapshot: engine.SignalSnapshot) -> None:
             confidence=snapshot.probability_up,
             timeframe=f"{snapshot.horizon_days}D",
             reasoning=_reasoning(snapshot, _skill_note(db, snapshot.horizon_days)),
-            factors=[
-                {
-                    "key": state.key,
-                    "name": state.name,
-                    "contribution": state.contribution,
-                    "signed_z": state.signed_z,
-                }
-                for state in snapshot.states
-                if state.available
-            ],
+            factors=stats.json_safe(
+                [
+                    {
+                        "key": state.key,
+                        "name": state.name,
+                        "contribution": state.contribution,
+                        "signed_z": state.signed_z,
+                    }
+                    for state in snapshot.states
+                    if state.available
+                ]
+            ),
             direction=snapshot.direction,
             horizon_days=snapshot.horizon_days,
             as_of=snapshot.as_of,
@@ -785,7 +790,7 @@ def _store_evaluation(db: Session, evaluation: backtest.HorizonEvaluation) -> No
             baseline_up_accuracy=evaluation.baseline_up_accuracy,
             baseline_momentum_accuracy=evaluation.baseline_momentum_accuracy,
             brier_score=evaluation.brier_score,
-            metrics=evaluation.metrics,
+            metrics=stats.json_safe(evaluation.metrics),
         )
     )
 

@@ -10,6 +10,31 @@ import pytest
 from app.services.quant import backtest, engine
 
 
+def test_horizon_evaluation_to_dict_never_emits_nan():
+    """API 响应与落库共用 to_dict；NaN 不许从这里出去（MySQL 的 JSON 列会拒收）。"""
+    import json
+
+    evaluation = backtest.HorizonEvaluation(
+        horizon_days=250,
+        window_start=date(2023, 10, 2),
+        window_end=date(2026, 10, 1),
+        sample_size=506,
+        accuracy=0.6736,
+        baseline_up_accuracy=0.6736,
+        baseline_momentum_accuracy=float("nan"),
+        brier_score=float("inf"),
+        metrics={"p_value_vs_up": float("nan"), "reason": "样本重叠"},
+    )
+
+    payload = evaluation.to_dict()
+
+    assert payload["metrics"]["p_value_vs_up"] is None
+    assert payload["baseline_momentum_accuracy"] is None
+    assert payload["brier_score"] is None
+    assert payload["accuracy"] == 0.6736
+    json.dumps(payload, allow_nan=False)
+
+
 def _series(value: float, count: int = 40) -> pd.Series:
     return pd.Series([value] * count, index=pd.RangeIndex(count))
 

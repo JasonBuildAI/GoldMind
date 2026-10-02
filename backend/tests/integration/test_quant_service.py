@@ -1,11 +1,110 @@
 """量化服务：落库、幂等、回测节流与降级。"""
 from __future__ import annotations
 
+import json
+from datetime import date
+
 import pytest
 
 from app.models.analysis import ModelEvaluation, Prediction
 from app.services.quant import preregistered, service
 from app.services.quant.definitions import HORIZONS, MODEL_VERSION
+
+
+@pytest.mark.integration
+def test_stored_evaluation_json_column_is_mysql_safe(db_session):
+    """落库的 metrics 必须过 ``json.dumps(allow_nan=False)``。
+
+    实测事故（2026-10-02）：250 日尺度的 ``p_value_vs_up`` 在「模型与永远看多
+    逐日一致」时方差为 0，t 检验给出 NaN；SQLite 安静地存下，MySQL 的 JSON 列
+    直接拒收，整个 POST /quant/refresh 500。这条在 SQLite 上也要能抓住它 ——
+    判据用的就是 MySQL 的严格性（allow_nan=False），不是方言本身。
+    """
+    from app.services.quant import backtest
+
+    evaluation = backtest.HorizonEvaluation(
+        horizon_days=250,
+        window_start=date(2023, 10, 2),
+        window_end=date(2026, 10, 1),
+        sample_size=506,
+        accuracy=0.6736,
+        baseline_up_accuracy=0.6736,
+        baseline_momentum_accuracy=0.62,
+        brier_score=0.24,
+        metrics={
+            "p_value_vs_up": float("nan"),
+            "coverage_by_vol_regime": [{"label": "平静", "coverage": float("inf")}],
+            "reason": "样本重叠",
+        },
+    )
+
+    service._store_evaluation(db_session, evaluation)
+    db_session.flush()
+
+    row = (
+        db_session.query(ModelEvaluation)
+        .order_by(ModelEvaluation.id.desc())
+        .first()
+    )
+    assert row is not None and row.model_version == MODEL_VERSION
+    assert row.metrics["p_value_vs_up"] is None
+    assert row.metrics["coverage_by_vol_regime"][0]["coverage"] is None
+    assert row.metrics["reason"] == "样本重叠"
+    json.dumps(row.metrics, allow_nan=False)
+
+
+@pytest.mark.integration
+def test_stored_prediction_factor_json_is_mysql_safe(db_session):
+    """预测行的 factors JSON 同样不许带 NaN（signed_z 可能算成 NaN）。"""
+    from app.services.quant import engine
+
+    state = engine.FactorState(
+        key="real_yield_10y",
+        name="美债 10 年期实际利率",
+        category="monetary",
+        unit="%",
+        source="测试",
+        description="测试因子",
+        sign=-1,
+        weight=1.0,
+        value=2.9,
+        obs_date=date(2026, 10, 1),
+        age_days=1,
+        max_age_days=7,
+        z=0.4,
+        signed_z=float("nan"),
+        contribution=1.2,
+        status=engine.STATUS_OK,
+        reason=None,
+    )
+    snapshot = engine.SignalSnapshot(
+        as_of=date(2026, 10, 2),
+        horizon_days=60,
+        status=engine.STATUS_OK,
+        reason=None,
+        base_price=4216.7,
+        score=0.8,
+        probability_up=0.74,
+        expected_return=0.05,
+        uncertainty=0.1,
+        target_price=4427.5,
+        states=(state,),
+        weight_used=1.0,
+    )
+
+    service._store_prediction(db_session, snapshot)
+    db_session.flush()
+
+    row = (
+        db_session.query(Prediction)
+        .filter(Prediction.horizon_days == 60)
+        .order_by(Prediction.id.desc())
+        .first()
+    )
+    assert row is not None
+    assert row.factors[0]["signed_z"] is None
+    assert row.factors[0]["contribution"] == 1.2
+    json.dumps(row.factors, allow_nan=False)
 
 
 @pytest.mark.integration

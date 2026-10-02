@@ -68,7 +68,9 @@ class HorizonEvaluation:
     metrics: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return {
+        # 出口即清洗：NaN / Inf 不进入 API 响应，也不进入落库的 JSON（MySQL 的
+        # JSON 列会直接拒收，见 stats.json_safe 的说明）。
+        return stats.json_safe({
             "horizon_days": self.horizon_days,
             "window_start": self.window_start.isoformat() if self.window_start else None,
             "window_end": self.window_end.isoformat() if self.window_end else None,
@@ -78,7 +80,7 @@ class HorizonEvaluation:
             "baseline_momentum_accuracy": self.baseline_momentum_accuracy,
             "brier_score": self.brier_score,
             "metrics": self.metrics,
-        }
+        })
 
 
 def prepare_evaluation(

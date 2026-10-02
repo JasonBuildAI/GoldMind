@@ -17,12 +17,33 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 
 # 自助默认种子：固定值保证同一输入得到同一条区间（报告可复现）。
 DEFAULT_BOOTSTRAP_SEED = 20261002
+
+
+def json_safe(value: Any) -> Any:
+    """把 JSON 不能承载的浮点值（NaN / ±Inf）递归换成 None。
+
+    为什么必须有这一层：SQLite 会安静地把 NaN 存进 JSON 列，MySQL 直接拒收
+    （``(3140, 'Invalid JSON text: "Invalid value."')``）—— 同一份回测在两种
+    方言下一条能落库、一条让整个刷新接口 500（2026-10-02 实测，250 日尺度的
+    ``p_value_vs_up`` 在「模型与永远看多逐日一致」时方差为 0，t 检验给出 NaN）。
+    清洗放在写出边界，方言差异就不存在了。
+
+    None 的语义也比 NaN 诚实：这不是「0」，而是「这个统计量在这份样本上
+    不可计算」—— 与页面上其它「算不出就给 None」的处理保持一致。
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    return value
 
 
 def _clean(values: Sequence[float]) -> np.ndarray:

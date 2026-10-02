@@ -167,3 +167,34 @@ def test_nonoverlapping_shrinks_a_long_horizon_sample_to_the_honest_size():
 
     assert len(stats.nonoverlapping(values, 250)) == 3
     assert stats.effective_sample_size(506, 250) == pytest.approx(2.024)
+
+
+def test_json_safe_replaces_non_finite_floats_recursively():
+    payload = {
+        "finite": 0.5,
+        "nan": float("nan"),
+        "inf": float("inf"),
+        "negative_inf": float("-inf"),
+        "nested": {"values": [1.0, float("nan"), {"deep": float("inf")}]},
+    }
+
+    cleaned = stats.json_safe(payload)
+
+    assert cleaned["finite"] == 0.5
+    assert cleaned["nan"] is None
+    assert cleaned["inf"] is None
+    assert cleaned["negative_inf"] is None
+    assert cleaned["nested"]["values"][0] == 1.0
+    assert cleaned["nested"]["values"][1] is None
+    assert cleaned["nested"]["values"][2]["deep"] is None
+    # 不清洗就不会变成合法 JSON —— 这条守的是「MySQL 的 JSON 列会拒收 NaN」
+    import json
+
+    json.dumps(cleaned, allow_nan=False)
+
+
+def test_json_safe_passes_through_what_json_already_accepts():
+    assert stats.json_safe("文本") == "文本"
+    assert stats.json_safe(7) == 7
+    assert stats.json_safe(None) is None
+    assert stats.json_safe((1.0, 2.0)) == [1.0, 2.0]
