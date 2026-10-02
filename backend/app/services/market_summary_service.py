@@ -24,7 +24,7 @@ from app.services.institution_prediction_service import (
 from app.services.llm_provider import (
     describe_completion,
     get_chat_llm,
-    retry_on_content_filter,
+    invoke_with_retries,
 )
 from loguru import logger
 
@@ -209,7 +209,7 @@ class MarketSummaryAnalyzer:
 
         try:
             # 调用 LLM 进行分析
-            response = retry_on_content_filter(self.llm, prompt)
+            response = invoke_with_retries(self.llm, prompt)
             analysis_text = response.content
 
             # 解析分析结果；提示词之外再用确定性规则兜一道机构数据诚实性

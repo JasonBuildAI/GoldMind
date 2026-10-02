@@ -43,7 +43,7 @@ from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.llm_provider import (
     describe_completion,
     get_chat_llm,
-    retry_on_content_filter,
+    invoke_with_retries,
 )
 from app.services.news_service import format_news_for_prompt
 from app.services.single_flight import single_flight
@@ -537,7 +537,7 @@ class InstitutionPredictionAnalyzer:
                 return skipped
 
         try:
-            response = retry_on_content_filter(self.llm, prompt)
+            response = invoke_with_retries(self.llm, prompt)
 
             # 解析JSON响应
             try:

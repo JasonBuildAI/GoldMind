@@ -94,13 +94,13 @@ def test_skip_if_unchanged_requires_both_fingerprint_and_cache():
 def test_daily_budget_blocks_the_next_call_before_it_happens(fake_llm, monkeypatch):
     from app.config import settings
     from app.services import llm_gate
-    from app.services.llm_provider import retry_on_content_filter
+    from app.services.llm_provider import invoke_with_retries
 
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_BUDGET", 1)
 
-    retry_on_content_filter(fake_llm, "第一条")
+    invoke_with_retries(fake_llm, "第一条")
     with pytest.raises(llm_gate.LLMBudgetExceeded):
-        retry_on_content_filter(fake_llm, "第二条")
+        invoke_with_retries(fake_llm, "第二条")
 
     assert len(fake_llm.calls) == 1, "预算耗尽后仍发起了真实调用"
 
@@ -109,12 +109,12 @@ def test_daily_budget_blocks_the_next_call_before_it_happens(fake_llm, monkeypat
 def test_budget_zero_means_no_cap(fake_llm, monkeypatch):
     """budget<=0 是「不设上限」：不能把默认配置误读成封锁。"""
     from app.config import settings
-    from app.services.llm_provider import retry_on_content_filter
+    from app.services.llm_provider import invoke_with_retries
 
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_BUDGET", 0)
 
     for i in range(3):
-        retry_on_content_filter(fake_llm, f"第{i}条")
+        invoke_with_retries(fake_llm, f"第{i}条")
 
     assert len(fake_llm.calls) == 3
 

@@ -21,7 +21,7 @@ from app.services.single_flight import single_flight
 from app.services.llm_provider import (
     describe_completion,
     get_chat_llm,
-    retry_on_content_filter,
+    invoke_with_retries,
 )
 from app.services.web_search_service import get_web_search_service
 import json
@@ -312,7 +312,7 @@ class BearishFactorAnalyzer:
 
         # 4. 调用LLM
         try:
-            response = retry_on_content_filter(self.llm, prompt)
+            response = invoke_with_retries(self.llm, prompt)
 
             # 5. 解析JSON响应
             try:

@@ -328,34 +328,78 @@ class _ScriptedLLM:
 
 
 @pytest.mark.unit
-def test_retry_on_content_filter_retries_once():
+def test_invoke_with_retries_retries_after_content_filter():
     """MiMo 端点会把部分市场分析请求判成高风险；重试一次再决定。"""
     llm = _ScriptedLLM("content_filter", "stop")
 
-    response = llm_provider.retry_on_content_filter(llm, "prompt")
+    response = llm_provider.invoke_with_retries(llm, "prompt")
 
     assert llm.calls == 2, "被内容风控拒绝后必须重试一次"
     assert response.response_metadata["finish_reason"] == "stop"
 
 
 @pytest.mark.unit
-def test_retry_on_content_filter_keeps_a_good_answer():
+def test_invoke_with_retries_keeps_a_good_answer():
     llm = _ScriptedLLM("stop")
 
-    llm_provider.retry_on_content_filter(llm, "prompt")
+    llm_provider.invoke_with_retries(llm, "prompt")
 
     assert llm.calls == 1, "正常返回不该多花一次调用"
 
 
 @pytest.mark.unit
-def test_retry_on_content_filter_gives_up_after_one_retry():
+def test_invoke_with_retries_gives_up_after_one_retry():
     """仍被拒就如实返回 —— 上层据此显示「暂不可用」，不编内容。"""
     llm = _ScriptedLLM("content_filter", "content_filter", "stop")
 
-    response = llm_provider.retry_on_content_filter(llm, "prompt")
+    response = llm_provider.invoke_with_retries(llm, "prompt")
 
     assert llm.calls == 2
     assert response.response_metadata["finish_reason"] == "content_filter"
+
+
+@pytest.mark.unit
+def test_invoke_with_retries_compacts_a_truncated_answer():
+    """撞上单次输出上限（finish_reason=length）时，带压缩提示重试一次。
+
+    现实案例：2026-10-03 冷启动验收里，投资策略的四档策略 schema 撞上
+    8192 输出上限、JSON 被截断，整块策略降级为空。截断与风控是两类故障，
+    但都只值得一次重试。
+    """
+    llm = _ScriptedLLM("length", "stop")
+
+    response = llm_provider.invoke_with_retries(llm, "prompt")
+
+    assert llm.calls == 2, "截断后必须带压缩提示重试一次"
+    assert response.response_metadata["finish_reason"] == "stop"
+
+
+@pytest.mark.unit
+def test_invoke_with_retries_sends_the_compact_hint_only_on_the_retry():
+    prompts: list[str] = []
+
+    class _RecordingLLM(_ScriptedLLM):
+        def invoke(self, prompt: str):
+            prompts.append(prompt)
+            return super().invoke(prompt)
+
+    llm = _RecordingLLM("length", "stop")
+    llm_provider.invoke_with_retries(llm, "原始提示")
+
+    assert prompts[0] == "原始提示", "第一次调用必须是原始提示词"
+    assert prompts[1].startswith("原始提示"), "重试仍是同一请求，只是更长"
+    assert llm_provider.COMPACT_JSON_HINT in prompts[1], "重试必须带上压缩提示"
+
+
+@pytest.mark.unit
+def test_invoke_with_retries_can_disable_compaction():
+    """调用方显式传 compact_hint=None 时，截断不触发重试。"""
+    llm = _ScriptedLLM("length", "stop")
+
+    response = llm_provider.invoke_with_retries(llm, "prompt", compact_hint=None)
+
+    assert llm.calls == 1
+    assert response.response_metadata["finish_reason"] == "length"
 
 
 # --------------------------------------------------------------------------- #

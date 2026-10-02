@@ -310,31 +310,65 @@ def describe_completion(response: Any) -> str:
     return ", ".join(bits)
 
 
-def retry_on_content_filter(llm: Any, prompt: str, *, attempts: int = 2) -> Any:
-    """调用一次模型；输出被端点内容风控拦截时重试一次。
+COMPACT_JSON_HINT = (
+    "\n\n【系统提示】上一次输出因超出单次输出上限被截断（finish_reason=length）。"
+    "请压缩本次输出：数组每类最多 3 项、每个文本字段不超过 40 个字，"
+    "省略解释性套话；只输出一个完整、可解析的 JSON。"
+)
 
-    MiMo 端点会对部分市场分析请求返回 `finish_reason=content_filter`，
-    正文固定为 "The request was rejected because it was considered high risk"。
-    实测触发与新闻语料里的冲突类内容相关，而且**不稳定** —— 同样长度的
-    prompt 有时通过、有时被拒（15 条新闻的看跌请求连续两次被拒，10 条通过）。
-    重试一次，避免把一次随机拒绝当成「分析不可用」；仍被拒时如实返回，
-    由上层记日志（describe_completion 会写下 finish_reason）并显示「暂不可用」。
+
+def _finish_reason(response: Any) -> Any:
+    """一次响应的结束原因；取不到时如实返回 None（不猜）。"""
+    meta = getattr(response, "response_metadata", None) or {}
+    return meta.get("finish_reason")
+
+
+def invoke_with_retries(
+    llm: Any,
+    prompt: str,
+    *,
+    attempts: int = 2,
+    compact_hint: str | None = COMPACT_JSON_HINT,
+) -> Any:
+    """调用一次模型；遇到两类已知的「可重试故障」各重试一次。
+
+    1. `finish_reason=content_filter`：MiMo 端点会把部分市场分析请求判成
+       高风险（正文固定为 "The request was rejected because it was considered
+       high risk"）。实测触发与新闻语料里的冲突类内容相关，而且**不稳定** ——
+       同样长度的 prompt 有时通过、有时被拒（15 条新闻的看跌请求连续两次被拒，
+       10 条通过）。重试一次，避免把一次随机拒绝当成「分析不可用」。
+    2. `finish_reason=length`：输出撞上单次输出上限、JSON 被截断。
+       实测案例（2026-10-03 冷启动验收）：投资策略的四档策略 schema 在
+       8192 输出上限下被截断，整块策略降级为空。此时把压缩提示追加到原
+       prompt 后重试一次 —— 条目变少、字段变短，让完整 JSON 装进上限。
+       仍截断就如实返回，由上层降级为「暂不可用」，绝不拼接残缺 JSON。
+       传 `compact_hint=None` 可关闭第二条。
+
+    两种重试都计入每日预算（失败 / 被风控的尝试同样计费）。
     """
-    def _invoke_once() -> Any:
-        """真实调用一次：先过每日预算，再计入次数（失败/被风控的尝试同样计费）。"""
+    def _invoke_once(text: str) -> Any:
+        """真实调用一次：先过每日预算，再计入次数。"""
         llm_gate.gate.ensure_budget()
         llm_gate.gate.note_call()
-        return llm.invoke(prompt)
+        return llm.invoke(text)
 
-    response = _invoke_once()
+    response = _invoke_once(prompt)
     for _ in range(max(0, attempts - 1)):
-        meta = getattr(response, "response_metadata", None) or {}
-        if meta.get("finish_reason") != "content_filter":
-            break
-        logger.warning(
-            "LLM 输出被端点内容风控拦截（finish_reason=content_filter），重试一次"
-        )
-        response = _invoke_once()
+        reason = _finish_reason(response)
+        if reason == "content_filter":
+            logger.warning(
+                "LLM 输出被端点内容风控拦截（finish_reason=content_filter），重试一次"
+            )
+            response = _invoke_once(prompt)
+            continue
+        if reason == "length" and compact_hint:
+            logger.warning(
+                "LLM 输出被单次输出上限截断（finish_reason=length），改用压缩提示重试一次"
+            )
+            response = _invoke_once(prompt + compact_hint)
+            compact_hint = None
+            continue
+        break
     return response
 
 

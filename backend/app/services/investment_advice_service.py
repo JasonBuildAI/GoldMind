@@ -17,7 +17,7 @@ from app.services.institution_prediction_service import usable_institution_predi
 from app.services.llm_provider import (
     describe_completion,
     get_chat_llm,
-    retry_on_content_filter,
+    invoke_with_retries,
 )
 import json
 import logging
@@ -354,7 +354,7 @@ class InvestmentAdviceAnalyzer:
                 if skipped is not None:
                     return skipped
 
-            response = retry_on_content_filter(self.llm, prompt_template)
+            response = invoke_with_retries(self.llm, prompt_template)
             
             try:
                 content = response.content
