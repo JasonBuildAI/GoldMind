@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.quant import engine
+from app.services.quant import backtest, engine
 from app.services.quant.definitions import HOLDOUT_START, HORIZONS, MODEL_VERSION
 
 
@@ -31,6 +31,14 @@ def test_research_endpoint_reports_periods_factors_and_verdict(
         for period in item["periods"].values():
             assert period["label"]
             assert period["sample_size"] >= 0
+            # 独立下注口径：次数与 stride 必须一起给出，且次数不超过样本数
+            assert period["independent_bet_stride"] == item["horizon_days"]
+            assert 0 <= (period["independent_bets"] or 0) <= period["sample_size"]
+            if (
+                period["independent_bets"]
+                and period["independent_bets"] >= backtest.MIN_NONOVERLAPPING_SAMPLES
+            ):
+                assert period["accuracy_independent_bets"] is not None
             if period["accuracy"] is None:
                 assert period["reason"], "没有数字就必须给出原因"
                 continue

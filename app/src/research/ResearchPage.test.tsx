@@ -30,6 +30,10 @@ function period(overrides: Partial<ResearchPeriod> = {}): ResearchPeriod {
     interval_coverage_80: 0.789,
     interval_coverage_ci95: [0.75, 0.82],
     effective_sample_size: 140,
+    independent_bets: 31,
+    independent_bet_stride: 5,
+    accuracy_independent_bets: 0.548,
+    interval_coverage_80_independent_bets: 0.774,
     reason: null,
     ...overrides,
   }
@@ -101,6 +105,14 @@ describe('ResearchPage', () => {
     // 模型版本与样本外起点是裁决的关键字段
     expect(screen.getAllByText('quant-v4').length).toBeGreaterThan(0)
     expect(screen.getByText('2023-10-02')).toBeInTheDocument()
+    // 独立下注口径：次数与「按 stride 抽出来的成绩」一起展示
+    const betCells = screen.getAllByTitle(
+      '每 5 个交易日算一次独立下注 —— 重叠样本不是独立证据',
+    )
+    expect(betCells).toHaveLength(3) // 开发期 / 留出期 / 全样本，每行各自报次数
+    expect(betCells[0]).toHaveTextContent('31')
+    expect(screen.getAllByText('54.8%').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('77.4%').length).toBeGreaterThan(0)
   })
 
   it('shows the honest unavailable state without fabricating numbers', async () => {

@@ -410,6 +410,20 @@ def _research_period(name: str, evaluation: backtest.HorizonEvaluation) -> dict:
         "interval_coverage_80": preregistered.finite(metrics.get("interval_coverage_80")),
         "interval_coverage_ci95": _finite_pair(metrics.get("interval_coverage_ci95")),
         "effective_sample_size": preregistered.finite(metrics.get("effective_sample_size")),
+        # 独立下注口径：把重叠的逐日样本按 stride = 尺度抽成 k 次互不相干的下注后，
+        # 成绩还剩多少。样本不足时命中率/覆盖率给 None，次数照实报出 —— 页面因此
+        # 能显示「506 个样本 = 2 次下注」而不是把 2 个观测的比例当结论。
+        "independent_bets": metrics.get("nonoverlapping_samples"),
+        # 算不出成绩的样本期（空窗口 / 样本不足）也要给出 stride ——
+        # 它是尺度的属性，不是这次算出来的结果。
+        "independent_bet_stride": metrics.get("nonoverlapping_stride")
+        or evaluation.horizon_days,
+        "accuracy_independent_bets": preregistered.finite(
+            metrics.get("accuracy_nonoverlapping")
+        ),
+        "interval_coverage_80_independent_bets": preregistered.finite(
+            metrics.get("interval_coverage_80_nonoverlapping")
+        ),
         "expected_cap_rate": preregistered.finite(metrics.get("expected_cap_rate")),
         "reason": metrics.get("reason"),
     }

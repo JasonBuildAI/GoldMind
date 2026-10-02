@@ -235,6 +235,12 @@ class ResearchPeriod(BaseModel):
     interval_coverage_80: Optional[float] = None
     interval_coverage_ci95: Optional[List[float]] = None
     effective_sample_size: Optional[float] = None
+    # 独立下注口径（stride = 尺度）：重叠样本折算出的可信度。长尺度上两者差距
+    # 巨大（250 日留出期 506 个重叠样本其实只有 2 次下注），所以单列而不是折算。
+    independent_bets: Optional[int] = None
+    independent_bet_stride: Optional[int] = None
+    accuracy_independent_bets: Optional[float] = None
+    interval_coverage_80_independent_bets: Optional[float] = None
     reason: Optional[str] = None
 
 

@@ -114,6 +114,11 @@ function PeriodDetail({ horizon }: { horizon: HorizonResearch }) {
   return (
     <div className="table-scroll">
       <table className="data-table">
+        <caption className="note">
+          「独立下注」= 把逐日样本按尺度（stride = 天数）抽成互不相干的下注后的次数；
+          「独立命中 / 独立覆盖」只在独立下注 ≥ 30 次时给数，否则显示「—」——
+          250 日的留出期有几千个重叠样本，却只有个位数次下注，两者不能混着读。
+        </caption>
         <thead>
           <tr>
             <th scope="col">样本期</th>
@@ -122,7 +127,13 @@ function PeriodDetail({ horizon }: { horizon: HorizonResearch }) {
               可评估样本
             </th>
             <th scope="col" className="num">
+              独立下注
+            </th>
+            <th scope="col" className="num">
               命中率
+            </th>
+            <th scope="col" className="num">
+              独立命中
             </th>
             <th scope="col" className="num">
               95% CI
@@ -139,6 +150,9 @@ function PeriodDetail({ horizon }: { horizon: HorizonResearch }) {
             <th scope="col" className="num">
               覆盖率
             </th>
+            <th scope="col" className="num">
+              独立覆盖
+            </th>
             <th scope="col">说明</th>
           </tr>
         </thead>
@@ -152,12 +166,24 @@ function PeriodDetail({ horizon }: { horizon: HorizonResearch }) {
                   : '—'}
               </td>
               <td className="num">{period.sample_size}</td>
+              <td
+                className="num"
+                title={
+                  period.independent_bet_stride
+                    ? `每 ${period.independent_bet_stride} 个交易日算一次独立下注 —— 重叠样本不是独立证据`
+                    : undefined
+                }
+              >
+                {period.independent_bets ?? '—'}
+              </td>
               <td className="num">{pct(period.accuracy)}</td>
+              <td className="num">{pct(period.accuracy_independent_bets)}</td>
               <td className="num">{interval(period.accuracy_ci95)}</td>
               <td className="num">{pct(period.baseline_up_accuracy)}</td>
               <td className="num">{pct(period.baseline_momentum_accuracy)}</td>
               <td className="num">{num(period.brier_score)}</td>
               <td className="num">{pct(period.interval_coverage_80)}</td>
+              <td className="num">{pct(period.interval_coverage_80_independent_bets)}</td>
               <td className="note">{period.reason ?? ''}</td>
             </tr>
           ))}

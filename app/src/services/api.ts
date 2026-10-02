@@ -619,6 +619,11 @@ export interface ResearchPeriod {
   interval_coverage_80: number | null
   interval_coverage_ci95: number[] | null
   effective_sample_size: number | null
+  // 独立下注口径（stride = 尺度）：重叠样本折算后还剩多少可信度
+  independent_bets: number | null
+  independent_bet_stride: number | null
+  accuracy_independent_bets: number | null
+  interval_coverage_80_independent_bets: number | null
   reason: string | null
 }
 
