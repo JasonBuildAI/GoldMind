@@ -3,6 +3,8 @@
 工厂是全项目唯一构造 LLM 客户端的地方，所以这里的断言就是
 「.env 里的配置是否真的生效」与「没配置时是否如实拒绝」的判据。
 """
+import logging
+
 from pydantic import SecretStr
 import pytest
 
@@ -131,7 +133,14 @@ def test_describe_exposes_no_secret():
 
     assert info["provider"] == settings.LLM_PROVIDER
     assert info["model"] == settings.LLM_MODEL
-    assert set(info) == {"provider", "model", "search_model", "base_url", "configured"}
+    assert set(info) == {
+        "provider",
+        "model",
+        "search_model",
+        "base_url",
+        "configured",
+        "token_plan_backend",
+    }
     # 任何字段都不得包含密钥
     secret = settings.LLM_API_KEY.get_secret_value()
     assert all(secret not in str(v) for v in info.values())
@@ -347,3 +356,114 @@ def test_retry_on_content_filter_gives_up_after_one_retry():
 
     assert llm.calls == 2
     assert response.response_metadata["finish_reason"] == "content_filter"
+
+
+# --------------------------------------------------------------------------- #
+# Token Plan 端点合规（R4-18）
+# --------------------------------------------------------------------------- #
+# 背景：小米 Token Plan 条款限定「仅可在编程工具中使用」，以 `tp-` key +
+# token-plan 端点做后端调用属条款外用法。代码不替持有人换 key，但必须警告
+# 出来并在 /health 里如实标记。检测是纯函数，先写真值表。
+_TOKEN_PLAN_URL = "https://token-plan-cn.xiaomimimo.com/v1"
+_COMPLIANT_URL = "https://api.xiaomimimo.com/v1"
+
+
+@pytest.mark.unit
+def test_token_plan_combo_needs_both_conditions():
+    assert llm_provider.is_token_plan_combo(_TOKEN_PLAN_URL, "tp-abc123")
+    # 单条件都不算：换掉密钥、或换掉端点，就不再是 Token Plan 组合
+    assert not llm_provider.is_token_plan_combo(_COMPLIANT_URL, "tp-abc123")
+    assert not llm_provider.is_token_plan_combo(_TOKEN_PLAN_URL, "sk-abc123")
+    assert not llm_provider.is_token_plan_combo(_COMPLIANT_URL, "sk-abc123")
+
+
+@pytest.mark.unit
+def test_get_chat_llm_warns_on_token_plan_backend(monkeypatch, caplog):
+    """命中组合必须警告：给切换指引、不打印密钥、只记一条。"""
+
+    class _FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(llm_provider, "_chat_openai_class", lambda: _FakeChatOpenAI)
+    monkeypatch.setattr(llm_provider, "_token_plan_warned", False)
+    monkeypatch.setattr(settings, "LLM_BASE_URL", _TOKEN_PLAN_URL)
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr("tp-CANARY-portal-0001"))
+
+    with caplog.at_level(logging.WARNING, logger="app.services.llm_provider"):
+        llm_provider.get_chat_llm()
+
+    hits = [r.getMessage() for r in caplog.records if "Token Plan" in r.getMessage()]
+    assert len(hits) == 1, "命中组合必须记且只记一条警告"
+    assert llm_provider.COMPLIANT_MIMO_BASE_URL in hits[0], "警告里要给出切换指引"
+    assert "tp-CANARY-portal-0001" not in hits[0], "警告不得带出密钥本身"
+
+
+@pytest.mark.unit
+def test_token_plan_warning_is_once_per_process(monkeypatch, caplog):
+    """进程内去重：构造多次只警告一次，日志不刷屏。"""
+
+    class _FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(llm_provider, "_chat_openai_class", lambda: _FakeChatOpenAI)
+    monkeypatch.setattr(llm_provider, "_token_plan_warned", False)
+    monkeypatch.setattr(settings, "LLM_BASE_URL", _TOKEN_PLAN_URL)
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr("tp-abc123"))
+
+    with caplog.at_level(logging.WARNING, logger="app.services.llm_provider"):
+        for _ in range(3):
+            llm_provider.get_chat_llm()
+
+    hits = [r for r in caplog.records if "Token Plan" in r.getMessage()]
+    assert len(hits) == 1
+
+
+@pytest.mark.unit
+def test_compliant_endpoint_does_not_warn(monkeypatch, caplog):
+
+    class _FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(llm_provider, "_chat_openai_class", lambda: _FakeChatOpenAI)
+    monkeypatch.setattr(llm_provider, "_token_plan_warned", False)
+    monkeypatch.setattr(settings, "LLM_BASE_URL", _COMPLIANT_URL)
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr("sk-abc123"))
+
+    with caplog.at_level(logging.WARNING, logger="app.services.llm_provider"):
+        llm_provider.get_chat_llm()
+
+    assert not [r for r in caplog.records if "Token Plan" in r.getMessage()]
+
+
+@pytest.mark.unit
+def test_search_client_override_is_checked_too(monkeypatch, caplog):
+    """搜索覆盖配置是第二个构造点，同样要检测 —— 别只守推理那一条路径。"""
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(llm_provider, "_openai_class", lambda: _FakeOpenAI)
+    monkeypatch.setattr(llm_provider, "_token_plan_warned", False)
+    monkeypatch.setattr(settings, "LLM_SEARCH_ENABLED", True)
+    monkeypatch.setattr(settings, "LLM_SEARCH_BASE_URL", _TOKEN_PLAN_URL)
+    monkeypatch.setattr(settings, "LLM_SEARCH_API_KEY", SecretStr("tp-abc123"))
+
+    with caplog.at_level(logging.WARNING, logger="app.services.llm_provider"):
+        llm_provider.get_search_client()
+
+    assert [r for r in caplog.records if "Token Plan" in r.getMessage()]
+
+
+@pytest.mark.unit
+def test_describe_reports_token_plan_backend(monkeypatch):
+    """/health 的 ai_config 段要能看出这个标记（且不含密钥）。"""
+    monkeypatch.setattr(settings, "LLM_BASE_URL", _TOKEN_PLAN_URL)
+    monkeypatch.setattr(settings, "LLM_API_KEY", SecretStr("tp-abc123"))
+    assert llm_provider.describe()["token_plan_backend"] is True
+
+    monkeypatch.setattr(settings, "LLM_BASE_URL", _COMPLIANT_URL)
+    assert llm_provider.describe()["token_plan_backend"] is False

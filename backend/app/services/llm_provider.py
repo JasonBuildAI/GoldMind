@@ -17,6 +17,10 @@
     只有支持「MiMo 插件式 web_search 工具」的端点才能开启。账号未开通时
     端点会返回 HTTP 400 `webSearchEnabled is false` —— 这是账号侧的开关
     （控制台开通），不是参数写法问题；关闭时搜索链路直接走数据库 / RSS 回退。
+
+Token Plan 端点（`tp-` key + 含 `token-plan` 的主机）属条款外用法：
+    构造客户端时警告并给出切换指引，但**不自动换 key**
+    （见下文「Token Plan 端点合规」）。
 """
 from __future__ import annotations
 
@@ -146,6 +150,9 @@ def get_chat_llm(*, temperature: float = 0.7, max_tokens: int | None = None) -> 
         raise RuntimeError(
             "LLM 未配置：请在 .env 里同时设置 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL"
         )
+    warn_if_token_plan_combo(
+        settings.LLM_BASE_URL, settings.LLM_API_KEY.get_secret_value()
+    )
     return _chat_openai_class()(
         model=get_model_name(),
         api_key=settings.LLM_API_KEY.get_secret_value(),
@@ -168,6 +175,7 @@ def get_search_client() -> Any:
             "联网搜索未启用：如需使用请在 .env 里设置 LLM_SEARCH_ENABLED=true，"
             "并确认端点支持 MiMo 插件式 web_search 工具"
         )
+    warn_if_token_plan_combo(get_search_base_url(), get_search_api_key())
     return _openai_class()(
         api_key=get_search_api_key(),
         base_url=get_search_base_url(),
@@ -210,6 +218,53 @@ def is_configured() -> bool:
 def is_search_enabled() -> bool:
     """联网搜索是否开启（默认关闭；见模块文档）。"""
     return bool(settings.LLM_SEARCH_ENABLED)
+
+
+# --------------------------------------------------------------------------- #
+# Token Plan 端点合规
+# --------------------------------------------------------------------------- #
+# 背景：小米 Token Plan 条款限定「仅可在编程工具中使用，禁止用于自定义应用
+# 后端」。该套餐的端点主机含 `token-plan`、密钥以 `tp-` 开头，两个条件同时
+# 命中即属条款外用法，存在被暂停服务或封禁 key 的风险
+# （见 docs/00-产品方向.md 第四节第 2 条）。
+# 代码不替持有人换 key（那是账号侧动作），只做两件事：构造客户端时警告一次；
+# `/health` 里如实带出标记，让部署方在日志之外也能发现。
+TOKEN_PLAN_HOST_MARKER = "token-plan"
+COMPLIANT_MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
+
+_token_plan_warned = False
+
+
+def is_token_plan_combo(base_url: str, api_key: str) -> bool:
+    """端点 + 密钥是否构成 Token Plan 组合（双条件，缺一不算）。"""
+    return TOKEN_PLAN_HOST_MARKER in base_url.lower() and api_key.startswith("tp-")
+
+
+def is_token_plan_backend() -> bool:
+    """当前**推理**配置是否在用 Token Plan 端点当后端。"""
+    return is_token_plan_combo(
+        settings.LLM_BASE_URL, settings.LLM_API_KEY.get_secret_value()
+    )
+
+
+def warn_if_token_plan_combo(base_url: str, api_key: str) -> bool:
+    """命中 Token Plan 组合时记一条警告（进程内只记一次），返回是否命中。
+
+    警告文本给切换指引，但**不含密钥本身** —— 红线 2：密钥永不进日志。
+    """
+    global _token_plan_warned
+    if not is_token_plan_combo(base_url, api_key):
+        return False
+    if not _token_plan_warned:
+        _token_plan_warned = True
+        logger.warning(
+            "LLM 端点疑似 Token Plan 后端用法（密钥以 tp- 开头且端点含 token-plan）："
+            "该套餐条款限定仅用于编程工具，后端调用属条款外用法，"
+            "存在被暂停服务或封禁 key 的风险。合规做法是改用按量付费端点 %s + sk- 密钥"
+            "（密钥由持有人更换，代码不自动替换）。",
+            COMPLIANT_MIMO_BASE_URL,
+        )
+    return True
 
 
 def describe_completion(response: Any) -> str:
@@ -261,11 +316,12 @@ def retry_on_content_filter(llm: Any, prompt: str, *, attempts: int = 2) -> Any:
 
 
 def describe() -> dict[str, Any]:
-    """供健康检查使用的供应商描述（不含密钥）。"""
+    """供健康检查使用的供应商描述（不含密钥，含 Token Plan 合规标记）。"""
     return {
         "provider": settings.LLM_PROVIDER,
         "model": get_model_name(),
         "search_model": get_search_model_name(),
         "base_url": settings.LLM_BASE_URL,
         "configured": is_configured(),
+        "token_plan_backend": is_token_plan_backend(),
     }

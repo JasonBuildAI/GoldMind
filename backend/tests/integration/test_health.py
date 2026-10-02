@@ -29,6 +29,7 @@ def test_health_returns_expected_shape(client):
 def test_health_reports_the_configured_llm_provider(client):
     """AI 配置段必须如实上报当前 .env 的配置，而不是迁移前的 deepseek/zhipu。"""
     from app.config import settings
+    from app.services import llm_provider
 
     ai = client.get("/health").json()["services"]["ai_config"]
 
@@ -36,6 +37,7 @@ def test_health_reports_the_configured_llm_provider(client):
     assert ai["provider"] == settings.LLM_PROVIDER, "provider 必须来自配置而非写死"
     assert ai["model"] == settings.LLM_MODEL
     assert "configured" in ai
+    assert ai["token_plan_backend"] is llm_provider.is_token_plan_backend()
     assert "deepseek_configured" not in ai
     assert "zhipu_configured" not in ai
 

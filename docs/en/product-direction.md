@@ -79,7 +79,10 @@ shows "temporarily unavailable"), and constructed uniformly through
    "programming tools only; use in custom application backends is prohibited", so using a `tp-`
    key for backend calls is outside those terms and risks the service being suspended or the key
    being banned; the compliant approach is a pay-as-you-go endpoint (for MiMo,
-   `https://api.xiaomimimo.com/v1` + an `sk-` key).
+   `https://api.xiaomimimo.com/v1` + an `sk-` key). The code has guarded this since
+   2026-10-02: `backend/app/services/llm_provider.py` checks the combination when it
+   builds the chat and search clients, logs one warning with the switch guidance
+   (never the key itself), and `/health` reports `services.ai_config.token_plan_backend`.
 3. **The news sources are mainly English financial media**. The built-in default RSS sources (FXStreet / MarketWatch /
    CNBC / WSJ) are the set verified as usable in practice; the public
    RSS addresses of the Chinese sources (Sina, FX168, Jin10) have all expired and can be configured
