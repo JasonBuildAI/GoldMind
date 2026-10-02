@@ -98,6 +98,13 @@ Ollama 本地模型 / 小米 MiMo ……）都能接 —— 改 `backend/.env` �
 `backend/app/services/llm_provider.py` 构造。三项缺任意一项都算「未配置」，
 各区块如实显示「暂不可用」，不会退回任何内置内容。
 
+付费调用有空门控（`backend/app/services/llm_gate.py`）：prompt 去掉易变的
+时间戳后做 sha256 指纹，**输入没变且缓存还在时直接复用，不再调用模型**；
+`POST .../refresh` 是显式刷新，不受指纹限制。每日调用次数由
+`LLM_DAILY_CALL_BUDGET` 封顶（默认 200，设 0 表示不设上限）——超限时该轮分析
+如实显示「暂不可用」并说明原因，不会为了填满页面继续花钱。状态文件在
+`backend/cache/llm_gate.json`（gitignored，不入库）。
+
 > 你只需：打开页面
 > GoldMind 将返回：当天金价、美元指数，以及基于最近新闻生成的多空分析与策略建议，
 > 外加一份可回测的量化预测。

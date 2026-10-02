@@ -124,6 +124,22 @@ SQLite(gold_news, news_digest_items, gold_prices)
   需端点侧开通并用 `LLM_SEARCH_ENABLED=true` 显式开启；未开通时返回
   `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`
   （实测见 `scripts/smoke_llm.py`）。搜索不可用时回退到数据库与 RSS，**不编造数据**。
+- **调用门控（`services/llm_gate.py`）**：两个阀门都为了同一件事 —— 付费调用只花在
+  有信息增量的地方。
+  1. **输入指纹**：把 prompt 里调用方明确声明的易变值（目前只有各服务拼进
+     prompt 的 `current_time`）替换成占位符后做 sha256。指纹与上次**成功产出**
+     时记录的一致且缓存仍在 → 直接复用缓存、不再调用模型。指纹只在解析成功后
+     记录：失败路径下次仍要重试。`force=True`（`POST .../refresh` 的用户显式
+     刷新）绕过该门控；调度器的 `refresh_analysis_sync` 默认受门控。
+  2. **每日预算**：`config.LLM_DAILY_CALL_BUDGET`（默认 200，≤0 = 不设上限）。
+     计数发生在 `llm_provider.retry_on_content_filter` 真正 `invoke` 之前，
+     失败与风控重试同样计入；用尽后抛 `LLMBudgetExceeded`，各服务照常走
+     「暂不可用」路径，**不会编内容**。
+
+  状态落 `CACHE_DIR/llm_gate.json`（与 CacheManager 同目录，同样被 gitignore），
+  日期口径走 `timeutil.today()`。多进程各写各读，因此预算是「大致上限」而不是
+  计费系统 —— 真实账单以端点侧为准。守卫：`tests/unit/test_llm_gate.py`
+  （5 个服务的关键对：`GATE_KEY == Service._ANALYSIS_KEY`）。
 
 ---
 

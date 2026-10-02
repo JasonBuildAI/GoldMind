@@ -95,7 +95,7 @@ def test_repeated_triggers_run_the_analysis_once(db_session, monkeypatch):
     started = threading.Event()
     release = threading.Event()
 
-    def slow_task() -> None:
+    def slow_task(*, force: bool = False) -> None:
         runs.append(1)
         started.set()
         release.wait(timeout=10)
@@ -134,7 +134,7 @@ def test_key_is_released_after_the_task_finishes(db_session, monkeypatch):
     service = BearishFactorService(db_session)
     done = threading.Event()
 
-    def quick_task() -> None:
+    def quick_task(*, force: bool = False) -> None:
         done.set()
 
     monkeypatch.setattr(service, "_background_analysis_task", quick_task)
@@ -190,7 +190,7 @@ def test_scheduled_refresh_skips_when_an_analysis_is_already_running(db_session,
     service = BullishFactorService(db_session)
     calls: list[int] = []
 
-    def fake_analyze(db):
+    def fake_analyze(db, *, force: bool = False):
         calls.append(1)
         return {"bullish_factors": [], "analysis_summary": "", "last_updated": ""}
 
@@ -219,7 +219,7 @@ def test_scheduled_refresh_releases_the_key_on_success(db_session, monkeypatch):
     monkeypatch.setattr(
         service.analyzer,
         "analyze",
-        lambda db: {"bearish_factors": [], "analysis_summary": "", "last_updated": ""},
+        lambda db, *, force=False: {"bearish_factors": [], "analysis_summary": "", "last_updated": ""},
     )
 
     service.refresh_analysis_sync()

@@ -104,6 +104,14 @@ Qwen / Kimi / local Ollama / Xiaomi MiMo …) works by editing `LLM_BASE_URL` / 
 `backend/app/services/llm_provider.py`. If any of the three is missing, the feature counts as
 "not configured" and the section says so — it never falls back to built-in content.
 
+Paid calls are gated (`backend/app/services/llm_gate.py`): the prompt is hashed
+(sha256) after stripping volatile timestamps, and when the input is unchanged and
+the cached result is still present, the call is **skipped and the cache reused**.
+`POST .../refresh` is an explicit user action and bypasses the fingerprint gate.
+A daily cap (``LLM_DAILY_CALL_BUDGET``, default 200; 0 = no cap) stops runaway
+spend; once exhausted, the section honestly reports "temporarily unavailable"
+with the reason. State lives in `backend/cache/llm_gate.json` (git-ignored).
+
 > You only need to: open the page.
 > GoldMind returns: today's gold price, the dollar index, news-based bull/bear analysis and
 > strategy suggestions — plus a backtestable quantitative forecast.

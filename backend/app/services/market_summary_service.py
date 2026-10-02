@@ -12,6 +12,7 @@ from app.services.analysis_input import CAPABILITY_NOTE
 from app.services.news_service import NEWS_PROMPT_LIMIT, format_news_for_prompt
 from app.utils import timeutil
 from app.config import settings
+from app.services import llm_gate
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.institution_prediction_service import (
@@ -145,11 +146,17 @@ def sanitize_institution_claims(
 # 全局线程池
 _executor = ThreadPoolExecutor(max_workers=2)
 
+# 输入指纹门控的键：必须与 Service._ANALYSIS_KEY 一致（守卫逐对断言）。
+GATE_KEY = "market_summary"
+
+
 class MarketSummaryAnalyzer:
     """使用 LLM 分析所有市场数据，生成综合市场总结"""
 
     def __init__(self):
         self._llm = None
+        # 输入未变时跳过重算、直接复用 Service 写的同一份缓存（同 key、同 TTL）。
+        self.cache = CacheManager(GATE_KEY, ttl=AI_ANALYSIS_CACHE_TTL)
 
     @property
     def llm(self):
@@ -165,10 +172,12 @@ class MarketSummaryAnalyzer:
         bullish_factors: List[Dict],
         bearish_factors: List[Dict],
         institution_predictions: List[Dict],
-        recent_news: List[Dict] = None
+        recent_news: List[Dict] = None,
+        *,
+        force: bool = False,
     ) -> Dict[str, Any]:
         """
-        分析所有市场数据，生成综合总结
+        分析所有市场数据，生成综合总结。`force=True` 跳过输入指纹门控。
 
         Args:
             db: 数据库会话
@@ -190,6 +199,14 @@ class MarketSummaryAnalyzer:
             recent_news
         )
 
+        # 输入指纹门控（2.0.2 第 19 条）：该 prompt 全部由数据组成，
+        # 没有逐次易变的时间戳，因此 volatile 为空。
+        fingerprint = llm_gate.prompt_fingerprint(prompt)
+        if not force:
+            skipped = llm_gate.gate.skip_if_unchanged(GATE_KEY, fingerprint, self.cache)
+            if skipped is not None:
+                return skipped
+
         try:
             # 调用 LLM 进行分析
             response = retry_on_content_filter(self.llm, prompt)
@@ -197,6 +214,8 @@ class MarketSummaryAnalyzer:
 
             # 解析分析结果；提示词之外再用确定性规则兜一道机构数据诚实性
             result = self._parse_analysis_result(analysis_text, response)
+            # 只有真正调用并解析成功才记录指纹：失败路径下次仍要重试。
+            llm_gate.gate.record(GATE_KEY, fingerprint)
             return sanitize_institution_claims(result, institution_predictions)
 
         except Exception as e:
@@ -424,7 +443,8 @@ class MarketSummaryService:
                     bullish_factors or [],
                     bearish_factors or [],
                     institution_predictions or [],
-                    recent_news or []
+                    recent_news or [],
+                    force=True,
                 )
                 # 用实时价格覆盖AI生成的价格
                 result["current_price"] = realtime_price
@@ -491,7 +511,8 @@ class MarketSummaryService:
         bullish_factors: List[Dict],
         bearish_factors: List[Dict],
         institution_predictions: List[Dict],
-        recent_news: List[Dict]
+        recent_news: List[Dict],
+        force: bool = False
     ) -> None:
         """触发后台分析（不阻塞，同一服务同时只跑一个）。"""
         if not single_flight.try_begin(self._ANALYSIS_KEY):
@@ -503,7 +524,8 @@ class MarketSummaryService:
                 bullish_factors,
                 bearish_factors,
                 institution_predictions,
-                recent_news
+                recent_news,
+                force
             )
         except Exception as e:
             single_flight.end(self._ANALYSIS_KEY)
@@ -515,7 +537,8 @@ class MarketSummaryService:
         bullish_factors: List[Dict],
         bearish_factors: List[Dict],
         institution_predictions: List[Dict],
-        recent_news: List[Dict]
+        recent_news: List[Dict],
+        force: bool = False,
     ) -> None:
         """执行后台分析，结束后释放单飞占位。
 
@@ -533,7 +556,8 @@ class MarketSummaryService:
                 bullish_factors,
                 bearish_factors,
                 institution_predictions,
-                recent_news
+                recent_news,
+                force=force,
             )
             self.cache.set(result)
             logger.info("[MarketSummary] 后台分析完成，结果已缓存")

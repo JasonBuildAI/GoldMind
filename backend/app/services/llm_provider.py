@@ -28,6 +28,7 @@ import logging
 from typing import Any
 
 from app.config import settings
+from app.services import llm_gate
 
 logger = logging.getLogger(__name__)
 
@@ -303,7 +304,13 @@ def retry_on_content_filter(llm: Any, prompt: str, *, attempts: int = 2) -> Any:
     重试一次，避免把一次随机拒绝当成「分析不可用」；仍被拒时如实返回，
     由上层记日志（describe_completion 会写下 finish_reason）并显示「暂不可用」。
     """
-    response = llm.invoke(prompt)
+    def _invoke_once() -> Any:
+        """真实调用一次：先过每日预算，再计入次数（失败/被风控的尝试同样计费）。"""
+        llm_gate.gate.ensure_budget()
+        llm_gate.gate.note_call()
+        return llm.invoke(prompt)
+
+    response = _invoke_once()
     for _ in range(max(0, attempts - 1)):
         meta = getattr(response, "response_metadata", None) or {}
         if meta.get("finish_reason") != "content_filter":
@@ -311,7 +318,7 @@ def retry_on_content_filter(llm: Any, prompt: str, *, attempts: int = 2) -> Any:
         logger.warning(
             "LLM 输出被端点内容风控拦截（finish_reason=content_filter），重试一次"
         )
-        response = llm.invoke(prompt)
+        response = _invoke_once()
     return response
 
 

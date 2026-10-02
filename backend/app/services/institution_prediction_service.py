@@ -38,6 +38,7 @@ from app.config import settings
 from app.models.analysis import InstitutionView
 from app.services.ai_payload import with_last_updated
 from app.services.analysis_input import build_analysis_input, load_analysis_news
+from app.services import llm_gate
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.llm_provider import (
     describe_completion,
@@ -314,12 +315,18 @@ _INSTITUTION_KEYWORDS: Tuple[str, ...] = (
 )
 
 
+# 输入指纹门控的键：必须与 Service._ANALYSIS_KEY 一致（守卫逐对断言）。
+GATE_KEY = "institution_predictions"
+
+
 class InstitutionPredictionAnalyzer:
     """用联网搜索（优先）或新闻窗口（回退）抓取四大机构最近一次可核实预测。"""
 
     def __init__(self):
         self._llm = None
         self.web_search_service = get_web_search_service()
+        # 输入未变时跳过重算、直接复用 Service 写的同一份缓存（同 key、同 TTL）。
+        self.cache = CacheManager(GATE_KEY, ttl=AI_ANALYSIS_CACHE_TTL)
         self.prompt_template = """你是一位专业的金融市场数据分析师，专注于追踪华尔街顶级投行对黄金价格的预测。
 
 {capability_note}
@@ -458,8 +465,11 @@ class InstitutionPredictionAnalyzer:
 
         return all_news
 
-    def analyze(self, db: Session) -> Dict[str, Any]:
-        """执行分析 - 尝试联网搜索，不可用时回退新闻窗口"""
+    def analyze(self, db: Session, *, force: bool = False) -> Dict[str, Any]:
+        """执行分析 - 尝试联网搜索，不可用时回退新闻窗口。
+
+        `force=True`（用户显式刷新）跳过输入指纹门控。
+        """
         # 联网搜索获取最新机构预测（默认关闭，见 LLM_SEARCH_ENABLED）
         try:
             logger.info("[InstitutionPrediction] 尝试联网搜索机构预测...")
@@ -479,9 +489,11 @@ class InstitutionPredictionAnalyzer:
             logger.error(f"[InstitutionPrediction] 联网搜索失败: {e}")
 
         # 备用方案：使用传统方式分析
-        return self._analyze_with_traditional_llm(db)
+        return self._analyze_with_traditional_llm(db, force=force)
 
-    def _analyze_with_traditional_llm(self, db: Session) -> Dict[str, Any]:
+    def _analyze_with_traditional_llm(
+        self, db: Session, *, force: bool = False
+    ) -> Dict[str, Any]:
         """使用传统 LLM 分析（备用方案）。
 
         窗口内的新闻先经 `_select_news_for_institutions` 预选；一条都没有时
@@ -509,12 +521,20 @@ class InstitutionPredictionAnalyzer:
                 return self.get_default_predictions()
 
         # 构建prompt并调用LLM
+        current_time = timeutil.now_str()
         prompt = self.prompt_template.format(
             news_content=news_content,
             capability_note=packet.capability_note,
-            current_time=timeutil.now_str(),
+            current_time=current_time,
             lookback_days=window_days,
         )
+
+        # 输入指纹门控（2.0.2 第 19 条）：prompt 里只有 current_time 是易变的。
+        fingerprint = llm_gate.prompt_fingerprint(prompt, volatile=(current_time,))
+        if not force:
+            skipped = llm_gate.gate.skip_if_unchanged(GATE_KEY, fingerprint, self.cache)
+            if skipped is not None:
+                return skipped
 
         try:
             response = retry_on_content_filter(self.llm, prompt)
@@ -545,6 +565,8 @@ class InstitutionPredictionAnalyzer:
 
             if isinstance(result, dict):
                 result["data_source"] = "news_scan"
+            # 只有真正调用并解析成功才记录指纹：失败路径下次仍要重试。
+            llm_gate.gate.record(GATE_KEY, fingerprint)
             return result
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
@@ -711,7 +733,7 @@ class InstitutionPredictionService:
         if not use_cache:
             logger.info("[InstitutionPrediction] 强制刷新，执行实时搜索...")
             try:
-                analysis = self.analyzer.analyze(self.db)
+                analysis = self.analyzer.analyze(self.db, force=True)
                 self.analyzer.save_to_database(self.db, analysis)
                 result = self._assemble_from_database(
                     metadata={
@@ -837,30 +859,30 @@ class InstitutionPredictionService:
             "metadata": metadata,
         }
 
-    def _trigger_background_analysis(self) -> None:
+    def _trigger_background_analysis(self, *, force: bool = False) -> None:
         """触发后台分析（不阻塞，同一服务同时只跑一个）。"""
         if not single_flight.try_begin(self._ANALYSIS_KEY):
             return
         try:
-            _executor.submit(self._guarded_background_task)
+            _executor.submit(self._guarded_background_task, force)
         except Exception as e:
             single_flight.end(self._ANALYSIS_KEY)
             logger.error(f"[InstitutionPrediction] 触发后台分析失败: {e}")
 
-    def _guarded_background_task(self) -> None:
+    def _guarded_background_task(self, force: bool = False) -> None:
         """执行后台任务，结束后释放单飞占位。"""
         try:
-            self._background_analysis_task()
+            self._background_analysis_task(force=force)
         finally:
             single_flight.end(self._ANALYSIS_KEY)
 
-    def _background_analysis_task(self) -> None:
+    def _background_analysis_task(self, *, force: bool = False) -> None:
         """后台分析任务：分析 → 写库 → 从库组装 → 缓存组装后的结果。"""
         try:
             from app.database import SessionLocal
             db = SessionLocal()
             try:
-                analysis = self.analyzer.analyze(db)
+                analysis = self.analyzer.analyze(db, force=force)
                 written = self.analyzer.save_to_database(db, analysis)
                 result = self._assemble_from_database(
                     metadata={
@@ -881,11 +903,12 @@ class InstitutionPredictionService:
         except Exception as e:
             logger.error(f"[InstitutionPrediction] 后台分析失败: {e}")
 
-    def refresh_analysis_sync(self) -> Dict[str, Any]:
+    def refresh_analysis_sync(self, *, force: bool = False) -> Dict[str, Any]:
         """同步刷新分析（阻塞，仅用于定时任务）。
 
         若同服务已有分析在跑（例如启动预热触发的后台任务），直接跳过 ——
         它产出的就是同一份结果，重复执行只是多花一次 LLM 费用。
+        默认受输入指纹门控：输入没变就不重算（force=True 可绕过）。
         """
         if not single_flight.try_begin(self._ANALYSIS_KEY):
             logger.warning("[InstitutionPrediction] 已有分析在执行，跳过本次刷新")
@@ -896,7 +919,7 @@ class InstitutionPredictionService:
                 )
             return cached
         try:
-            analysis = self.analyzer.analyze(self.db)
+            analysis = self.analyzer.analyze(self.db, force=force)
             self.analyzer.save_to_database(self.db, analysis)
             result = self._assemble_from_database(
                 metadata={
@@ -911,10 +934,12 @@ class InstitutionPredictionService:
         finally:
             single_flight.end(self._ANALYSIS_KEY)
 
-    async def refresh_analysis_async(self) -> Dict[str, Any]:
-        """异步刷新分析（非阻塞）"""
+    async def refresh_analysis_async(self, *, force: bool = True) -> Dict[str, Any]:
+        """异步刷新分析 —— 用户显式刷新（POST /refresh），默认不受指纹门控限制。"""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(_executor, self.refresh_analysis_sync)
+        return await loop.run_in_executor(
+            _executor, partial(self.refresh_analysis_sync, force=force)
+        )
 
     def _get_logo(self, name: str) -> str:
         """根据机构名称获取 logo（注册表派生；认不出给 BANK）。"""

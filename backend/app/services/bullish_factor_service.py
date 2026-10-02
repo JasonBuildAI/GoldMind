@@ -14,6 +14,7 @@ from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
 from app.services.ai_payload import with_last_updated
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
+from app.services import llm_gate
 from app.services.single_flight import single_flight
 from app.services.llm_provider import (
     describe_completion,
@@ -28,12 +29,18 @@ from loguru import logger
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
+# 输入指纹门控的键：必须与 Service._ANALYSIS_KEY 一致（守卫逐对断言）。
+GATE_KEY = "bullish_factors"
+
+
 class BullishFactorAnalyzer:
     """使用联网搜索分析黄金市场看涨因子（不可用时回退数据库 / RSS）"""
     
     def __init__(self):
         self._llm = None
         self.web_search_service = get_web_search_service()
+        # 输入未变时跳过重算、直接复用 Service 写的同一份缓存（同 key、同 TTL）。
+        self.cache = CacheManager(GATE_KEY, ttl=AI_ANALYSIS_CACHE_TTL)
         self.prompt_template = """你是一位专业的黄金市场分析师，专注于分析影响黄金价格上涨的因素。
 
 {capability_note}
@@ -159,8 +166,11 @@ class BullishFactorAnalyzer:
         
         return all_news
     
-    def analyze(self, db: Session) -> Dict[str, Any]:
-        """执行分析 - 尝试联网搜索，不可用时回退数据库 / RSS"""
+    def analyze(self, db: Session, *, force: bool = False) -> Dict[str, Any]:
+        """执行分析 - 尝试联网搜索，不可用时回退数据库 / RSS。
+
+        `force=True`（用户显式刷新）跳过输入指纹门控。
+        """
         # 联网搜索获取最新看涨因素（默认关闭，见 LLM_SEARCH_ENABLED）
         try:
             logger.info("[BullishFactor] 尝试联网搜索看涨因素...")
@@ -183,7 +193,7 @@ class BullishFactorAnalyzer:
             logger.error(f"[BullishFactor] 联网搜索失败: {e}")
         
         # 备用方案：使用传统方式分析
-        return self._analyze_with_traditional_llm(db)
+        return self._analyze_with_traditional_llm(db, force=force)
     
     def _search_bullish_factors(self) -> Dict[str, Any]:
         """使用联网搜索查找看涨因素"""
@@ -238,7 +248,9 @@ class BullishFactorAnalyzer:
             }
         return result
     
-    def _analyze_with_traditional_llm(self, db: Session) -> Dict[str, Any]:
+    def _analyze_with_traditional_llm(
+        self, db: Session, *, force: bool = False
+    ) -> Dict[str, Any]:
         """使用传统LLM分析（备用方案）"""
         # 1. 组装共享分析输入包（新闻 + 价格上下文 + 能力声明）
         #
@@ -282,7 +294,15 @@ class BullishFactorAnalyzer:
             capability_note=packet.capability_note,
             current_time=current_time
         )
-        
+
+        # 输入指纹门控（2.0.2 第 19 条）：prompt 里唯一每次都会变的是 current_time，
+        # 明确声明为 volatile；新闻 / 价格 / 窗口一变指纹就变，不会误跳。
+        fingerprint = llm_gate.prompt_fingerprint(prompt, volatile=(current_time,))
+        if not force:
+            skipped = llm_gate.gate.skip_if_unchanged(GATE_KEY, fingerprint, self.cache)
+            if skipped is not None:
+                return skipped
+
         # 4. 调用LLM
         try:
             response = retry_on_content_filter(self.llm, prompt)
@@ -316,6 +336,8 @@ class BullishFactorAnalyzer:
             )
             if dropped:
                 logger.warning(f"[BullishFactor] 输出校验丢弃 {len(dropped)} 条: {dropped}")
+            # 只有真正调用并解析成功才记录指纹：失败路径下次仍要重试。
+            llm_gate.gate.record(GATE_KEY, fingerprint)
             return result
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
@@ -405,7 +427,7 @@ class BullishFactorService:
         if not use_cache:
             logger.info("[BullishFactor] 强制刷新，执行实时搜索...")
             try:
-                result = self.analyzer.analyze(self.db)
+                result = self.analyzer.analyze(self.db, force=True)
                 self.analyzer.save_to_database(self.db, result)
                 self.cache.set(result)
                 result["metadata"] = {
@@ -464,7 +486,7 @@ class BullishFactorService:
     # 单飞去重用的键：同一服务同时只允许一个后台分析在跑
     _ANALYSIS_KEY = "bullish_factors"
 
-    def _trigger_background_analysis(self) -> None:
+    def _trigger_background_analysis(self, *, force: bool = False) -> None:
         """触发后台分析（不阻塞，同一服务同时只跑一个）。
 
         原实现每次触发都往线程池塞一个任务：N 个并发请求会把同一次分析重复执行
@@ -473,27 +495,27 @@ class BullishFactorService:
         if not single_flight.try_begin(self._ANALYSIS_KEY):
             return
         try:
-            _executor.submit(self._guarded_background_task)
+            _executor.submit(self._guarded_background_task, force)
         except Exception as e:
             single_flight.end(self._ANALYSIS_KEY)
             logger.error(f"[BullishFactor] 触发后台分析失败: {e}")
 
-    def _guarded_background_task(self) -> None:
+    def _guarded_background_task(self, force: bool = False) -> None:
         """执行后台任务，结束后释放单飞占位。"""
         try:
-            self._background_analysis_task()
+            self._background_analysis_task(force=force)
         finally:
             single_flight.end(self._ANALYSIS_KEY)
 
 
-    def _background_analysis_task(self) -> None:
+    def _background_analysis_task(self, *, force: bool = False) -> None:
         """后台分析任务"""
         try:
             # 创建新的数据库会话
             from app.database import SessionLocal
             db = SessionLocal()
             try:
-                result = self.analyzer.analyze(db)
+                result = self.analyzer.analyze(db, force=force)
                 self.analyzer.save_to_database(db, result)
                 # 更新缓存
                 self.cache.set(result)
@@ -503,45 +525,42 @@ class BullishFactorService:
         except Exception as e:
             logger.error(f"[BullishFactor] 后台分析失败: {e}")
 
-    async def refresh_analysis_async(self) -> Dict[str, Any]:
-        """
-        异步刷新分析 - 用于强制刷新场景
-
-        使用线程池执行AI分析，不阻塞主线程
-        """
+    async def refresh_analysis_async(self, *, force: bool = True) -> Dict[str, Any]:
+        """异步刷新分析 —— 用户显式刷新（POST /refresh），默认不受指纹门控限制。"""
         loop = asyncio.get_event_loop()
 
         # 在线程池中执行分析
         result = await loop.run_in_executor(
             _executor,
-            partial(self._analyze_with_new_db)
+            partial(self._analyze_with_new_db, force=force)
         )
 
         return result
 
-    def _analyze_with_new_db(self) -> Dict[str, Any]:
+    def _analyze_with_new_db(self, *, force: bool = True) -> Dict[str, Any]:
         """使用新数据库会话执行分析"""
         from app.database import SessionLocal
         db = SessionLocal()
         try:
-            result = self.analyzer.analyze(db)
+            result = self.analyzer.analyze(db, force=force)
             self.analyzer.save_to_database(db, result)
             self.cache.set(result)
             return result
         finally:
             db.close()
 
-    def refresh_analysis_sync(self) -> Dict[str, Any]:
+    def refresh_analysis_sync(self, *, force: bool = False) -> Dict[str, Any]:
         """同步刷新分析（阻塞，仅用于定时任务）。
 
         若同服务已有分析在跑（例如启动预热触发的后台任务），直接跳过 ——
         它产出的就是同一份结果，重复执行只是多花一次 LLM 费用。
+        默认受输入指纹门控：输入没变就不重算（force=True 可绕过）。
         """
         if not single_flight.try_begin(self._ANALYSIS_KEY):
             logger.warning("[BullishFactor] 已有分析在执行，跳过本次刷新")
             return self.cache.get() or {}
         try:
-            result = self.analyzer.analyze(self.db)
+            result = self.analyzer.analyze(self.db, force=force)
             self.analyzer.save_to_database(self.db, result)
             self.cache.set(result)
             return result

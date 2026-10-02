@@ -10,6 +10,7 @@ from app.services.analysis_input import CAPABILITY_NOTE, load_analysis_news
 from app.utils import timeutil
 from app.models.gold_price import GoldPrice
 from app.config import settings
+from app.services import llm_gate
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.institution_prediction_service import usable_institution_predictions
@@ -28,11 +29,17 @@ logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=2)
 
 
+# 输入指纹门控的键：必须与 Service._ANALYSIS_KEY 一致（守卫逐对断言）。
+GATE_KEY = "investment_advice"
+
+
 class InvestmentAdviceAnalyzer:
     """使用LangChain Agent分析市场数据，生成个性化投资建议"""
 
     def __init__(self):
         self._llm = None
+        # 输入未变时跳过重算、直接复用 Service 写的同一份缓存（同 key、同 TTL）。
+        self.cache = CacheManager(GATE_KEY, ttl=AI_ANALYSIS_CACHE_TTL)
 
     @property
     def llm(self):
@@ -157,9 +164,14 @@ class InvestmentAdviceAnalyzer:
         market_status: str,
         bullish_factors: List[Dict],
         bearish_factors: List[Dict],
-        institution_predictions: List[Dict]
+        institution_predictions: List[Dict],
+        *,
+        force: bool = False,
     ) -> Dict[str, Any]:
-        """分析市场数据并生成投资建议"""
+        """分析市场数据并生成投资建议。
+
+        `force=True`（用户显式刷新）跳过输入指纹门控。
+        """
         try:
             recent_news = self._fetch_recent_news(db)
             window = self._fetch_window_data(db)
@@ -332,6 +344,16 @@ class InvestmentAdviceAnalyzer:
 4. 止盈 / 止损同理：给不出可靠依据时如实说明，不得编造
 5. 风险提示要充分且具体"""
             
+            # 输入指纹门控（2.0.2 第 19 条）：该 prompt 全部由数据组成，
+            # 没有逐次易变的时间戳，因此 volatile 为空。
+            fingerprint = llm_gate.prompt_fingerprint(prompt_template)
+            if not force:
+                skipped = llm_gate.gate.skip_if_unchanged(
+                    GATE_KEY, fingerprint, self.cache
+                )
+                if skipped is not None:
+                    return skipped
+
             response = retry_on_content_filter(self.llm, prompt_template)
             
             try:
@@ -344,6 +366,8 @@ class InvestmentAdviceAnalyzer:
                     json_str = content.strip()
                 
                 result = json.loads(json_str)
+                # 只有真正调用并解析成功才记录指纹：失败路径下次仍要重试。
+                llm_gate.gate.record(GATE_KEY, fingerprint)
                 return result
                 
             except json.JSONDecodeError as e:
@@ -454,7 +478,8 @@ class InvestmentAdviceService:
                     market_status,
                     bullish_factors or [],
                     bearish_factors or [],
-                    institution_predictions or []
+                    institution_predictions or [],
+                    force=True,
                 )
                 self.cache.set(result)
                 result["metadata"] = self._build_metadata(
@@ -510,7 +535,8 @@ class InvestmentAdviceService:
         market_status: str,
         bullish_factors: List[Dict],
         bearish_factors: List[Dict],
-        institution_predictions: List[Dict]
+        institution_predictions: List[Dict],
+        force: bool = False
     ) -> None:
         """触发后台分析（不阻塞，同一服务同时只跑一个）。"""
         if not single_flight.try_begin(self._ANALYSIS_KEY):
@@ -521,7 +547,8 @@ class InvestmentAdviceService:
                 market_status,
                 bullish_factors,
                 bearish_factors,
-                institution_predictions
+                institution_predictions,
+                force
             )
         except Exception as e:
             single_flight.end(self._ANALYSIS_KEY)
@@ -540,7 +567,8 @@ class InvestmentAdviceService:
         market_status: str,
         bullish_factors: List[Dict],
         bearish_factors: List[Dict],
-        institution_predictions: List[Dict]
+        institution_predictions: List[Dict],
+        force: bool = False
     ) -> None:
         """后台分析任务"""
         try:
@@ -552,7 +580,8 @@ class InvestmentAdviceService:
                     market_status,
                     bullish_factors,
                     bearish_factors,
-                    institution_predictions
+                    institution_predictions,
+                    force=force,
                 )
                 # 更新文件缓存
                 self.cache.set(result)
@@ -567,12 +596,15 @@ class InvestmentAdviceService:
         market_status: str = "",
         bullish_factors: List[Dict] = None,
         bearish_factors: List[Dict] = None,
-        institution_predictions: List[Dict] = None
+        institution_predictions: List[Dict] = None,
+        *,
+        force: bool = False
     ) -> Dict[str, Any]:
         """同步刷新分析（阻塞，仅用于定时任务）。
 
         若同服务已有分析在跑（例如启动预热触发的后台任务），直接跳过 ——
         它产出的就是同一份结果，重复执行只是多花一次 LLM 费用。
+        默认受输入指纹门控：输入没变就不重算（force=True 可绕过）。
         """
         if not single_flight.try_begin(self._ANALYSIS_KEY):
             logger.warning("[InvestmentAdvice] 已有分析在执行，跳过本次刷新")
@@ -583,7 +615,8 @@ class InvestmentAdviceService:
                 market_status,
                 bullish_factors or [],
                 bearish_factors or [],
-                institution_predictions or []
+                institution_predictions or [],
+                force=force,
             )
             self.cache.set(result)
             return result
@@ -595,13 +628,15 @@ class InvestmentAdviceService:
         market_status: str = "",
         bullish_factors: List[Dict] = None,
         bearish_factors: List[Dict] = None,
-        institution_predictions: List[Dict] = None
+        institution_predictions: List[Dict] = None,
+        *,
+        force: bool = True
     ) -> Dict[str, Any]:
-        """异步刷新分析（非阻塞）"""
+        """异步刷新分析 —— 用户显式刷新（POST /refresh），默认不受指纹门控限制。"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             _executor,
-            self.refresh_analysis_sync,
+            partial(self.refresh_analysis_sync, force=force),
             market_status,
             bullish_factors,
             bearish_factors,
