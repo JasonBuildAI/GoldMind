@@ -338,13 +338,41 @@ def test_an_empty_cached_result_does_not_shadow_the_database(db_session):
 
 
 @pytest.mark.integration
-def test_fresh_prediction_uses_the_llm_summary(db_session):
+def test_summary_is_rebuilt_from_structured_rows_not_the_model(db_session):
+    """回归：汇总不得与结构化行矛盾（实测缓存里「瑞银看涨」而 UBS 行是 neutral）。
+
+    摘要只能由行确定性拼装 —— 输出里只有计数，没有任何方向判断。
+    """
     _seed_view(db_session, CANONICAL_NAMES[0], price=5400.0, as_of=timeutil.today(), source="news_scan")
     service = InstitutionPredictionService(db_session)
 
-    result = service._assemble_from_database(metadata={}, llm_summary="模型给出的汇总")
+    result = service._assemble_from_database(metadata={})
 
-    assert result["analysis_summary"] == "模型给出的汇总"
+    summary = result["analysis_summary"]
+    assert "最近 30 天" in summary
+    assert "最近 30 天内有 1 家机构的目标价可核实" in summary
+    assert "1 家" in summary
+    assert "看涨" not in summary and "看跌" not in summary
+
+
+@pytest.mark.integration
+def test_cached_llm_summary_is_replaced_by_the_structured_rebuild(db_session):
+    """File 缓存里可能还留着「模型概括」时代的旧摘要；读缓存时也要按行重算。"""
+    service = InstitutionPredictionService(db_session)
+    service.cache.set(
+        {
+            "institutions": [
+                {"name": CANONICAL_NAMES[1], "rating": "neutral", "target_price": 5000.0, "stale_days": 3},
+            ],
+            "analysis_summary": "瑞银看涨，目标价上调",
+            "last_updated": "2026-10-02 06:00:00",
+        }
+    )
+
+    result = service.get_institution_predictions()
+
+    assert "瑞银看涨" not in (result["analysis_summary"] or "")
+    assert "1 家" in result["analysis_summary"]
 
 
 @pytest.mark.integration

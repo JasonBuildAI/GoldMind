@@ -249,6 +249,38 @@ def _has_real_prices(payload: Optional[Dict[str, Any]]) -> bool:
     return False
 
 
+def build_summary_from_institutions(
+    institutions: List[Dict[str, Any]], window_days: int
+) -> str:
+    """由结构化行**确定性**拼装「一句话汇总」，只陈述可核实的计数。
+
+    为什么不让模型来写：2026-10-02 的缓存实测里，LLM 汇总说「瑞银看涨」，
+    而同一家 UBS 的结构化记录是 neutral —— 文字与表格互相矛盾，用户无从
+    分辨。模型概括不再进入响应；这里只输出「多少家有目标价、多少条在窗口内」。
+    """
+    priced = [item for item in institutions if item.get("target_price") is not None]
+    if not priced:
+        return (
+            f"最近 {window_days} 天内没有找到任何可核实的机构目标价；"
+            "本表只显示四家机构的跟踪状态，没有数字可展示。"
+        )
+
+    fresh = [
+        item
+        for item in priced
+        if item.get("stale_days") is not None and item["stale_days"] <= window_days
+    ]
+    if fresh:
+        return (
+            f"最近 {window_days} 天内有 {len(fresh)} 家机构的目标价可核实；"
+            f"下表共 {len(priced)} 家有可核实记录（含日期）。"
+        )
+    return (
+        f"最近 {window_days} 天新闻中未出现新的机构目标价；"
+        f"下表共 {len(priced)} 家有可核实记录（含日期）。"
+    )
+
+
 # 命中这些关键词的「较早新闻」会被追加进预选（机构名 / 目标价语义）。
 _INSTITUTION_KEYWORDS: Tuple[str, ...] = (
     "高盛", "瑞银", "摩根士丹利", "花旗",
@@ -658,7 +690,7 @@ class InstitutionPredictionService:
             logger.info("[InstitutionPrediction] 强制刷新，执行实时搜索...")
             try:
                 analysis = self.analyzer.analyze(self.db)
-                written = self.analyzer.save_to_database(self.db, analysis)
+                self.analyzer.save_to_database(self.db, analysis)
                 result = self._assemble_from_database(
                     metadata={
                         "cached": False,
@@ -666,7 +698,6 @@ class InstitutionPredictionService:
                         "generated_at": timeutil.now_iso(),
                         "message": "已重新扫描新闻窗口；空目标价不会覆盖已有真实预测",
                     },
-                    llm_summary=analysis.get("analysis_summary") if written else None,
                 )
                 if _has_real_prices(result):
                     self.cache.set(result)
@@ -678,6 +709,11 @@ class InstitutionPredictionService:
         # 1. 首先尝试文件缓存（最快，支持多进程共享）
         cached_data = self.cache.get()
         if _has_real_prices(cached_data):
+            # 缓存里可能还留着「模型概括」时代的旧摘要；结构化行就在缓存里，
+            # 直接按同一套确定性规则重算，保证文字与表格永不矛盾。
+            cached_data["analysis_summary"] = build_summary_from_institutions(
+                cached_data.get("institutions") or [], self.analyzer.lookback_days
+            )
             cached_data["metadata"] = {
                 "cached": True,
                 "cache_source": "file",
@@ -716,14 +752,15 @@ class InstitutionPredictionService:
     def _assemble_from_database(
         self,
         metadata: Dict[str, Any],
-        llm_summary: Optional[str] = None,
         db: Optional[Session] = None,
     ) -> Dict[str, Any]:
         """按机构注册表顺序，从四家规范行组装响应。
 
         - 只读规范行：历史遗留的别名行（`Goldman Sachs` 这类）忽略；
         - `stale_days` 在这里用 timeutil 计算（红线 5：时间只走一个时区）；
-        - 窗口内没有新记录时，摘要由服务端确定性地生成，不让模型编「刚刚更新」。
+        - **汇总始终由结构化行确定性拼装**，不采用 LLM 概括 ——
+          模型文字可能与本表矛盾（实测缓存「瑞银看涨」而 UBS 行是 neutral），
+          用户无从分辨，宁可只陈述可核实的事实。
         """
         session = db or self.db
         window_days = self.analyzer.lookback_days
@@ -735,8 +772,6 @@ class InstitutionPredictionService:
         by_name = {row.institution_name: row for row in rows}
 
         institutions: List[Dict[str, Any]] = []
-        has_any_price = False
-        has_fresh = False
 
         for inst in INSTITUTIONS:
             row = by_name.get(inst.name)
@@ -746,10 +781,6 @@ class InstitutionPredictionService:
             stale_days: Optional[int] = None
             if row.as_of_date is not None:
                 stale_days = max(0, (today - row.as_of_date).days)
-                if row.target_price is not None:
-                    has_any_price = True
-                    if stale_days <= window_days:
-                        has_fresh = True
 
             institutions.append(
                 {
@@ -774,25 +805,9 @@ class InstitutionPredictionService:
                 "metadata": metadata,
             }
 
-        if not has_any_price:
-            summary = (
-                f"最近 {window_days} 天内没有找到任何可核实的机构目标价；"
-                "本表只显示四家机构的跟踪状态，没有数字可展示。"
-            )
-        elif has_fresh:
-            summary = (llm_summary or "").strip() or (
-                f"最近 {window_days} 天内出现了新的机构目标价；"
-                "下表为各机构最近一次可核实的记录（含日期）。"
-            )
-        else:
-            summary = (
-                f"最近 {window_days} 天新闻中未出现新的机构目标价；"
-                "下表为各机构最近一次可核实的记录（含日期）。"
-            )
-
         return {
             "institutions": institutions,
-            "analysis_summary": summary,
+            "analysis_summary": build_summary_from_institutions(institutions, window_days),
             # 用项目时区的当前时间，而不是 `updated_at` ——
             # 那一列是数据库的 `func.now()`（库服务器时间）生成的，
             # 容器里通常是 UTC，展示给用户会差 8 小时（红线 5）。
@@ -831,7 +846,6 @@ class InstitutionPredictionService:
                         "cache_source": "database",
                         "generated_at": timeutil.now_iso(),
                     },
-                    llm_summary=analysis.get("analysis_summary") if written else None,
                     db=db,
                 )
                 if _has_real_prices(result):
@@ -853,17 +867,21 @@ class InstitutionPredictionService:
         """
         if not single_flight.try_begin(self._ANALYSIS_KEY):
             logger.warning("[InstitutionPrediction] 已有分析在执行，跳过本次刷新")
-            return self.cache.get() or {}
+            cached = self.cache.get() or {}
+            if cached.get("institutions"):
+                cached["analysis_summary"] = build_summary_from_institutions(
+                    cached["institutions"], self.analyzer.lookback_days
+                )
+            return cached
         try:
             analysis = self.analyzer.analyze(self.db)
-            written = self.analyzer.save_to_database(self.db, analysis)
+            self.analyzer.save_to_database(self.db, analysis)
             result = self._assemble_from_database(
                 metadata={
                     "cached": True,
                     "cache_source": "database",
                     "generated_at": timeutil.now_iso(),
                 },
-                llm_summary=analysis.get("analysis_summary") if written else None,
             )
             if _has_real_prices(result):
                 self.cache.set(result)
