@@ -18,6 +18,11 @@ RULE_OTHER_SCALE_TOLERANCE = -0.02  # 其它尺度不恶化 ≤2pp
 RULE_2_BRIER_P = 0.05               # Brier 技能分显著为正（HAC DM 单尾）
 INTERVAL_NOMINAL = 0.80             # 名义覆盖率
 MIN_PASSING_SCALES = 3              # ≥3/5 尺度成立
+# 一个尺度的「可判定性」下限：重叠样本折算后的独立下注次数低于此数，就不许把
+# 「未过线」当成结论 —— 这是**报告口径**，不是入选规则：①/② 的常量一字不动。
+# 依据：250 日留出期 506 个重叠样本 = 2 次独立下注，覆盖率 24.1% 的 CI 是 [4%, 45%]
+# （docs/specs/2026-10-02-量化引擎第二轮预注册.md 一、为什么目标定义必须换）。
+MIN_EFFECTIVE_SAMPLES = 20
 
 
 def finite(value) -> Optional[float]:
@@ -42,10 +47,26 @@ class RuleInput:
     brier_skill_p_value: Optional[float] = None
     coverage_80: Optional[float] = None
     baseline_coverage_80: Optional[float] = None
+    effective_sample_size: Optional[float] = None
 
 
 def rule_flags(data: RuleInput) -> dict:
-    """逐尺度判定 ① / ②（细则见 spec 6.1）。"""
+    """逐尺度判定 ① / ②（细则见 spec 6.1），并给出该尺度**可不可判定**。
+
+    `status` 取 `insufficient` / `pass` / `fail`：独立下注次数不足时既不说「过线」
+    也不说「未过线」—— 一个 2 个观测撑起来的命中率没有资格被当成证据。
+    """
+    count = finite(data.effective_sample_size)
+    if count is not None and count < MIN_EFFECTIVE_SAMPLES:
+        return {
+            "rule_1": False,
+            "rule_2": False,
+            "pass": False,
+            "sufficient": False,
+            "status": "insufficient",
+            "effective_sample_size": count,
+        }
+
     ci_low = finite(data.accuracy_ci_low)
     up = finite(data.baseline_up)
     rule_1 = ci_low is not None and up is not None and ci_low > up
@@ -65,7 +86,15 @@ def rule_flags(data: RuleInput) -> dict:
         skill is not None and skill > 0 and skill_p is not None and skill_p < RULE_2_BRIER_P
     )
     rule_2 = not_worse and skill_significant and closer_to_80
-    return {"rule_1": bool(rule_1), "rule_2": bool(rule_2), "pass": bool(rule_1 or rule_2)}
+    passed = bool(rule_1 or rule_2)
+    return {
+        "rule_1": bool(rule_1),
+        "rule_2": bool(rule_2),
+        "pass": passed,
+        "sufficient": True,
+        "status": "pass" if passed else "fail",
+        "effective_sample_size": count,
+    }
 
 
 def rule_input(evaluation, baseline) -> RuleInput:
@@ -81,6 +110,7 @@ def rule_input(evaluation, baseline) -> RuleInput:
         brier_skill_p_value=candidate_metrics.get("brier_skill_p_value"),
         coverage_80=candidate_metrics.get("interval_coverage_80"),
         baseline_coverage_80=baseline_metrics.get("interval_coverage_80"),
+        effective_sample_size=candidate_metrics.get("effective_sample_size"),
     )
 
 

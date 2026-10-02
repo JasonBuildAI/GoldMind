@@ -155,3 +155,37 @@ def test_factor_dashboard_reports_staleness(db_session, seed_quant_panel):
     assert state["status"] == "stale"
     assert state["contribution"] is None
     assert dashboard["available_factors"] < dashboard["total_factors"]
+
+def test_research_verdict_separates_undecidable_scales_from_failures():
+    """结论句子必须说清哪个尺度「没被判定」，哪个尺度真的不及格。"""
+
+    def payload(horizon: int, accuracy: float, up: float, coverage: float, n_eff: float) -> dict:
+        return {
+            "horizon_days": horizon,
+            "periods": {
+                "holdout": {
+                    "accuracy": accuracy,
+                    "baseline_up_accuracy": up,
+                    "accuracy_diff_vs_up": accuracy - up,
+                    "interval_coverage_80": coverage,
+                    "effective_sample_size": n_eff,
+                }
+            },
+        }
+
+    verdict = service._research_verdict(
+        [],
+        [
+            payload(1, 0.563, 0.563, 0.789, 753.0),
+            payload(250, 1.0, 1.0, 0.241, 2.0),
+        ],
+    )
+
+    assert verdict["status"] == "no_edge"
+    assert "不可判定" in verdict["detail"]
+    assert "250 日" in verdict["detail"]
+    assert "保留 quant-v4" in verdict["detail"]
+    # 可判定的尺度不许被顺带标成不可判定
+    assert "1 日命中" in verdict["detail"]
+    assert "仅约 753" not in verdict["detail"]
+

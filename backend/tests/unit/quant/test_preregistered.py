@@ -67,7 +67,15 @@ def test_missing_or_non_finite_numbers_never_pass():
         )
     )
 
-    assert flags == {"rule_1": False, "rule_2": False, "pass": False}
+    assert flags == {
+        "rule_1": False,
+        "rule_2": False,
+        "pass": False,
+        # 没有独立下注次数这个数，就不许反过来宣称「样本不足」：按可判定走既有规则
+        "sufficient": True,
+        "status": "fail",
+        "effective_sample_size": None,
+    }
 
 
 def test_selected_follows_the_three_scale_or_target_rule():
@@ -121,3 +129,42 @@ def test_rule_input_reads_the_holdout_evaluation_contract():
         coverage_80=0.81,
         baseline_coverage_80=0.81,
     )
+
+def test_a_scale_with_too_few_independent_bets_is_undecidable_not_failed():
+    """独立下注次数不足 → status=insufficient，且不许说成「未过线」。
+
+    留出期的 250 日尺度就是这种情形：506 个重叠样本折算下来只有 2 次下注，
+    而「永远看多」= 100%，规则 ① 结构上不可能满足、规则 ② 的 Brier 基准差为 0 也无定义。
+    把这些读成「模型不及格」就是把噪声当证据。
+
+    变异验证：把 ``MIN_EFFECTIVE_SAMPLES`` 改成 0（等于取消这道闸）本测试必红；
+    把折算次数与阈值比反（``>`` 写成 ``<``）也必红。
+    """
+    passing = preregistered.RuleInput(
+        accuracy_ci_low=0.70,
+        baseline_up=0.60,
+        accuracy_diff_vs_up=0.10,
+        coverage_80=0.80,
+        baseline_coverage_80=0.70,
+        effective_sample_size=float(preregistered.MIN_EFFECTIVE_SAMPLES),
+    )
+    assert preregistered.rule_flags(passing)["status"] == "pass"
+
+    thin = preregistered.RuleInput(
+        accuracy_ci_low=0.70,
+        baseline_up=0.60,
+        accuracy_diff_vs_up=0.10,
+        coverage_80=0.80,
+        baseline_coverage_80=0.70,
+        effective_sample_size=2.0,
+    )
+    flags = preregistered.rule_flags(thin)
+    assert flags["status"] == "insufficient"
+    assert flags["sufficient"] is False
+    assert flags["pass"] is False
+    assert flags["rule_1"] is False and flags["rule_2"] is False
+    assert flags["effective_sample_size"] == 2.0
+
+    # 没有这个数字时不臆断：按可判定处理，交给「缺数即不成立」那套既有规则
+    assert preregistered.rule_flags(passing)["sufficient"] is True
+

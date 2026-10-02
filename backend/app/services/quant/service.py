@@ -359,8 +359,7 @@ def _build_research_payload(db: Session) -> dict:
                     name: _research_period(name, evaluation)
                     for name, evaluation in periods.items()
                 },
-                "reliability_bins": _research_bins(
-                    (periods["full"].metrics or {}).get("reliability_bins")
+                "reliability_bins": _research_bins(                    (periods["full"].metrics or {}).get("reliability_bins")
                 ),
                 "factors": _research_factors(periods["full"]),
             }
@@ -476,6 +475,7 @@ def _research_verdict(passed_scales: list[int], horizons_payload: list[dict]) ->
         accuracy = holdout["accuracy"]
         up = holdout["baseline_up_accuracy"]
         coverage = holdout["interval_coverage_80"]
+        count = holdout["effective_sample_size"]
         if accuracy is None or up is None:
             details.append(f"{item['horizon_days']} 日：样本不足")
             continue
@@ -485,13 +485,30 @@ def _research_verdict(passed_scales: list[int], horizons_payload: list[dict]) ->
         )
         if coverage is not None:
             piece += f"，区间覆盖 {coverage * 100:.1f}%（名义 80%）"
+        # 独立下注次数不足时，这个尺度「没被判定」，不是「被判了不及格」
+        if count is not None and count < preregistered.MIN_EFFECTIVE_SAMPLES:
+            piece += f"，仅约 {count:g} 次独立下注 → 不可判定"
+        else:
+            piece += f"（独立下注约 {count:g} 次）" if count is not None else ""
         details.append(piece)
+    undecidable = [
+        item["horizon_days"]
+        for item in horizons_payload
+        if (item["periods"]["holdout"].get("effective_sample_size") or 0)
+        < preregistered.MIN_EFFECTIVE_SAMPLES
+    ]
     return {
         "status": "no_edge",
         "label": "无统计优势",
         "detail": (
             f"留出期（{HOLDOUT_START.isoformat()} 起）没有尺度满足预注册规则 ①/②："
             + "；".join(details)
+            + (
+                f"。其中 {('、'.join(str(h) for h in undecidable))} 日的样本量不足以判定，"
+                "不计入「未过线」的证据"
+                if undecidable
+                else ""
+            )
             + "。按预注册规则保留 quant-v4，不换模型。"
         ),
     }
