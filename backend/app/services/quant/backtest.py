@@ -343,6 +343,24 @@ def _evaluate(
     width = frame["upper_return"][mask] - frame["lower_return"][mask]
     sharpness_80 = float(width.mean()) if int(width.notna().sum()) >= MIN_EVALUATION_SAMPLES else None
 
+    # 分布级评分：Brier 只看涨/跌二分类，CRPS 评整张分布对实现收益的匹配。
+    # 基准是同一张分布、均值换成 0 的「零漂移」版本（与 magnitude_skill_vs_flat
+    # 同一个对照）；技能分 > 0 表示 μ 的漂移信号真的改善了整张分布。
+    crps = frame["crps"][mask]
+    crps_flat = frame["crps_flat"][mask]
+    crps_usable = crps.notna() & crps_flat.notna()
+    crps_samples = int(crps_usable.sum())
+    if crps_samples >= MIN_EVALUATION_SAMPLES:
+        mean_crps = float(crps[crps_usable].mean())
+        mean_crps_flat = float(crps_flat[crps_usable].mean())
+        crps_skill_vs_flat = (
+            1.0 - mean_crps / mean_crps_flat if mean_crps_flat > 0.0 else None
+        )
+    else:
+        mean_crps = None
+        mean_crps_flat = None
+        crps_skill_vs_flat = None
+
     # 分布口径的构成：区间与概率是不是真的来自经验分布（还是样本不足退回正态）
     modes = frame["distribution_mode"][mask]
     usable_modes = int(modes.notna().sum())
@@ -367,6 +385,11 @@ def _evaluate(
         "magnitude_mape": magnitude_mape,
         "magnitude_skill_vs_flat": magnitude_skill_vs_flat,
         "interval_sharpness_80": sharpness_80,
+        # 分布级评分：Brier 只看涨/跌二分类，CRPS 评整张分布对实现收益的匹配
+        "mean_crps": mean_crps,
+        "mean_crps_flat": mean_crps_flat,
+        "crps_skill_vs_flat": crps_skill_vs_flat,
+        "crps_samples": crps_samples,
         # 整体覆盖率对不代表校准对：分档才看得出没跟着风险走的那一段（见 helper 文档）
         "interval_coverage_by_vol_regime": coverage_by_vol_regime(
             horizon, close, forward[mask], frame["lower_return"][mask], frame["upper_return"][mask]

@@ -727,6 +727,9 @@ export interface ResearchPeriod {
   brier_score: number | null
   brier_skill_score: number | null
   brier_skill_p_value: number | null
+  /** 分布级评分：Brier 只看涨/跌，CRPS 评整张分布对实现收益的匹配 */
+  mean_crps: number | null
+  crps_skill_vs_flat: number | null
   accuracy_diff_vs_up: number | null
   accuracy_ci95: number[] | null
   p_value_vs_up: number | null

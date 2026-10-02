@@ -458,7 +458,9 @@ alone scores 56–100%. At 20 days and beyond the model matches it day by day (+
 and 1 week it does worse** (−1.7pp / −1.2pp) — on short horizons it does call down moves, and in
 this rally a down call is simply wrong. Its Brier skill score is negative
 (−0.006 / −0.029 / −0.096 / −0.388); at 1 year the base rate is 100%, so the constant forecast has
-zero loss and the skill score is **undefined** — no number is printed there. **That record proves
+zero loss and the skill score is **undefined** — no number is printed there. A
+distribution-level CRPS is reported alongside with its own skill score against the zero-drift
+benchmark (Brier scores up/down, CRPS scores how well the whole distribution matches). **That record proves
 neither an edge nor its absence — it only proves the historical holdout has been seen.** Hence 2.0.1 moves the
 judging window forward, and coverage gaps are audited by volatility bucket (thresholds from the
 expanding past distribution only, independent bets inside each bucket, counts reported when

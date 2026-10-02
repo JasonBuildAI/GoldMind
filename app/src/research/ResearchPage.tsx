@@ -48,7 +48,8 @@ function SkillTable({ horizons }: { horizons: HorizonResearch[] }) {
           命中率 = 方向命中；「差」= 留出期命中率 − 永远看多；Brier 技能分要在 HAC
           DM 单尾 p &lt; 0.05 下为正才算显著。这一列的「留出期」是**历史**留出期
           （已被前两轮裁决看过，只作记录）；裁决窗口的成绩见上一节。样本不足的格子
-          显示「—」，鼠标悬停给出原因。
+          显示「—」，鼠标悬停给出原因。CRPS 技能分是整张分布（不只涨/跌方向）相对
+          「零漂移」基准的改进，&gt; 0 才算给幅度信息加了分。
         </caption>
         <thead>
           <tr>
@@ -70,6 +71,9 @@ function SkillTable({ horizons }: { horizons: HorizonResearch[] }) {
             </th>
             <th scope="col" className="num">
               Brier 技能
+            </th>
+            <th scope="col" className="num">
+              CRPS 技能
             </th>
             <th scope="col" className="num">
               覆盖率（历史留出）
@@ -98,6 +102,7 @@ function SkillTable({ horizons }: { horizons: HorizonResearch[] }) {
                 </td>
                 <td className="num">{num(holdout?.p_value_vs_up)}</td>
                 <td className="num">{num(holdout?.brier_skill_score)}</td>
+                <td className="num">{num(holdout?.crps_skill_vs_flat)}</td>
                 <td className="num">{pct(holdout?.interval_coverage_80)}</td>
               </tr>
             )
@@ -204,6 +209,9 @@ function PeriodDetail({ horizon }: { horizon: HorizonResearch }) {
               Brier
             </th>
             <th scope="col" className="num">
+              CRPS
+            </th>
+            <th scope="col" className="num">
               覆盖率
             </th>
             <th scope="col" className="num">
@@ -238,6 +246,7 @@ function PeriodDetail({ horizon }: { horizon: HorizonResearch }) {
               <td className="num">{pct(period.baseline_up_accuracy)}</td>
               <td className="num">{pct(period.baseline_momentum_accuracy)}</td>
               <td className="num">{num(period.brier_score)}</td>
+              <td className="num">{num(period.mean_crps)}</td>
               <td className="num">{pct(period.interval_coverage_80)}</td>
               <td className="num">{pct(period.interval_coverage_80_independent_bets)}</td>
               <td className="note">{period.reason ?? ''}</td>

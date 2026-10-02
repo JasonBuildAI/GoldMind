@@ -189,6 +189,9 @@ ROW_FIELDS = (
     "brier_score",
     "brier_skill_score",
     "brier_skill_p_value",
+    "mean_crps",
+    "mean_crps_flat",
+    "crps_skill_vs_flat",
     "coverage_80",
     "coverage_ci_low",
     "coverage_ci_high",
@@ -275,6 +278,9 @@ def _row(candidate: Candidate, horizon: int, period: str, evaluation) -> dict:
         "brier_score": evaluation.brier_score,
         "brier_skill_score": metrics.get("brier_skill_score"),
         "brier_skill_p_value": metrics.get("brier_skill_p_value"),
+        "mean_crps": metrics.get("mean_crps"),
+        "mean_crps_flat": metrics.get("mean_crps_flat"),
+        "crps_skill_vs_flat": metrics.get("crps_skill_vs_flat"),
         "coverage_80": metrics.get("interval_coverage_80"),
         "coverage_ci_low": coverage_ci[0],
         "coverage_ci_high": coverage_ci[1],
@@ -521,8 +527,8 @@ def format_markdown(
         "",
         "## 主表（命中率四列）",
         "",
-        "| 候选 | 组 | 尺度(日) | 开发期 | 历史留出期 | 前向留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | 覆盖率(留出) | 正态兜底(留出) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| 候选 | 组 | 尺度(日) | 开发期 | 历史留出期 | 前向留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | CRPS 技能 | 覆盖率(留出) | 正态兜底(留出) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for candidate in order:
         for horizon in horizons:
@@ -545,6 +551,7 @@ def format_markdown(
                     difference,
                     "—" if _missing(holdout["p_value_vs_up"]) else f"{holdout['p_value_vs_up']:.3f}",
                     _number(holdout["brier_skill_score"]),
+                    _number(holdout.get("crps_skill_vs_flat")),
                     _pct(holdout["coverage_80"]),
                     _pct(holdout.get("distribution_normal_share")),
                 )

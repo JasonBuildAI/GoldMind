@@ -433,6 +433,8 @@ def _research_period(name: str, evaluation: backtest.HorizonEvaluation) -> dict:
         "brier_score": preregistered.finite(evaluation.brier_score),
         "brier_skill_score": preregistered.finite(metrics.get("brier_skill_score")),
         "brier_skill_p_value": preregistered.finite(metrics.get("brier_skill_p_value")),
+        "mean_crps": preregistered.finite(metrics.get("mean_crps")),
+        "crps_skill_vs_flat": preregistered.finite(metrics.get("crps_skill_vs_flat")),
         "accuracy_diff_vs_up": preregistered.finite(metrics.get("accuracy_diff_vs_up")),
         "accuracy_ci95": _finite_pair(metrics.get("accuracy_ci95")),
         "p_value_vs_up": preregistered.finite(metrics.get("p_value_vs_up")),

@@ -455,3 +455,131 @@ def test_long_horizon_reports_the_normal_fallback_share(make_panel):
     )
     assert bet_mode.metrics["distribution_normal_share"] == pytest.approx(1.0)
     assert bet_mode.metrics["distribution_empirical_share"] == pytest.approx(0.0)
+
+
+
+def test_normal_crps_matches_the_cdf_integral_definition():
+    # 闭式解 vs 定义式 CRPS = ∫ (F(z) − 1{z ≥ y})² dz 的数值积分。
+    # 变异验证：把 2·φ(z) 的系数改掉或把符号翻掉，本用例必红。
+    grid = np.linspace(-12.0, 12.0, 400001)
+    pdf = np.exp(-0.5 * grid * grid) / np.sqrt(2.0 * np.pi)
+    cdf = np.cumsum(pdf) * (grid[1] - grid[0])
+
+    for outcome in (-3.0, -0.5, 0.0, 0.5, 2.5):
+        indicator = (grid >= outcome).astype("float64")
+        integral = float(np.sum((cdf - indicator) ** 2) * (grid[1] - grid[0]))
+        assert engine.normal_crps(outcome) == pytest.approx(integral, abs=1e-4)
+
+
+def test_weighted_empirical_crps_matches_brute_force_cdf_integration():
+    values = np.array([-1.2, -0.3, 0.1, 0.4, 2.0])
+    weights = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+
+    grid = np.linspace(-3.0, 4.0, 140001)
+    step = grid[1] - grid[0]
+    cdf = np.array([float(weights[values <= point].sum()) for point in grid])
+
+    for outcome in (-0.9, 0.1, 1.5):
+        indicator = (grid >= outcome).astype("float64")
+        integral = float(np.sum((cdf - indicator) ** 2) * step)
+        scored = engine._weighted_empirical_crps(
+            values, weights, float(weights.sum()), outcome
+        )
+        assert scored == pytest.approx(integral, abs=1e-3)
+
+
+
+def test_calibrate_distribution_scores_crps_with_the_outcomes_it_is_given():
+    # 逐行 wiring：crps 必须配 outcome、crps_flat 配 outcome_flat；把两者抄混
+    # （例如都给 outcome_z_flat）时，第一条近似断言必红。
+    ratio = pd.Series([-1.0, 0.0, 1.0, -1.0, 0.0, 1.0, -0.5])
+    flat_z = pd.Series(np.zeros(len(ratio)))
+    model = pd.Series([np.nan, np.nan, np.nan, 0.5, -0.5, 0.25, 0.75])
+    flat = pd.Series([np.nan, np.nan, np.nan, 2.0, -2.0, 1.0, 3.0])
+
+    frame = engine.calibrate_distribution(
+        ratio,
+        flat_z,
+        outcome=model,
+        outcome_flat=flat,
+        min_samples=3,
+        gamma=0.0,
+        half_life=None,
+        window=None,
+    )
+
+    for position in range(3, len(ratio)):
+        sample = np.sort(ratio.to_numpy()[:position])
+        weights = np.ones(position)
+        assert frame["crps"][position] == pytest.approx(
+            engine._weighted_empirical_crps(
+                sample, weights, float(position), model[position]
+            )
+        )
+        assert frame["crps_flat"][position] == pytest.approx(
+            engine._weighted_empirical_crps(
+                sample, weights, float(position), flat[position]
+            )
+        )
+    # 两个 outcome 不同 → 两列必须不同（同抄一列时这条也红）
+    assert frame["crps"][3] != pytest.approx(frame["crps_flat"][3])
+
+
+def test_crps_is_lowest_when_the_distribution_sits_on_the_outcome():
+    # N(0,1) 的 CRPS 在 ω=0 处全局最小、关于 0 对称：完美预测 < 偏差 1σ < 偏差 3σ。
+    assert engine.normal_crps(0.0) < engine.normal_crps(1.0) < engine.normal_crps(3.0)
+    assert engine.normal_crps(-2.0) == pytest.approx(engine.normal_crps(2.0))
+
+    sample = np.linspace(-2.0, 2.0, 9)
+    weights = np.ones(9)
+    on_center = engine._weighted_empirical_crps(sample, weights, 9.0, 0.0)
+    far_out = engine._weighted_empirical_crps(sample, weights, 9.0, 6.0)
+    assert on_center < far_out
+
+
+def test_prediction_frame_scores_the_distribution_it_issues(make_panel):
+    # crps / crps_flat：同一张分布（模型 μ 对零漂移）对实现收益的评分。
+    # 变异验证：把 outcome_z 换成 outcome_z_flat（或反向），最后一条断言必红。
+    factors, close = make_panel(_long_calendar())
+    horizon = 20
+    calendar = close.index
+    signals = engine.build_signals(engine.align_factors(factors, calendar), calendar)
+    score = engine.composite_score(signals, horizon=horizon)
+
+    frame = engine.build_prediction_frame(score, close, horizon)
+
+    assert "crps" in frame.columns and "crps_flat" in frame.columns
+    realized = frame["crps"].notna()
+    assert int(realized.sum()) > 100
+    assert frame["crps"].iloc[-horizon:].isna().all(), "最后 h 行没有实现收益，不许给分布评分"
+    assert (frame.loc[realized, "crps"] > 0.0).all()
+    # 模型分布与零漂移基准不是同一张分布：经验行两列必须出现不同（把 outcome_z
+    # 误传成 outcome_z_flat 时，经验行两列将逐行相同 → 这条必红）
+    empirical = realized & (frame["distribution_mode"] != "normal")
+    assert int(empirical.sum()) > 100
+    assert (frame.loc[empirical, "crps"] != frame.loc[empirical, "crps_flat"]).any()
+
+    # 正态口径下有闭式解：crps = σ·g((r − μ)/σ)，σ 就是该行的 uncertainty
+    normal_frame = engine.build_prediction_frame(score, close, horizon, interval="normal")
+    forward = close.shift(-horizon) / close - 1.0
+    omega = (forward - normal_frame["expected_return"]) / normal_frame["uncertainty"]
+    manual = normal_frame["uncertainty"] * engine.normal_crps(omega)
+    mask = normal_frame["crps"].notna()
+    assert int(mask.sum()) > 0
+    assert np.allclose(normal_frame.loc[mask, "crps"], manual[mask], rtol=1e-9, atol=1e-12)
+
+
+def test_backtest_reports_crps_and_its_skill_against_the_flat_benchmark(make_panel):
+    # metrics 的 mean_crps / crps_skill_vs_flat 必须与逐行 frame 的口径一致。
+    # 变异验证：把技能分改成 1 − flat/model，第一条近似断言必红。
+    factors, close = make_panel(_long_calendar())
+
+    evaluation = backtest.evaluate_horizon(factors, close, horizon=20)
+    metrics = evaluation.metrics
+
+    assert metrics["mean_crps"] is not None and metrics["mean_crps"] > 0.0
+    assert metrics["mean_crps_flat"] is not None and metrics["mean_crps_flat"] > 0.0
+    assert metrics["crps_samples"] >= backtest.MIN_EVALUATION_SAMPLES
+    assert metrics["crps_skill_vs_flat"] == pytest.approx(
+        1.0 - metrics["mean_crps"] / metrics["mean_crps_flat"]
+    )

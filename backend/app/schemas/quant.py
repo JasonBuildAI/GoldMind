@@ -235,6 +235,9 @@ class ResearchPeriod(BaseModel):
     brier_score: Optional[float] = None
     brier_skill_score: Optional[float] = None
     brier_skill_p_value: Optional[float] = None
+    # 分布级评分：Brier 只看涨/跌，CRPS 评整张分布对实现收益的匹配
+    mean_crps: Optional[float] = None
+    crps_skill_vs_flat: Optional[float] = None
     accuracy_diff_vs_up: Optional[float] = None
     accuracy_ci95: Optional[List[float]] = None
     p_value_vs_up: Optional[float] = None

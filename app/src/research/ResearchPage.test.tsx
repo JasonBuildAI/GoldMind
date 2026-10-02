@@ -24,6 +24,8 @@ function period(overrides: Partial<ResearchPeriod> = {}): ResearchPeriod {
     brier_score: 0.24,
     brier_skill_score: -0.02,
     brier_skill_p_value: 0.9,
+    mean_crps: 0.021,
+    crps_skill_vs_flat: 0.031,
     accuracy_diff_vs_up: 0,
     accuracy_ci95: [0.52, 0.6],
     p_value_vs_up: 0.5,
@@ -138,6 +140,9 @@ describe('ResearchPage', () => {
     expect(betCells[0]).toHaveTextContent('31')
     expect(screen.getAllByText('54.8%').length).toBeGreaterThan(0)
     expect(screen.getAllByText('77.4%').length).toBeGreaterThan(0)
+    // CRPS：分布级评分与它对零漂移基准的技能分一起展示
+    expect(screen.getAllByText('0.021').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('0.031').length).toBeGreaterThan(0)
   })
 
   it('shows the honest unavailable state without fabricating numbers', async () => {

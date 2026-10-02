@@ -24,6 +24,7 @@
     区间       = μ + scale · [ F̂⁻¹(α/2),  F̂⁻¹(1−α/2) ]
     情景区间   = μ + scale · [ F̂⁻¹(0.25), F̂⁻¹(0.75) ]
     p_up       = 1 − F̂( −μ / scale )             与区间、情景同一个分布
+    crps       = scale · CRPS(F̂, (r − μ)/scale)   回测：整张分布对实现收益的评分
     σ_display  = (区间上界 − 区间下界) / (2 · z80)  展示用的「等效正态尺度」
 
 方向、概率、目标价、区间、情景只从这一个分布出发 —— 概率**不是** ``Φ(μ/σ_display)``，
@@ -347,10 +348,56 @@ def normal_probability_up(expected: pd.Series, sigma: pd.Series) -> pd.Series:
     return ratio.map(lambda value: normal_cdf(float(value)) if pd.notna(value) else np.nan)
 
 
+def normal_crps(z: pd.Series | float) -> pd.Series | float:
+    # 正态分布 N(0, 1) 的 CRPS 闭式解：g(z) = z·(2Φ(z) − 1) + 2φ(z) − 1/√π。
+    # 对预测分布 N(μ, σ²) 与实现值 y：CRPS = σ·g((y − μ)/σ)。
+    # 与 Brier 一样同时惩罚偏差与过度自信，但评的是整张分布而不是单个二分类概率；
+    # 闭式解在 tests/unit/quant/test_backtest_metrics.py 里与定义式（CDF 主值积分）
+    # 数值对照。
+    values = np.atleast_1d(np.asarray(z, dtype='float64'))
+    cdf = np.array([normal_cdf(float(value)) for value in values], dtype='float64')
+    pdf = np.exp(-0.5 * values * values) / sqrt(2.0 * np.pi)
+    result = values * (2.0 * cdf - 1.0) + 2.0 * pdf - 1.0 / sqrt(np.pi)
+    if isinstance(z, pd.Series):
+        return pd.Series(result, index=z.index)
+    return float(result[0]) if np.ndim(z) == 0 else result
+
+
+def _weighted_empirical_crps(
+    sorted_values: np.ndarray,
+    sorted_weights: np.ndarray,
+    total: float,
+    outcome: float,
+) -> float:
+    # 加权经验分布在 outcome 处的精确 CRPS（标准化空间）：
+    # E|Z − y| − ½·E|Z − Z′|。与分位数、尾概率共用同一份 _sorted_sample 输出 ——
+    # 评的就是概率与区间背后那张分布本身。权重和为零或实现值缺失时返回 NaN（不猜）。
+    if not np.isfinite(outcome) or total <= EPS or len(sorted_values) == 0:
+        return float('nan')
+    probabilities = sorted_weights / total
+    cumulative = np.cumsum(probabilities)
+    first_moment = np.cumsum(probabilities * sorted_values)
+    mean_absolute = float(np.sum(probabilities * np.abs(sorted_values - outcome)))
+    # Σ_i Σ_j p_i·p_j·|x_i − x_j| = Σ_j p_j·[x_j·(2C_j − 1) − 2·S_j + S_n]
+    spread = float(
+        np.sum(
+            probabilities
+            * (
+                sorted_values * (2.0 * cumulative - 1.0)
+                - 2.0 * first_moment
+                + first_moment[-1]
+            )
+        )
+    )
+    return mean_absolute - 0.5 * spread
+
+
 def calibrate_distribution(
     ratio: pd.Series,
     flat_z: pd.Series,
     *,
+    outcome: Optional[pd.Series] = None,
+    outcome_flat: Optional[pd.Series] = None,
     alpha: float = INTERVAL_ALPHA,
     gamma: float = ACI_GAMMA,
     half_life: Optional[int] = ACI_HALF_LIFE,
@@ -382,6 +429,12 @@ def calibrate_distribution(
 
     样本不足 ``min_samples`` 的行返回 NaN，由调用方回退到正态分位。
 
+    可选 ``outcome`` / ``outcome_flat`` 是每一行的实现值在同一个标准化空间里的位置
+    （模型分布与「零漂移」基准分布各自对应的 z）：给定时额外输出 ``crps`` /
+    ``crps_flat`` 两列（标准化空间；调用方乘回 ``scale`` 才是收益空间的 CRPS）。
+    两列评的是同一个 ``F̂``，只是实现值不同 —— 两者之差就是「μ 这个漂移信号
+    给整张分布加了多少分」。
+
     ``stride > 1`` 时，每 ``stride`` 行才把一次实现误差计入校准样本（并据此更新 α），
     ``half_life`` / ``window`` / ``min_samples`` 的单位随之从「行」变成「注」—— 见
     ``CALIBRATION_MODES`` 为什么要这么数。跳过的那些行照常输出区间（没有新信息而已）。
@@ -401,7 +454,16 @@ def calibrate_distribution(
         "q50": np.full(count, np.nan, dtype="float64"),
         "q75": np.full(count, np.nan, dtype="float64"),
         "probability_up": np.full(count, np.nan, dtype="float64"),
+        "crps": np.full(count, np.nan, dtype="float64"),
+        "crps_flat": np.full(count, np.nan, dtype="float64"),
     }
+    outcomes = outcome.to_numpy(dtype="float64") if outcome is not None else None
+    flat_outcomes = (
+        outcome_flat.to_numpy(dtype="float64") if outcome_flat is not None else None
+    )
+    for name, realized in (("outcome", outcomes), ("outcome_flat", flat_outcomes)):
+        if realized is not None and len(realized) != count:
+            raise ValueError(f"{name} 必须与 ratio 等长")
     history: list[float] = []
     current_alpha = float(alpha)
 
@@ -450,6 +512,14 @@ def calibrate_distribution(
             if np.isfinite(points[position]) and total > EPS:
                 columns["probability_up"][position] = _weighted_tail_above(
                     sorted_values, cumulative, total, points[position]
+                )
+            if outcomes is not None:
+                columns["crps"][position] = _weighted_empirical_crps(
+                    sorted_values, sorted_weights, total, outcomes[position]
+                )
+            if flat_outcomes is not None:
+                columns["crps_flat"][position] = _weighted_empirical_crps(
+                    sorted_values, sorted_weights, total, flat_outcomes[position]
                 )
             value = values[position]
             if np.isfinite(value) and position % stride == 0:
@@ -577,6 +647,12 @@ def build_prediction_frame(
     尺度 ``scale`` 是**走查预测误差**的标准差，不是回归残差：残差只说明
     「拟合线周围的散布」，预测误差才回答「模型自己错了多少」——
     两者的差距就是区间覆盖率与名义值（80%）之间的差距。
+
+    ``crps`` / ``crps_flat`` 是回测用的**分布级评分**（收益单位）：对每一行，
+    用该行发出的那张分布与实现收益算 CRPS，基准版本把分布的均值换成 0（与
+    ``magnitude_skill_vs_flat`` 同一个「零漂移」对照）。正态兜底行走解析闭式解，
+    经验行走同一份加权样本上的精确计算 —— 这正是 Brier（只评涨/跌二分类）
+    覆盖不到的「幅度与整张分布」这一面。
     """
     if interval not in INTERVAL_MODES:
         raise ValueError(f"未知的区间口径：{interval}")
@@ -599,6 +675,9 @@ def build_prediction_frame(
     scale = error_scale.fillna(realized_scale)
     # 收益恰好为 0 在这套 studentized 误差上的位置：r = 0 ⟺ z = −μ / scale
     flat_z = -expected / scale.where(scale > EPS)
+    # 每一行的实现值也搬到同一个 z 空间：模型分布对 (μ, scale)，零漂移基准对 (0, scale)
+    outcome_z = (forward - expected) / scale.where(scale > EPS)
+    outcome_z_flat = forward / scale.where(scale > EPS)
 
     if interval == "normal":
         lower_factor = pd.Series(-INTERVAL_Z_80, index=expected.index)
@@ -610,12 +689,16 @@ def build_prediction_frame(
         probability = normal_probability_up(expected, scale)
         interval_alpha = pd.Series(np.nan, index=expected.index)
         distribution_mode = pd.Series("normal", index=expected.index)
+        crps_z = normal_crps(outcome_z)
+        crps_flat_z = normal_crps(outcome_z_flat)
     else:
         adaptive = interval != "empirical"
         settings = calibration_settings(calibration_mode, horizon)
         calibration = calibrate_distribution(
             errors / scale,
             flat_z,
+            outcome=outcome_z,
+            outcome_flat=outcome_z_flat,
             gamma=settings["gamma"] if adaptive else 0.0,
             half_life=settings["half_life"] if adaptive else None,
             window=settings["window"] if adaptive else None,
@@ -637,6 +720,11 @@ def build_prediction_frame(
         distribution_mode = pd.Series(
             np.where(insufficient.to_numpy(), "normal", interval), index=expected.index
         )
+        # 经验样本不足的行与区间/概率一起退回正态 —— CRPS 也必须用同一张分布评
+        crps_z = calibration["crps"].mask(insufficient, normal_crps(outcome_z))
+        crps_flat_z = calibration["crps_flat"].mask(
+            insufficient, normal_crps(outcome_z_flat)
+        )
 
     lower_return = expected + scale * lower_factor
     upper_return = expected + scale * upper_factor
@@ -652,6 +740,9 @@ def build_prediction_frame(
             "median_return": expected + scale * median,
             "interval_alpha": interval_alpha,
             "distribution_mode": distribution_mode,
+            # 分布级评分（收益单位）：模型分布与零漂移基准各自对实现收益的 CRPS
+            "crps": scale * crps_z,
+            "crps_flat": scale * crps_flat_z,
         }
     )
     frame["uncertainty"] = (upper_return - lower_return) / (2.0 * INTERVAL_Z_80)

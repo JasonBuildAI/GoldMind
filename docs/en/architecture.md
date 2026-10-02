@@ -377,7 +377,7 @@ it — documentation does not copy a second version.
 | Signals | `engine.py` | rolling z → direction alignment → weights by horizon (`definitions.horizon_weights`) → one calibrated distribution giving expected return, uncertainty, upside probability, target price and interval |
 | Fair value | `decompose.py` | walk-forward expanding-window OLS (`log gold price ~ real rate + log dollar index + log central bank reserves + VIX`) splits the gold price into macro anchor + demand premium + risk premium + sentiment residual; deviation = market price / fair value − 1 |
 | Scenarios | `scenarios.py` | quantiles of the predictive distribution N(μ, σ²) → Base [q25, q75] (50%) / Bull top 25% / Bear bottom 25%; the trigger and invalidation conditions are generated from this horizon's heaviest factor + the 200-day moving average |
-| Backtest | `backtest.py` | walk-forward hit rate (scoring the calibrated direction) + three benchmarks + a separate score for the uncalibrated score direction + 80% interval coverage + segments split at 2022-01-01 + per-factor hit rate and IC |
+| Backtest | `backtest.py` | walk-forward hit rate (scoring the calibrated direction) + three benchmarks + a separate score for the uncalibrated score direction + 80% interval coverage + segments split at 2022-01-01 + per-factor hit rate and IC + distribution-level CRPS (skill score against the zero-drift benchmark) |
 | Monitoring | `monitor.py` | a weekly dashboard giving frequency / source / value / signal / data as-of date row by row; signal rules are centralised in `_rule`, informational rows have `signal=null`, and missing data is marked "unavailable + reason" |
 | Exit | `service.py` | the scheduled task and `POST /api/gold/quant/refresh` share the same chain |
 | Statistics | `stats.py` | significance toolbox for overlapping samples: Newey–West HAC standard errors, circular block-bootstrap intervals, HAC t / Diebold–Mariano, Brier skill score and reliability bins (no scipy) |
@@ -483,7 +483,10 @@ Guard: `backend/tests/unit/quant/test_scenarios.py`.
 The backtest (`backtest.py`) reports, beyond the hit rate, the actual coverage of the 80% nominal
 interval (`metrics.interval_coverage_80`) and the `metrics.regimes` segment results split at
 2022-01-01; when a segment has too few samples it gives only the sample count and the reason, and
-never pads the numbers.
+never pads the numbers. It also reports the distribution-level CRPS (`metrics.mean_crps`) and
+its skill score against the zero-drift benchmark (`metrics.crps_skill_vs_flat`): Brier scores
+up/down, CRPS scores how well the whole distribution matches the realised return (normal closed
+form / exact empirical form, each checked against the defining integral in the tests).
 Guard: `backend/tests/unit/quant/test_backtest_metrics.py`.
 
 The monitoring dashboard (`monitor.py`) covers 16 rows of metrics; usdcny / cny_gold / tga / rrp /

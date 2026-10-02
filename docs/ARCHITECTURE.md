@@ -352,7 +352,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 信号 | `engine.py` | 滚动 z → 方向对齐 → 按尺度取权重（`definitions.horizon_weights`）合成 → 一份校准分布给出期望收益、不确定度、上行概率、目标价与区间 |
 | 公允价 | `decompose.py` | 走查式扩展窗口 OLS（`log 金价 ~ 实际利率 + log 美元指数 + log 央行储备 + VIX`）把金价拆成 宏观锚＋需求溢价＋风险溢价＋情绪残差；偏离度 = 市场价 / 公允价 − 1 |
 | 情景 | `scenarios.py` | 预测分布 N(μ, σ²) 的分位数 → Base [q25, q75]（50%）/ Bull 上 25% / Bear 下 25%；触发与失效条件由该尺度最重因子＋200 日均线生成 |
-| 回测 | `backtest.py` | 走查式命中率（评校准后的方向）+ 三个基准 + 未校准得分方向单列成绩 + 80% 区间覆盖率（**并按预测时点的实现波动率分档**，见 `coverage_by_vol_regime`）+ 2022-01-01 前后分段 + 逐因子命中率与 IC |
+| 回测 | `backtest.py` | 走查式命中率（评校准后的方向）+ 三个基准 + 未校准得分方向单列成绩 + 80% 区间覆盖率（**并按预测时点的实现波动率分档**，见 `coverage_by_vol_regime`）+ 2022-01-01 前后分段 + 逐因子命中率与 IC + 分布级 CRPS（对「零漂移」基准的 `crps_skill_vs_flat` 技能分） |
 | 监测 | `monitor.py` | 周更仪表盘逐行给频率 / 来源 / 值 / 信号 / 数据截至日；信号规则集中在 `_rule`，信息型行 `signal=null`，缺数据标「不可用 + 原因」 |
 | 出口 | `service.py` | 调度任务与 `POST /api/gold/quant/refresh` 共用同一条链路 |
 | 统计 | `stats.py` | 重叠样本的显著性工具箱：Newey–West HAC 标准误、圆周分块自助区间、HAC t / Diebold–Mariano、Brier 技能分与可靠性分桶（不引入 scipy） |
@@ -464,7 +464,9 @@ ACI 判错区间之后升为 `quant-v5`，同日引擎加固再升为 `quant-v6`
 `holdout`（历史留出期，已被前两轮裁决看过，只作记录）、
 `forward`（前向留出期，`ACTIVE_HOLDOUT_START = 2026-10-02` 起，**唯一**的裁决窗口；
 窗口没攒够 20 次独立下注时状态是 `pending` 并写明还差多少个交易日，不许拿历史那段顶替）、
-`full`（全样本）。
+`full`（全样本）。分布级评分 CRPS（`metrics.mean_crps`）与其对「零漂移」基准的技能分
+（`metrics.crps_skill_vs_flat`）也在同一份 metrics 里：Brier 只评涨/跌，CRPS 评整张分布
+与实现收益的匹配（正态闭式解 / 经验分布精确式，定义式数值积分在测试里逐点对照）。
 守卫：`backend/tests/unit/quant/test_backtest_metrics.py`。
 
 监测仪表盘（`monitor.py`）覆盖 21 行指标；其中 usdcny / cny_gold / tga / rrp /
