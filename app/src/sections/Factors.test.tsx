@@ -56,8 +56,8 @@ describe('Factors', () => {
 
     expect(await screen.findByText('接口返回的看涨因素')).toBeInTheDocument()
     expect(await screen.findByText('接口返回的看跌因素')).toBeInTheDocument()
-    expect(screen.getByTestId('bullish-summary')).toHaveTextContent('看涨总结')
-    expect(screen.getByTestId('bearish-summary')).toHaveTextContent('看跌总结')
+    expect(screen.getByTestId('field-bullish.analysis_summary')).toHaveTextContent('看涨总结')
+    expect(screen.getByTestId('field-bearish.analysis_summary')).toHaveTextContent('看跌总结')
     // 不应再显示内置默认因子
     expect(screen.queryByText('美联储降息周期')).not.toBeInTheDocument()
   })
@@ -70,8 +70,8 @@ describe('Factors', () => {
 
     render(<Factors />)
 
-    expect(await screen.findByTestId('bullish-summary')).toHaveTextContent('看涨总结')
-    expect(await screen.findByTestId('bearish-summary')).toHaveTextContent('看跌总结')
+    expect(await screen.findByTestId('field-bullish.analysis_summary')).toHaveTextContent('看涨总结')
+    expect(await screen.findByTestId('field-bearish.analysis_summary')).toHaveTextContent('看跌总结')
   })
 
   it('接口失败时如实说「暂不可用」，而不是摆内置文案', async () => {
@@ -87,8 +87,8 @@ describe('Factors', () => {
     expect(await screen.findByText('看跌因素暂不可用')).toBeInTheDocument()
     // 不能出现任何内置的因子或总结文案
     expect(screen.queryByText('美联储降息周期')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('bullish-summary')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('bearish-summary')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('field-bullish.analysis_summary')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('field-bearish.analysis_summary')).not.toBeInTheDocument()
     // 同时要说明失败原因
     await waitFor(() => {
       expect(screen.getAllByText(/无法连接后端/).length).toBeGreaterThan(0)
@@ -135,8 +135,8 @@ describe('Factors', () => {
 
     expect(await screen.findByText('看涨因素暂不可用')).toBeInTheDocument()
     expect(await screen.findByText('接口返回的看跌因素')).toBeInTheDocument()
-    expect(screen.queryByTestId('bullish-summary')).not.toBeInTheDocument()
-    expect(screen.getByTestId('bearish-summary')).toHaveTextContent('看跌总结')
+    expect(screen.queryByTestId('field-bullish.analysis_summary')).not.toBeInTheDocument()
+    expect(screen.getByTestId('field-bearish.analysis_summary')).toHaveTextContent('看跌总结')
   })
 
   // ------------------------------------------------------------------ #
@@ -188,7 +188,7 @@ describe('Factors', () => {
 
     expect(await screen.findByText('看涨因素正在分析中')).toBeInTheDocument()
 
-    const column = screen.getByTestId('bullish-analyzing')
+    const column = screen.getByTestId('bullish-factors')
     fireEvent.click(within(column).getByRole('button', { name: '重新分析' }))
 
     await waitFor(() => {

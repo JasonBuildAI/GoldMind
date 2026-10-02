@@ -59,16 +59,22 @@ describe('Strategy', () => {
 
     render(<Strategy />)
 
-    expect(await screen.findByText('接口返回的当前位置')).toBeInTheDocument()
-    expect(screen.getByText('接口返回的建议策略')).toBeInTheDocument()
-    expect(screen.getByText('考量甲；考量乙')).toBeInTheDocument()
+    expect(await screen.findByTestId('field-advice.assessment.current_position')).toHaveTextContent(
+      '接口返回的当前位置',
+    )
+    expect(screen.getByTestId('field-advice.assessment.recommended_approach')).toHaveTextContent(
+      '接口返回的建议策略',
+    )
+    expect(screen.getByTestId('field-advice.assessment.key_considerations')).toHaveTextContent(
+      '考量甲；考量乙',
+    )
 
     const columns = within(screen.getByTestId('strategy-columns'))
     expect(columns.getByText('接口返回的保守策略')).toBeInTheDocument()
     // 仓位 / 时间框架 / 风险
     expect(columns.getByText('5%')).toBeInTheDocument()
     expect(columns.getByText('长期')).toBeInTheDocument()
-    expect(columns.getByText('低风险')).toBeInTheDocument()
+    expect(columns.getByTestId('field-advice.strategy.risk_level')).toHaveTextContent('低风险')
     // 入场与离场
     expect(columns.getByText('$2500-2600')).toBeInTheDocument()
     expect(columns.getByText('$2900')).toBeInTheDocument()
@@ -133,9 +139,9 @@ describe('Strategy', () => {
     render(<Strategy />)
 
     expect(await screen.findByText('数据不足，暂不生成策略')).toBeInTheDocument()
-    expect(screen.getByText('$4245.14')).toBeInTheDocument()
-    expect(screen.getByText('+11.71%')).toBeInTheDocument()
-    expect(screen.getByText('41.94%')).toBeInTheDocument()
+    expect(screen.getByTestId('field-advice.snapshot.latest_price')).toHaveTextContent('$4,245.14')
+    expect(screen.getByTestId('field-advice.snapshot.change_pct')).toHaveTextContent('+11.71%')
+    expect(screen.getByTestId('field-advice.snapshot.amplitude_pct')).toHaveTextContent('41.94%')
     expect(screen.queryByTestId('strategy-columns')).not.toBeInTheDocument()
   })
 

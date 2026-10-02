@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { TESTIDS } from '../src/testids'
+
 /**
  * 研究页端到端：浏览器 → vite preview 代理 → uvicorn → SQLite。
  *
@@ -8,6 +10,17 @@ import { expect, test } from '@playwright/test'
  * 有数据时的完整渲染由集成测试 backend/tests/integration/test_quant_research_api.py
  * 与组件测试 src/research/ResearchPage.test.tsx 覆盖。
  */
+const RESEARCH_NAV = [
+  '裁决',
+  '前向留出期',
+  '覆盖度',
+  '诊断',
+  '分段',
+  '因子',
+  '基准',
+  '同步报告',
+]
+
 test.describe('GoldMind 研究页端到端', () => {
   test('研究接口经代理可达，页面与接口说的一致且无前端异常', async ({ page, request }) => {
     const resp = await request.get('/api/gold/quant/research')
@@ -34,11 +47,27 @@ test.describe('GoldMind 研究页端到端', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'GoldMind' })).toBeVisible()
     await expect(page.getByRole('link', { name: '看板' })).toBeVisible()
-    await expect(page.getByTestId('research-verdict')).toContainText(body.verdict.label)
+    for (const label of RESEARCH_NAV) {
+      await expect(page.getByRole('link', { name: label, exact: true })).toBeVisible()
+    }
+
+    // 裁决块只展示接口给的结论；没有结论时，降级原因必须原样出现
+    await expect(page.getByTestId(TESTIDS.researchVerdict)).toContainText(body.verdict.label)
 
     if (body.status === 'ok') {
-      await expect(page.getByTestId('research-overview')).toBeVisible()
-      await expect(page.getByTestId('research-forward-window')).toBeVisible()
+      for (const id of [
+        TESTIDS.researchDataWindow,
+        TESTIDS.researchForwardWindow,
+        TESTIDS.researchOverview,
+        TESTIDS.researchCoverage,
+        TESTIDS.researchDiagnostics,
+        TESTIDS.researchRegimes,
+        TESTIDS.researchFactors,
+        TESTIDS.researchBenchmarks,
+        TESTIDS.researchSync,
+      ]) {
+        await expect(page.getByTestId(id)).toBeVisible()
+      }
     } else {
       await expect(page.getByText(body.reason)).toBeVisible()
     }

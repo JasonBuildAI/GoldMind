@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AxiosRequestConfig } from 'axios'
 
-import api, { analysisApi, goldApi, institutionApi, investmentAdviceApi, marketSummaryApi } from './api'
+import api, {
+  analysisApi,
+  goldApi,
+  healthApi,
+  institutionApi,
+  investmentAdviceApi,
+  marketSummaryApi,
+  newsDigestApi,
+  quantApi,
+  sourcesApi,
+} from './api'
 
 let seen: AxiosRequestConfig[] = []
 
@@ -76,6 +86,14 @@ describe('api 基础配置', () => {
     await institutionApi.getInstitutionPredictions()
     await investmentAdviceApi.getInvestmentAdvice()
     await marketSummaryApi.getMarketSummary()
+    await quantApi.getFactors()
+    await quantApi.getPredictions()
+    await quantApi.getAccuracy()
+    await quantApi.getMonitor()
+    await quantApi.getResearch()
+    await newsDigestApi.getDigest()
+    await sourcesApi.getStatus()
+    await healthApi.getHealth()
 
     const urls = seen.map((c) => c.url)
     expect(urls).toContain('/api/gold/prices/daily?start_date=2025-01-01&end_date=2025-01-31')
@@ -86,6 +104,14 @@ describe('api 基础配置', () => {
     expect(urls).toContain('/api/gold/institution-predictions-ai?refresh=false')
     expect(urls).toContain('/api/gold/investment-advice-ai?refresh=false')
     expect(urls).toContain('/api/gold/market-summary-ai?refresh=false')
+    expect(urls).toContain('/api/gold/quant/factors')
+    expect(urls).toContain('/api/gold/quant/predictions')
+    expect(urls).toContain('/api/gold/quant/accuracy')
+    expect(urls).toContain('/api/gold/quant/monitor')
+    expect(urls).toContain('/api/gold/quant/research')
+    expect(urls).toContain('/api/gold/news/digest')
+    expect(urls).toContain('/api/gold/sources/status')
+    expect(urls).toContain('/health')
   })
 
   it('AI 分析接口使用更长的超时时间', async () => {

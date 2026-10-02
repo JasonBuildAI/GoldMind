@@ -36,6 +36,11 @@ function period(overrides: Partial<ResearchPeriod> = {}): ResearchPeriod {
     independent_bet_stride: 5,
     accuracy_independent_bets: 0.548,
     interval_coverage_80_independent_bets: 0.774,
+    direction_edge_vs_up_ci95: [0.4, 0.6],
+    down_calls: 10,
+    down_call_accuracy: 0.5,
+    down_call_edge_vs_up: -0.05,
+    expected_cap_rate: 0.1,
     reason: null,
     ...overrides,
   }
@@ -52,6 +57,30 @@ function response(): QuantResearchResponse {
     active_holdout_start: '2026-10-02',
     generated_at: '2026-10-02T10:00:00+08:00',
     cached: false,
+    benchmark: {
+      key: 'gold_spot_no_roll',
+      name: '伦敦金现货（不含展期）',
+      note: '现货序列没有换月价差，因此不包含展期收益。',
+      alternatives: [
+        {
+          key: 'gold_futures_roll',
+          name: 'COMEX 黄金期货（含展期）',
+          note: '期货收益包含换月价差，口径与现货不同。',
+          available: false,
+          reason: '暂无连续合约序列',
+        },
+      ],
+    },
+    regime_candidates: [
+      {
+        key: 'real_rate_regime',
+        name: '实际利率状态',
+        series_key: 'real_yield_10y',
+        description: '按实际利率水平划分的宏观状态',
+        status: 'lab_only',
+        note: '仅进研究台，未过前向窗口闸门',
+      },
+    ],
     verdict: {
       status: 'no_edge',
       label: '无统计优势',
@@ -100,6 +129,10 @@ function response(): QuantResearchResponse {
             hit_rate: 0.54,
             ic: -0.05,
             rank_ic: -0.04,
+            alignment: 0.5,
+            alignment_t: 1.2,
+            alignment_p_value: 0.2,
+            alignment_naive_t: 1.1,
           },
         ],
       },
@@ -126,19 +159,24 @@ describe('ResearchPage', () => {
     expect(screen.getAllByText('78.9%').length).toBeGreaterThan(0)
     // 模型版本与样本外起点是裁决的关键字段
     expect(screen.getAllByText('quant-v5').length).toBeGreaterThan(0)
-    expect(screen.getByText('2023-10-02')).toBeInTheDocument()
+    expect(screen.getAllByText('2023-10-02').length).toBeGreaterThan(0)
     // 裁决窗口：起点、还差多少个交易日、以及「尚不可判」的状态
     expect(screen.getByTestId('research-forward-window')).toBeInTheDocument()
     expect(screen.getAllByText('2026-10-02').length).toBeGreaterThan(0)
     expect(screen.getAllByText('尚不可判').length).toBeGreaterThan(0)
     expect(screen.getAllByText('20').length).toBeGreaterThan(0)
-    // 独立下注口径：次数与「按 stride 抽出来的成绩」一起展示
-    const betCells = screen.getAllByTitle(
-      '每 5 个交易日算一次独立下注 —— 重叠样本不是独立证据',
+    // 独立下注口径：开发 / 历史留出 / 前向留出 / 全样本，每列各自报次数与 stride
+    for (const period of ['development', 'holdout', 'forward', 'full']) {
+      expect(
+        screen.getByTestId(`field-research.periods.${period}.independent_bets`),
+      ).toBeInTheDocument()
+    }
+    expect(screen.getByTestId('field-research.periods.holdout.independent_bets')).toHaveTextContent(
+      '31',
     )
-    // 开发 / 历史留出 / 前向留出 / 全样本，每行各自报次数
-    expect(betCells).toHaveLength(4)
-    expect(betCells[0]).toHaveTextContent('31')
+    expect(
+      screen.getByTestId('field-research.periods.holdout.accuracy_independent_bets'),
+    ).toHaveTextContent('54.8%')
     expect(screen.getAllByText('54.8%').length).toBeGreaterThan(0)
     expect(screen.getAllByText('77.4%').length).toBeGreaterThan(0)
     // CRPS：分布级评分与它对零漂移基准的技能分一起展示
@@ -149,9 +187,10 @@ describe('ResearchPage', () => {
       '2025-07-18 → 2026-10-01 · 311 个交易日 · 约 1.2 年',
     )
     expect(screen.getByText(/对不上时以本页为准/)).toBeInTheDocument()
-    // 候选说明：M 族只进研究台，不改变线上口径
-    expect(screen.getByTestId('research-candidates')).toHaveTextContent('M 族')
-    expect(screen.getByTestId('research-candidates')).toHaveTextContent('只进研究台')
+    // Regime 候选登记：lab_only 只进研究台，不改变线上口径
+    expect(screen.getByTestId('research-regimes')).toHaveTextContent('实际利率状态')
+    expect(screen.getByTestId('research-regimes')).toHaveTextContent('lab_only')
+    expect(screen.getByTestId('research-regimes')).toHaveTextContent('仅进研究台')
   })
 
   it('shows the honest unavailable state without fabricating numbers', async () => {

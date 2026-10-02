@@ -1,0 +1,1198 @@
+/**
+ * 字段覆盖测试（2.0.2 硬验收）：每个响应类型的每个字段都必须有展示位。
+ *
+ * 夹具让字段尽量非空，然后把 TESTIDS.field 里声明的字段级选择器逐个断言。
+ * 新增字段却忘了给槽位、或槽位只挂在走不到的分支上，missing 列表会报出来。
+ *
+ * 渲染方式：各区块分别 render 进同一个 document.body（缺少 FreshnessProvider
+ * 时 useFreshnessBlock 静默跳过，见 contexts/FreshnessContext.tsx）。
+ * 互斥分支（投资策略的降级快照、量化预测的停发方向、24h/7d 窗口）用二次渲染 /
+ * 切 tab 覆盖 —— 字段只要在任一状态有槽位就算通过。
+ */
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { useGoldData } from '@/contexts/GoldDataContext'
+import type { ApiMetadata } from '@/lib/placeholder'
+import ResearchPage from '@/research/ResearchPage'
+import Conclusion from '@/sections/Conclusion'
+import DataMethods from '@/sections/DataMethods'
+import Factors from '@/sections/Factors'
+import Institutions from '@/sections/Institutions'
+import Market from '@/sections/Market'
+import Messages from '@/sections/Messages'
+import Quant from '@/sections/Quant'
+import Strategy from '@/sections/Strategy'
+import { fieldTestId, QUANT_FACTOR_COVERAGE_FIELDS, TESTIDS } from '@/testids'
+import type {
+  CorrelationData,
+  DailyPrice,
+  DigestResponse,
+  DigestRefreshResponse,
+  DollarRealtime,
+  GoldStats,
+  HealthResponse,
+  InstitutionPredictionsResponse,
+  InvestmentAdviceResponse,
+  MarketSummaryResponse,
+  QuantAccuracyResponse,
+  QuantFactorsResponse,
+  QuantMonitorResponse,
+  QuantPredictionsResponse,
+  QuantResearchResponse,
+  SourcesStatusResponse,
+} from '@/services/api'
+
+const apiMocks = vi.hoisted(() => ({
+  goldApi: {
+    getStats: vi.fn(),
+    getDailyPrices: vi.fn(),
+    getCorrelation: vi.fn(),
+    getDollarRealtime: vi.fn(),
+  },
+  analysisApi: { getBullishFactors: vi.fn(), getBearishFactors: vi.fn() },
+  institutionApi: { getInstitutionPredictions: vi.fn() },
+  investmentAdviceApi: { getInvestmentAdvice: vi.fn() },
+  marketSummaryApi: { getMarketSummary: vi.fn() },
+  quantApi: {
+    getFactors: vi.fn(),
+    getPredictions: vi.fn(),
+    getAccuracy: vi.fn(),
+    getMonitor: vi.fn(),
+    getResearch: vi.fn(),
+    refresh: vi.fn(),
+  },
+  newsDigestApi: { getDigest: vi.fn(), refresh: vi.fn() },
+  sourcesApi: { getStatus: vi.fn() },
+  healthApi: { getHealth: vi.fn() },
+}))
+
+vi.mock('@/services/api', () => apiMocks)
+vi.mock('@/contexts/GoldDataContext', () => ({ useGoldData: vi.fn() }))
+
+const METADATA: ApiMetadata = {
+  cached: true,
+  status: 'ok',
+  cache_source: 'file',
+  message: '命中 1 小时缓存',
+  generated_at: '2026-10-02T08:00:00+08:00',
+  data_sources: ['腾讯财经', '美联储', 'RSS 语料'],
+  analysis_method: '单轮 LLM 调用 + 确定性校验',
+}
+const GOLD_STATS: GoldStats = {
+  current_price: 4200,
+  start_price: 3600,
+  window_label: '近 12 个月',
+  window_start: '2025-10-02',
+  window_end: '2026-10-01',
+  window_return: 16.67,
+  max_price: 4310,
+  min_price: 3550,
+  max_date: '2026-09-22',
+  min_date: '2025-10-03',
+  amplitude: 21.41,
+  market_status: '上涨',
+  market_status_desc: '趋势向好，注意高位波动',
+  updated_at: '2026-10-02T08:00:00+08:00',
+  data_source: '腾讯财经-纽约黄金',
+  is_realtime: true,
+  price_basis: 'realtime',
+  price_basis_label: '实时报价',
+  price_as_of: '2026-10-02T08:00:00+08:00',
+}
+
+const DAILY: DailyPrice[] = [
+  {
+    date: '2026-09-30',
+    price: 4200,
+    volume: 123456,
+    basis: 'close',
+    basis_label: '日收盘',
+    source: '腾讯财经-纽约黄金',
+    as_of: '2026-09-30T15:00:00+08:00',
+  },
+]
+
+const CORRELATION: CorrelationData[] = [
+  {
+    date: '2026-09-30',
+    gold_price: 4200,
+    dollar_index: 98.7,
+    gold_basis: 'close',
+    gold_basis_label: '日收盘',
+    gold_source: '腾讯财经-纽约黄金',
+    dollar_basis: 'realtime',
+    dollar_basis_label: '实时报价',
+    dollar_source: '腾讯财经-美元指数',
+    as_of: '2026-09-30T15:00:00+08:00',
+  },
+]
+
+const DOLLAR: DollarRealtime = {
+  price: 98.7,
+  previous_close: 98.5,
+  change: 0.2,
+  change_percent: 0.203,
+  open: 98.6,
+  high: 98.9,
+  low: 98.4,
+  updated_at: '2026-10-02T08:00:00+08:00',
+  date: '2026-10-02',
+  source: '腾讯财经-美元指数',
+}
+
+const SUMMARY: MarketSummaryResponse = {
+  core_bullish_logic: ['实际利率下行', '央行持续购金'],
+  main_risks: ['美元反弹', '获利回吐'],
+  market_consensus: ['机构普遍看多 2026 年底前走势'],
+  institution_targets: [
+    { institution: '瑞银', target: 5400, probability: '高', timeframe: '2026 年底' },
+  ],
+  current_price: 4200,
+  comprehensive_judgment: {
+    bullish_summary: '宏观与需求两端仍偏多。',
+    bearish_summary: '短线拥挤度偏高。',
+    neutral_summary: '中性看，区间震荡的概率不低。',
+  },
+  core_view: '中期偏多，回调分批。',
+  investment_recommendation: '逢回调分批建仓，控制单次仓位。',
+  confidence_level: '中',
+  time_horizon: '中期（3-6 个月）',
+  metadata: METADATA,
+}
+
+const BULLISH = {
+  bullish_factors: [
+    {
+      id: 'fed-cut',
+      title: '降息周期延续',
+      subtitle: '货币政策',
+      description: '实际利率下行压低持有黄金的机会成本。',
+      details: ['点阵图显示年内仍有降息空间', 'TIPS 收益率回落'],
+      impact: 'high' as const,
+    },
+  ],
+  analysis_summary: '货币与需求端继续给金价托底。',
+  last_updated: '2026-10-02 08:00:00',
+  metadata: METADATA,
+}
+
+const BEARISH = {
+  bearish_factors: [
+    {
+      id: 'dollar-rebound',
+      title: '美元反弹风险',
+      subtitle: '汇率',
+      description: '美元指数若站上 100，金价短线承压。',
+      details: ['美国就业数据超预期', '欧元区走弱'],
+      impact: 'medium' as const,
+    },
+  ],
+  analysis_summary: '短线的主要压力来自美元与获利盘。',
+  last_updated: '2026-10-02 08:00:00',
+  metadata: METADATA,
+}
+
+const INSTITUTIONS: InstitutionPredictionsResponse = {
+  institutions: [
+    {
+      name: '瑞银',
+      logo: 'UBS',
+      rating: 'bullish',
+      target_price: 5400,
+      timeframe: '2026 年底',
+      reasoning: '央行购金与降息周期支撑。',
+      key_points: ['上调目标价', '建议回调买入'],
+      as_of_date: '2026-09-30',
+      stale_days: 2,
+      source: 'web_search',
+    },
+    {
+      name: '高盛',
+      logo: 'GS',
+      rating: 'neutral',
+      target_price: 4600,
+      timeframe: '2027 年中',
+      reasoning: '目标价已有一段时间未更新。',
+      key_points: ['等待新报告'],
+      as_of_date: '2026-02-08',
+      stale_days: 235,
+      source: 'web_search',
+    },
+  ],
+  analysis_summary: '多数机构维持看多。',
+  last_updated: '2026-10-02 08:00:00',
+  metadata: METADATA,
+}
+const ADVICE: InvestmentAdviceResponse = {
+  market_assessment: {
+    current_position: '高位震荡，趋势未破。',
+    risk_level: 'medium',
+    recommended_approach: '分批建仓，保留现金仓位。',
+    key_considerations: ['美联储路径', '美元指数', '央行购金'],
+  },
+  strategies: [
+    {
+      type: 'conservative',
+      title: '保守策略',
+      description: '以定投为主，控制回撤。',
+      allocation: '5%-10%',
+      timeframe: '长期（1 年以上）',
+      risk_level: 'low',
+      entry_strategy: {
+        current_price_assessment: '偏高但可接受',
+        recommended_entry_range: '$3,900 - $4,100',
+        entry_timing: '等待回调后分批',
+        position_building: '分三批建仓',
+      },
+      exit_strategy: {
+        profit_target: '$4,800',
+        stop_loss: '-8%',
+        rebalancing_trigger: '每年再平衡一次',
+      },
+      pros: ['回撤可控'],
+      cons: ['牛市收益有限'],
+      suitable_for: ['长期配置型'],
+      execution_steps: ['设定定投计划', '每季度复核'],
+    },
+  ],
+  core_principles: [{ title: '仓位纪律', description: '单一资产不超过总仓位的 15%。' }],
+  risk_warning: '贵金属波动较大，可能出现大幅回撤。',
+  disclaimer: '本页内容不构成投资建议。',
+  analysis_status: 'ok',
+  price_snapshot: {
+    label: '近 12 个月',
+    window_start: '2025-10-02',
+    window_end: '2026-10-01',
+    latest_price: 4200,
+    change_pct: 16.67,
+    high: 4310,
+    low: 3550,
+    amplitude_pct: 21.41,
+    full_window: true,
+  },
+  metadata: METADATA,
+}
+
+/** 降级分支：数据不足时后端随附确定性行情快照（advice.snapshot.* 的槽位在这里）。 */
+const ADVICE_DEGRADED: InvestmentAdviceResponse = {
+  ...ADVICE,
+  strategies: [],
+  core_principles: [],
+  analysis_status: 'insufficient_data',
+  metadata: { ...METADATA, status: 'insufficient_data', message: '数据不足，未调用模型' },
+}
+
+const DIGEST_ITEM = {
+  rank: 1,
+  id: 101,
+  title: '央行购金推动金价创新高',
+  summary: '多家央行公布增持黄金储备。',
+  source: '路透社',
+  tier: 1,
+  tier_label: '一线权威',
+  url: 'https://example.invalid/news/101',
+  published_at: '2026-10-02T06:00:00+08:00',
+  age_hours: 2.5,
+  importance: 92.5,
+  confidence: 88.3,
+  signals: ['来源权威', '覆盖 3 家媒体'],
+  event_tags: ['cb_buying'],
+  event_labels: ['央行购金'],
+  via_aggregator: true,
+  coverage_count: 3,
+  related: [
+    {
+      title: '同题报道：各国央行持续增持',
+      source: '美联社',
+      url: 'https://example.invalid/news/102',
+      published_at: '2026-10-02T05:30:00+08:00',
+    },
+  ],
+}
+
+const FETCH_SOURCE = {
+  name: 'reuters',
+  status: 'ok',
+  entries: 42,
+  kept: 30,
+  new: 12,
+  error: null,
+}
+
+const FETCH_REPORT = {
+  fetched_at: '2026-10-02T07:50:00+08:00',
+  total_sources: 13,
+  ok_sources: 12,
+  failed_sources: 1,
+  entries: 220,
+  kept: 180,
+  new_items: 24,
+  duplicates: 88,
+  skipped_no_title: 3,
+  skipped_no_url: 2,
+  skipped_no_time: 1,
+  skipped_filtered: 40,
+  skipped_unstorable: 1,
+  sources: [FETCH_SOURCE],
+}
+
+const DIGEST: DigestResponse = {
+  generated_at: '2026-10-02T08:00:00+08:00',
+  has_data: true,
+  unavailable_reason: '（示例：接口带不可用原因时的展示位）',
+  last_fetch: FETCH_REPORT,
+  windows: [
+    {
+      key: '24h',
+      label: '24 小时内',
+      hours: 24,
+      total_clusters: 2,
+      items: [DIGEST_ITEM],
+    },
+    {
+      key: '7d',
+      label: '7 天内',
+      hours: 168,
+      total_clusters: 6,
+      items: [{ ...DIGEST_ITEM, id: 102, rank: 2, title: '七天窗口内的旧闻', age_hours: 100 }],
+    },
+  ],
+}
+
+const DIGEST_REFRESH: DigestRefreshResponse = {
+  ...FETCH_REPORT,
+  success: true,
+}
+const FACTORS_RESPONSE: QuantFactorsResponse = {
+  model_version: 'quant-v5',
+  as_of: '2026-09-30',
+  available_factors: 4,
+  total_factors: 5,
+  categories: [
+    { key: 'monetary', name: '货币政策与利率', total: 2, available: 2 },
+    { key: 'risk', name: '避险与信用', total: 1, available: 1 },
+    { key: 'supply', name: '供需结构', total: 1, available: 1 },
+    { key: 'technical', name: '市场与技术面', total: 1, available: 0 },
+  ],
+  factors: [
+    {
+      key: 'real_yield_10y',
+      name: '美债 10 年期实际利率',
+      category: 'monetary',
+      category_name: '货币政策与利率',
+      weight: 1.2,
+      sign: -1,
+      value: 1.23,
+      obs_date: '2026-09-30',
+      z: -0.5,
+      signed_z: 0.6,
+      contribution: 0.31,
+      status: 'ok',
+      reason: null,
+      unit: '%',
+      source: '美国财政部（TIPS 实际收益率曲线）',
+      description: '持有黄金的机会成本。',
+      age_days: 1,
+      max_age_days: 7,
+      publication_lag_days: 5,
+      coverage: {
+        observations: 6538,
+        years: [2016, 2017, 2026],
+        year_counts: { '2016': 249, '2017': 1, '2026': 188 },
+        sparse_years: [2017],
+        first_date: '2016-01-04',
+        last_date: '2026-09-30',
+        accumulating: false,
+      },
+    },
+    {
+      key: 'cb_gold_new',
+      name: '央行购金（新序列）',
+      category: 'supply',
+      category_name: '供需结构',
+      weight: 0.6,
+      sign: 1,
+      value: 12.5,
+      obs_date: '2026-09-30',
+      z: 0.9,
+      signed_z: 0.9,
+      contribution: 0.18,
+      status: 'ok',
+      reason: null,
+      unit: '吨',
+      source: '世界黄金协会',
+      description: '官方部门净买入，序列刚起步。',
+      age_days: 2,
+      max_age_days: 30,
+      publication_lag_days: 15,
+      coverage: {
+        observations: 260,
+        years: [2026],
+        year_counts: { '2026': 260 },
+        sparse_years: [],
+        first_date: '2026-01-02',
+        last_date: '2026-09-30',
+        accumulating: true,
+      },
+    },
+    {
+      key: 'vix',
+      name: 'VIX 波动率指数',
+      category: 'risk',
+      category_name: '避险与信用',
+      weight: 0.4,
+      sign: 1,
+      value: 18.2,
+      obs_date: '2026-09-30',
+      z: 0.3,
+      signed_z: 0.3,
+      contribution: 0.05,
+      status: 'stale',
+      reason: '最近一条数据超过更新周期',
+      unit: '点',
+      source: 'Yahoo Finance（^VIX）',
+      description: '避险情绪的温度计。',
+      age_days: 9,
+      max_age_days: 3,
+      publication_lag_days: 0,
+    },
+    {
+      key: 'momentum_200d',
+      name: '200 日均线动量',
+      category: 'technical',
+      category_name: '市场与技术面',
+      weight: 0.3,
+      sign: 1,
+      value: null,
+      obs_date: null,
+      z: null,
+      signed_z: null,
+      contribution: null,
+      status: 'missing',
+      reason: '序列为空，后端未下发覆盖画像',
+      unit: '点',
+      source: 'Yahoo Finance（GC=F 收盘）',
+      description: '趋势跟随因子。',
+      age_days: null,
+      max_age_days: 5,
+      publication_lag_days: 0,
+      coverage: null,
+    },
+  ],
+  sources: [
+    { name: 'yahoo', label: 'Yahoo Finance 行情', status: 'ok', error: null, reason: null },
+    {
+      name: 'cftc',
+      label: 'CFTC 持仓',
+      status: 'error',
+      error: '连接超时',
+      reason: '本轮抓取失败，沿用上一份数据',
+    },
+  ],
+  sync: {
+    started_at: '2026-09-30T12:15:00+08:00',
+    finished_at: '2026-09-30T12:16:00+08:00',
+    sources_ok: 6,
+    sources_total: 7,
+  },
+  unavailable_reason: null,
+}
+type Prediction = QuantPredictionsResponse['predictions'][number]
+type Scenario = Prediction['scenarios'][number]
+type AccuracyRow = QuantAccuracyResponse['latest'][number]
+
+function scenario(key: Scenario['key'], label: string, overrides: Partial<Scenario> = {}): Scenario {
+  return {
+    key,
+    label,
+    probability: key === 'base' ? 0.5 : 0.25,
+    price_low: 4100,
+    price_high: 4300,
+    trigger: `${label}触发条件`,
+    invalidation: `${label}失效条件`,
+    ...overrides,
+  }
+}
+
+function prediction(overrides: Partial<Prediction>): Prediction {
+  return {
+    horizon_days: 5,
+    scale_label: '1 周',
+    scale: '日内～一周',
+    scale_description: '资金流与技术面主导。',
+    headline: '持平偏多，区间震荡。',
+    status: 'ok',
+    reason: '（示例：不可用原因的展示位）',
+    direction: 'up',
+    direction_label: '看涨',
+    direction_status: 'published',
+    direction_reason: null,
+    as_of: '2026-09-30',
+    base_price: 4200,
+    base_basis: 'close',
+    base_basis_label: '日收盘',
+    target_price: 4260,
+    expected_return: 0.0143,
+    uncertainty: 0.02,
+    probability_up: 0.62,
+    distribution_mode: 'aci',
+    interval_alpha: 0.2,
+    interval_nominal: 0.8,
+    expected_capped: false,
+    range_low: 4100,
+    range_high: 4330,
+    scenarios: [
+      scenario('base', '基准情景'),
+      scenario('bull', '看涨情景', { price_low: 4330, price_high: 4450 }),
+      scenario('bear', '看跌情景', { price_low: 3950, price_high: 4100 }),
+    ],
+    scenario_reason: '（示例：情景说明的展示位）',
+    score: 0.42,
+    model_version: 'quant-v5',
+    available_factors: 4,
+    total_factors: 5,
+    factors: [
+      {
+        key: 'real_yield_10y',
+        name: '美债 10 年期实际利率',
+        category: 'monetary',
+        category_name: '货币政策与利率',
+        weight: 1.2,
+        sign: -1,
+        value: 1.23,
+        obs_date: '2026-09-30',
+        z: -0.5,
+        signed_z: 0.6,
+        contribution: 0.31,
+        status: 'ok',
+        reason: null,
+      },
+    ],
+    ...overrides,
+  }
+}
+
+const PREDICTIONS_RESPONSE: QuantPredictionsResponse = {
+  model_version: 'quant-v5',
+  as_of: '2026-09-30',
+  price_basis: {
+    basis: 'close',
+    label: '日收盘',
+    source: '腾讯财经-纽约黄金',
+    as_of: '2026-09-30T15:00:00+08:00',
+  },
+  fair_value: {
+    status: 'ok',
+    reason: '（示例：不可用原因的展示位）',
+    as_of: '2026-09-30',
+    basis: 'close',
+    basis_label: '日收盘',
+    market_price: 4200,
+    fair_value: 4130.5,
+    deviation_pct: 0.0168,
+    r2: 0.912,
+    samples: 780,
+    blocks: [
+      {
+        key: 'anchor',
+        name: '宏观锚（实际利率 + 美元）',
+        usd: 3900,
+        share_pct: 92.9,
+        drivers: [
+          { key: 'real_yield_10y', name: '实际利率', log_contribution: -0.12 },
+        ],
+      },
+      { key: 'demand', name: '需求溢价（央行购金）', usd: 120, share_pct: 2.9, drivers: [] },
+      { key: 'risk', name: '风险溢价（VIX）', usd: 400, share_pct: 9.5, drivers: [] },
+      { key: 'residual', name: '情绪残差', usd: -219.5, share_pct: -5.3, drivers: [] },
+    ],
+  },
+  predictions: [
+    prediction({ horizon_days: 1, scale_label: '1 日' }),
+    prediction({ horizon_days: 5 }),
+    prediction({ horizon_days: 20, scale_label: '1 月' }),
+    prediction({
+      horizon_days: 250,
+      scale_label: '1 年',
+      headline: '方向未发布：样本不足，仅给校准区间。',
+      direction: null,
+      direction_label: null,
+      direction_status: 'not_published',
+      direction_reason: '250 日方向的历史独立样本不足 20 次，方向暂停发布',
+      target_price: 4500,
+      range_low: 3800,
+      range_high: 5200,
+      scenarios: [],
+    }),
+  ],
+}
+function accuracyRow(overrides: Partial<AccuracyRow>): AccuracyRow {
+  return {
+    horizon_days: 5,
+    evaluated_at: '2026-09-30T12:20:00+08:00',
+    window_start: '2025-01-02',
+    window_end: '2026-09-30',
+    sample_size: 780,
+    accuracy: 0.621,
+    baseline_up_accuracy: 0.54,
+    baseline_momentum_accuracy: 0.487,
+    brier_score: 0.241,
+    metrics: {
+      interval_nominal_80: 0.8,
+      interval_coverage_80: 0.764,
+      score_direction_accuracy: 0.512,
+      mean_crps: 0.021,
+      mean_crps_flat: 0.0231,
+      crps_skill_vs_flat: 0.091,
+      crps_samples: 640,
+      nonoverlapping_samples: 156,
+      accuracy_nonoverlapping: 0.601,
+      coverage_nonoverlapping: 0.771,
+      magnitude_mape: 0.018,
+      magnitude_skill_vs_flat: 0.12,
+      interval_sharpness_80: 210.5,
+      effective_sample_size: 240,
+      expected_cap_rate: 0.06,
+      down_calls: 96,
+      down_call_accuracy: 0.573,
+      down_call_edge_vs_up: 0.033,
+      accuracy_ci95: [0.587, 0.654],
+      p_value_vs_up: 0.004,
+      accuracy_diff_vs_up: 0.081,
+      direction_edge_vs_up_ci95: [0.012, 0.15],
+      reason: '（示例：指标口径说明位）',
+      regimes: {
+        split_date: '2022-01-01',
+        note: '2022 年起央行购金与地缘冲突改变了定价结构。',
+        pre: {
+          label: '2022-01-01 之前',
+          window_start: '2015-01-02',
+          window_end: '2021-12-31',
+          sample_size: 400,
+          accuracy: 0.585,
+          baseline_up_accuracy: 0.51,
+          baseline_momentum_accuracy: 0.47,
+          reason: '仅含低利率时代样本',
+        },
+        post: {
+          label: '2022-01-01 起',
+          window_start: '2022-01-03',
+          window_end: '2026-09-30',
+          sample_size: 380,
+          accuracy: 0.658,
+          baseline_up_accuracy: 0.58,
+          baseline_momentum_accuracy: 0.51,
+          reason: '含高利率与央行购金阶段',
+        },
+      },
+    },
+    factors: [
+      {
+        key: 'real_yield_10y',
+        name: '美债 10 年期实际利率',
+        category: 'monetary',
+        category_name: '货币政策与利率',
+        weight: 1.2,
+        sign: -1,
+        samples: 780,
+        hit_rate: 0.58,
+        ic: -0.07,
+        rank_ic: -0.06,
+      },
+    ],
+    reason: '（示例：样本不足说明位）',
+    ...overrides,
+  }
+}
+
+const ACCURACY_RESPONSE: QuantAccuracyResponse = {
+  model_version: 'quant-v5',
+  latest: [
+    accuracyRow({ horizon_days: 1, sample_size: 800, accuracy: 0.6 }),
+    accuracyRow({ horizon_days: 5 }),
+    accuracyRow({ horizon_days: 20, sample_size: 700, accuracy: 0.64 }),
+    accuracyRow({ horizon_days: 250, sample_size: 0, accuracy: null, factors: [] }),
+  ],
+  history: [
+    accuracyRow({ horizon_days: 5, evaluated_at: '2026-09-23T12:20:00+08:00' }),
+    accuracyRow({ horizon_days: 5, evaluated_at: '2026-09-16T12:20:00+08:00' }),
+  ],
+}
+
+const MONITOR_RESPONSE: QuantMonitorResponse = {
+  as_of: '2026-09-30',
+  rows: [
+    {
+      key: 'real_yield',
+      name: '实际利率动量的反向指标',
+      frequency: '周更',
+      source: '美国财政部',
+      value: -0.35,
+      unit: 'z',
+      change: 0.12,
+      obs_date: '2026-09-30',
+      signal: 'bull',
+      signal_label: '看涨',
+      note: '实际利率回落利多黄金。',
+      status: 'ok',
+      reason: null,
+    },
+    {
+      key: 'vix_regime',
+      name: 'VIX 状态',
+      frequency: '周更',
+      source: 'Yahoo Finance',
+      value: 18.2,
+      unit: '点',
+      change: -1.4,
+      obs_date: '2026-09-30',
+      signal: 'bear',
+      signal_label: '看跌',
+      note: '波动率回落降低避险需求。',
+      status: 'ok',
+      reason: null,
+    },
+    {
+      key: 'usdcny',
+      name: '美元兑人民币',
+      frequency: '日更',
+      source: '中国外汇交易中心',
+      value: 7.12,
+      unit: 'CNY',
+      change: 0.02,
+      obs_date: '2026-09-30',
+      signal: null,
+      signal_label: '信息型',
+      note: '只看不评的汇率信息。',
+      status: 'ok',
+      reason: null,
+    },
+    {
+      key: 'gvz',
+      name: 'GVZ 黄金波动率',
+      frequency: '周更',
+      source: 'CBOE',
+      value: null,
+      unit: '点',
+      change: null,
+      obs_date: null,
+      signal: null,
+      signal_label: '样本不足',
+      note: '历史样本不足，暂不给方向。',
+      status: 'stale',
+      reason: '最近一条数据超过 14 天',
+    },
+  ],
+}
+type ResearchHorizon = QuantResearchResponse['horizons'][number]
+type ResearchPeriodRow = ResearchHorizon['periods']['holdout']
+
+function researchPeriod(overrides: Partial<ResearchPeriodRow> = {}): ResearchPeriodRow {
+  return {
+    label: '留出期',
+    window_start: '2023-10-02',
+    window_end: '2026-09-30',
+    sample_size: 700,
+    accuracy: 0.563,
+    baseline_up_accuracy: 0.563,
+    baseline_momentum_accuracy: 0.55,
+    brier_score: 0.24,
+    brier_skill_score: -0.02,
+    brier_skill_p_value: 0.9,
+    mean_crps: 0.021,
+    crps_skill_vs_flat: 0.031,
+    accuracy_diff_vs_up: 0,
+    direction_edge_vs_up_ci95: [0.4, 0.6],
+    down_calls: 10,
+    down_call_accuracy: 0.5,
+    down_call_edge_vs_up: -0.05,
+    accuracy_ci95: [0.52, 0.6],
+    p_value_vs_up: 0.5,
+    interval_coverage_80: 0.789,
+    interval_coverage_ci95: [0.75, 0.82],
+    effective_sample_size: 140,
+    independent_bets: 31,
+    independent_bet_stride: 5,
+    accuracy_independent_bets: 0.548,
+    interval_coverage_80_independent_bets: 0.774,
+    expected_cap_rate: 0.1,
+    reason: '（示例：样本不足说明位）',
+    ...overrides,
+  }
+}
+
+function researchHorizon(days: number, label: string): ResearchHorizon {
+  return {
+    horizon_days: days,
+    label,
+    headline: `${label}方向 / 校准区间`,
+    periods: {
+      development: researchPeriod({ label: '开发期', accuracy: 0.522 }),
+      holdout: researchPeriod(),
+      forward: researchPeriod({
+        label: '前向留出期（裁决窗口）',
+        sample_size: 0,
+        accuracy: null,
+        reason: '可评估样本只有 0 个（至少需要 30 个）',
+      }),
+      full: researchPeriod({ label: '全样本', accuracy: 0.528 }),
+    },
+    forward_readiness: {
+      window_start: '2026-10-02',
+      observations: 6,
+      independent_bets: 2,
+      required_bets: 20,
+      decidable: false,
+      shortfall_bets: 18,
+      approx_trading_days_needed: 90,
+    },
+    forward_posterior: {
+      prior: [1, 1],
+      alpha: 3,
+      beta: 17,
+      successes: 2,
+      independent_bets: 2,
+      mean: 0.15,
+      ci95: [0.02, 0.35],
+      threshold: 0.5,
+      probability_above_threshold: 0.08,
+      mean_crps: 0.021,
+      crps_skill_vs_flat: 0.031,
+    },
+    reliability_bins: [{ lo: 0.5, hi: 0.6, count: 120, mean_predicted: 0.55, frequency: 0.52 }],
+    factors: [
+      {
+        key: 'real_yield_10y',
+        name: '美债 10 年期实际利率',
+        category: 'monetary',
+        category_name: '货币政策与利率',
+        weight: 1.2,
+        sign: -1,
+        samples: 700,
+        hit_rate: 0.54,
+        ic: -0.05,
+        rank_ic: -0.04,
+        alignment: 0.5,
+        alignment_t: 1.2,
+        alignment_p_value: 0.2,
+        alignment_naive_t: 1.1,
+      },
+    ],
+  }
+}
+
+const RESEARCH: QuantResearchResponse = {
+  model_version: 'quant-v5',
+  status: 'ok',
+  reason: null,
+  as_of: '2026-10-01',
+  data_window: { start: '2025-07-18', end: '2026-10-01', trading_days: 311, years: 1.2 },
+  holdout_start: '2023-10-02',
+  active_holdout_start: '2026-10-02',
+  generated_at: '2026-10-02T10:00:00+08:00',
+  cached: false,
+  verdict: {
+    status: 'no_edge',
+    label: '无统计优势',
+    detail: '留出期没有尺度满足预注册规则，按预注册规则保留 quant-v5。',
+  },
+  benchmark: {
+    key: 'gold_spot_no_roll',
+    name: '伦敦金现货（不含展期）',
+    note: '现货序列没有换月价差，因此不包含展期收益。',
+    alternatives: [
+      {
+        key: 'gold_futures_roll',
+        name: 'COMEX 黄金期货（含展期）',
+        note: '期货收益包含换月价差，口径与现货不同。',
+        available: false,
+        reason: '暂无连续合约序列',
+      },
+    ],
+  },
+  regime_candidates: [
+    {
+      key: 'real_rate_regime',
+      name: '实际利率状态',
+      series_key: 'real_yield_10y',
+      description: '按实际利率水平划分的宏观状态。',
+      status: 'lab_only',
+      note: '仅进研究台，未过前向窗口闸门。',
+    },
+  ],
+  horizons: [researchHorizon(5, '1 周'), researchHorizon(250, '1 年')],
+}
+const SOURCES: SourcesStatusResponse = {
+  generated_at: '2026-10-02T08:00:00+08:00',
+  summary: { total: 3, ok: 1, empty: 1, error: 1, skipped: 0, stale: 1 },
+  sources: [
+    {
+      channel: 'gold_news_rss',
+      channel_label: '黄金新闻 RSS',
+      source_key: 'reuters',
+      status: 'ok',
+      status_label: '可用',
+      stale: false,
+      age_hours: 1.5,
+      started_at: '2026-10-02T07:50:00+08:00',
+      finished_at: '2026-10-02T07:50:20+08:00',
+      items: 42,
+      error: null,
+    },
+    {
+      channel: 'quant_sync',
+      channel_label: '量化同步',
+      source_key: 'cftc',
+      status: 'error',
+      status_label: '不可用',
+      stale: true,
+      age_hours: 30,
+      started_at: '2026-10-01T12:00:00+08:00',
+      finished_at: null,
+      items: 0,
+      error: '连接超时',
+    },
+    {
+      channel: 'news_digest',
+      channel_label: '消息摘要',
+      source_key: 'digest',
+      status: 'empty',
+      status_label: '无数据',
+      stale: false,
+      age_hours: 2,
+      started_at: '2026-10-02T06:00:00+08:00',
+      finished_at: '2026-10-02T06:00:05+08:00',
+      items: 0,
+      error: null,
+    },
+  ],
+}
+
+const HEALTH: HealthResponse = {
+  status: 'ok',
+  timestamp: '2026-10-02T08:00:00+08:00',
+  version: '2.0.2',
+  bootstrap: {
+    enabled: true,
+    status: 'done',
+    ready: true,
+    step: { index: 4, total: 4 },
+    phases: [
+      {
+        key: 'migrate',
+        label: '数据库迁移',
+        status: 'done',
+        note: '已应用 12 个迁移',
+        at: '2026-10-02T07:59:00+08:00',
+      },
+    ],
+    gaps: {
+      gold_prices: { rows: 6538, last_date: '2026-10-01' },
+      dollar_index: { rows: 6538, last_date: '2026-10-01' },
+      gold_news: { rows: 120, last_published_at: '2026-10-01T22:00:00+08:00' },
+      news_digest: { rows: 40, last_published_at: '2026-10-01T22:00:00+08:00' },
+      quant: {
+        sparse_year_count: 1,
+        window_years: 26,
+        series_without_data: ['cftc_net_oi_ratio'],
+      },
+    },
+    error: null,
+    started_at: '2026-10-02T07:58:00+08:00',
+    finished_at: '2026-10-02T08:00:00+08:00',
+    migrations: { applied: 12, pending: 0 },
+  },
+  config_watch: {
+    enabled: true,
+    status: 'watching',
+    env_file: '/app/.env',
+    interval_seconds: 5,
+    last_check_at: '2026-10-02T08:00:00+08:00',
+    last_reload_at: '2026-10-02T07:30:00+08:00',
+    reloaded_keys: ['LLM_MODEL'],
+    note: '热加载只对新请求生效',
+  },
+  services: {
+    ai_config: {
+      status: 'ok',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      base_url: 'https://api.deepseek.com',
+      search_model: 'deepseek-chat',
+      configured: true,
+    },
+    database: { status: 'connected' },
+    tencent_api: { status: 'ok' },
+    cache: { status: 'ok' },
+    scheduler: { status: 'running' },
+  },
+}
+/** TESTIDS.field 的叶子选择器：路径 → data-testid 字符串（嵌套组递归展开）。 */
+function allFieldSelectors(): Array<[string, string]> {
+  const out: Array<[string, string]> = []
+  const walk = (path: string, node: unknown) => {
+    if (typeof node === 'string') {
+      out.push([path, node])
+      return
+    }
+    if (node && typeof node === 'object') {
+      for (const [key, value] of Object.entries(node)) {
+        walk(path ? `${path}.${key}` : key, value)
+      }
+    }
+  }
+  walk('', TESTIDS.field)
+  return out
+}
+
+/** 当前 DOM 里所有已出现的字段级选择器（按叶子路径计）。 */
+function currentFoundFieldIds(): Set<string> {
+  const found = new Set<string>()
+  for (const [path, id] of allFieldSelectors()) {
+    if (document.querySelector(`[data-testid="${id}"]`)) found.add(path)
+  }
+  return found
+}
+
+function mergeFound(target: Set<string>, source: Set<string>) {
+  for (const key of source) target.add(key)
+}
+
+/** 同一字段可能在表格与摘要各有一处槽位，按「至少出现一个」等待。 */
+async function waitForField(id: string) {
+  await waitFor(() => {
+    expect(document.querySelectorAll(`[data-testid="${id}"]`).length).toBeGreaterThan(0)
+  })
+}
+
+function goldDataFixture() {
+  return {
+    stats: GOLD_STATS,
+    statsLoading: false,
+    statsError: null,
+    dailyPrices: DAILY,
+    dailyLoading: false,
+    dailyError: null,
+    correlationData: CORRELATION,
+    correlationLoading: false,
+    correlationError: null,
+    dollarRealtime: DOLLAR,
+    refreshStats: vi.fn(),
+    refreshCharts: vi.fn(),
+    refreshAll: vi.fn(),
+    lastUpdated: new Date('2026-10-02T08:00:00+08:00'),
+  } as unknown as ReturnType<typeof useGoldData>
+}
+
+describe('字段覆盖：每个响应字段都有展示位', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(useGoldData).mockReturnValue(goldDataFixture())
+
+    apiMocks.marketSummaryApi.getMarketSummary.mockResolvedValue(SUMMARY)
+    apiMocks.analysisApi.getBullishFactors.mockResolvedValue(BULLISH)
+    apiMocks.analysisApi.getBearishFactors.mockResolvedValue(BEARISH)
+    apiMocks.institutionApi.getInstitutionPredictions.mockResolvedValue(INSTITUTIONS)
+    apiMocks.investmentAdviceApi.getInvestmentAdvice.mockResolvedValue(ADVICE)
+    apiMocks.newsDigestApi.getDigest.mockResolvedValue(DIGEST)
+    apiMocks.newsDigestApi.refresh.mockResolvedValue(DIGEST_REFRESH)
+    apiMocks.quantApi.getFactors.mockResolvedValue(FACTORS_RESPONSE)
+    apiMocks.quantApi.getPredictions.mockResolvedValue(PREDICTIONS_RESPONSE)
+    apiMocks.quantApi.getAccuracy.mockResolvedValue(ACCURACY_RESPONSE)
+    apiMocks.quantApi.getMonitor.mockResolvedValue(MONITOR_RESPONSE)
+    apiMocks.quantApi.getResearch.mockResolvedValue(RESEARCH)
+    apiMocks.quantApi.refresh.mockResolvedValue({
+      success: true,
+      message: '已抓取 7 个数据源',
+      sources: FACTORS_RESPONSE.sources,
+      factor_status: {},
+      predictions: PREDICTIONS_RESPONSE.predictions,
+      evaluations: ACCURACY_RESPONSE.latest,
+    })
+    apiMocks.sourcesApi.getStatus.mockResolvedValue(SOURCES)
+    apiMocks.healthApi.getHealth.mockResolvedValue(HEALTH)
+  })
+
+  it('TESTIDS.field 的每个字段都能在页面上找到槽位', async () => {
+    render(<Conclusion />)
+    render(<Market />)
+    render(<Factors />)
+    render(<Messages />)
+    render(<Institutions />)
+    render(<Strategy />)
+    render(<Quant />)
+    render(<DataMethods />)
+    render(<ResearchPage />)
+
+    // 等每个区块把夹具渲染出来，再开始盘点
+    await waitForField('field-summary.core_view')
+    await waitForField('field-stats.current_price')
+    await waitForField('field-bullish.analysis_summary')
+    await waitForField('field-digest.items.title')
+    await waitForField('field-institutions.name')
+    await waitForField('field-advice.strategy.title')
+    await waitForField('field-quant.model_version')
+    await waitForField('field-health.status')
+    await waitForField('field-research.model_version')
+
+    const found = currentFoundFieldIds()
+
+    // 2.0.2 第 11 条：覆盖画像的 7 个字段逐个断言；夹具里两个因子
+    // 分别覆盖「有缺口年」与「积累期」两种状态。
+    for (const key of QUANT_FACTOR_COVERAGE_FIELDS) {
+      expect(
+        screen.queryAllByTestId(fieldTestId(`quant.factors.coverage.${key}`)).length,
+        `覆盖画像字段 ${key} 没有展示位`,
+      ).toBeGreaterThan(0)
+    }
+    expect(
+      screen
+        .getAllByTestId(fieldTestId('quant.factors.coverage.sparse_years'))
+        .some((node) => node.textContent?.includes('2017')),
+      '缺口年没有展示 2017',
+    ).toBe(true)
+    expect(
+      screen
+        .getAllByTestId(fieldTestId('quant.factors.coverage.accumulating'))
+        .some((node) => node.textContent?.includes('积累期')),
+      '积累期徽标没有展示',
+    ).toBe(true)
+
+    // 降级分支：投资策略数据不足时随附的行情快照（advice.snapshot.*）
+    apiMocks.investmentAdviceApi.getInvestmentAdvice.mockResolvedValue(ADVICE_DEGRADED)
+    render(<Strategy />)
+    await screen.findByTestId('field-advice.snapshot.label')
+    mergeFound(found, currentFoundFieldIds())
+
+    const quantSection = document.getElementById('quant') as HTMLElement
+    expect(quantSection).not.toBeNull()
+
+    // 刷新报告：量化（quant.refresh.*）与消息（digest.refresh.success）
+    fireEvent.click(within(quantSection).getByRole('button', { name: '重新抓取' }))
+    await waitFor(() => {
+      expect(screen.queryByTestId('field-quant.refresh.message')).not.toBeNull()
+    })
+    mergeFound(found, currentFoundFieldIds())
+
+    fireEvent.click(screen.getByRole('button', { name: '抓取最新消息' }))
+    await waitFor(() => {
+      expect(screen.queryByTestId('field-digest.refresh.success')).not.toBeNull()
+    })
+    mergeFound(found, currentFoundFieldIds())
+
+    // 停发方向：切到 1 年尺度，direction_status=not_published 的分支才挂载
+    await userEvent.click(within(quantSection).getAllByRole('tab', { name: '1 年' })[0])
+    await waitFor(() => {
+      expect(screen.queryByTestId('field-predictions.direction_reason')).not.toBeNull()
+    })
+    expect(screen.getByTestId('field-predictions.direction_status')).toHaveTextContent('未发布')
+    mergeFound(found, currentFoundFieldIds())
+
+    const missing = allFieldSelectors()
+      .map(([path]) => path)
+      .filter((path) => !found.has(path))
+    expect(missing).toEqual([])
+  })
+})

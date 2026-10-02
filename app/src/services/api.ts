@@ -154,10 +154,22 @@ api.interceptors.response.use(
   }
 );
 
+export interface PriceBasis {
+  basis: string;
+  label: string;
+  source?: string | null;
+  as_of?: string | null;
+}
+
 export interface DailyPrice {
   date: string;
   price: number;
   volume: number;
+  /** 口径：close = 日收盘；realtime = 实时报价（只有被实时价替换/追加的那一点）。 */
+  basis?: string;
+  basis_label?: string;
+  source?: string | null;
+  as_of?: string | null;
   // 这里原本还声明了 open_price? / high_price? / low_price? / change_percent?，
   // 但 /api/gold/prices/daily 从不返回它们，前端也从不读它们 ——
   // 留着只会让人以为接口提供了 OHLC。真需要的话先让后端发出来。
@@ -167,6 +179,14 @@ export interface CorrelationData {
   date: string;
   gold_price: number;
   dollar_index: number;
+  /** 两条序列各自的口径；黄金最新一点可能是实时报价，其余都是日收盘。 */
+  gold_basis?: string;
+  gold_basis_label?: string;
+  gold_source?: string | null;
+  dollar_basis?: string;
+  dollar_basis_label?: string;
+  dollar_source?: string | null;
+  as_of?: string | null;
 }
 
 export interface GoldStats {
@@ -191,6 +211,10 @@ export interface GoldStats {
   data_source: string;
   /** 是否真的取到了实时价；false 表示价格来自数据库里的历史记录 */
   is_realtime: boolean;
+  /** 当前价的显式口径（实时报价 / 日收盘），前端不再靠 is_realtime 反推 */
+  price_basis: string;
+  price_basis_label: string;
+  price_as_of: string | null;
 }
 
 export interface GoldPriceResponse {
@@ -201,7 +225,11 @@ export interface GoldPriceResponse {
 export interface DollarRealtime {
   price: number;
   previous_close: number;
+  change?: number | null;
   change_percent: number;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
   updated_at: string;
   /**
    * 这条行情所属的交易日，由**数据源**给出（后端的 `values[10]`）。
@@ -505,12 +533,30 @@ export interface QuantFactorContribution {
   reason: string | null
 }
 
+/** 因子的覆盖画像（2.0.2 第 11 条）：窗口、缺口年与积累期。
+ * 序列存在时后端总会给；序列为空才为 null/缺省。 */
+export interface QuantFactorCoverage {
+  observations: number
+  years: number[]
+  /** JSON 的键是字符串形式的年份，如 "2000": 249 —— 不要当 number 读 */
+  year_counts: Record<string, number>
+  sparse_years: number[]
+  first_date: string | null
+  last_date: string | null
+  /** true = 有数据的年份少于 2 个；新序列允许先入库积累，与「缺口」分开报告 */
+  accumulating: boolean
+}
+
 export interface QuantFactorSnapshot extends QuantFactorContribution {
   unit: string
   source: string
   description: string
   age_days: number | null
   max_age_days: number
+  /** 该指标从统计期结束到公开发布通常滞后几个自然日（口径说明，不是延迟） */
+  publication_lag_days: number
+  /** 覆盖画像：窗口、缺口年与积累期；只进因子明细行，不占头部数字 */
+  coverage?: QuantFactorCoverage | null
 }
 
 export interface QuantCategoryStatus {
@@ -575,6 +621,9 @@ export interface QuantDecomposition {
   status: string
   reason: string | null
   as_of: string | null
+  /** market_price 就是量化基准价（gold_close 最后一点） */
+  basis: string
+  basis_label: string
   market_price: number | null
   fair_value: number | null
   deviation_pct: number | null
@@ -595,8 +644,15 @@ export interface QuantPredictionItem {
   // 'flat' = 校准后的期望收益恰为 0（样本不足时不写方向，这里不会混进得分的符号）
   direction: 'up' | 'down' | 'flat' | null
   direction_label: string | null
+  /** published / not_published：停发的尺度照样给区间，只是不给方向 */
+  direction_status: string
+  /** not_published 时必须解释为什么（例如 250 日方向样本不足） */
+  direction_reason: string | null
   as_of: string | null
   base_price: number | null
+  /** 基准价口径：量化基准（gold_close 日收盘序列的最后一点） */
+  base_basis: string
+  base_basis_label: string
   target_price: number | null
   expected_return: number | null
   uncertainty: number | null
@@ -622,6 +678,8 @@ export interface QuantPredictionItem {
 export interface QuantPredictionsResponse {
   model_version: string
   as_of: string | null
+  /** 目标价与区间所用的价格口径 */
+  price_basis: PriceBasis | null
   fair_value: QuantDecomposition
   predictions: QuantPredictionItem[]
 }
@@ -670,6 +728,30 @@ export interface QuantAccuracyMetrics {
   interval_coverage_80?: number | null
   // 未校准的因子偏向（合成得分符号）在同一段历史里的成绩，与本模型并排对照
   score_direction_accuracy?: number | null
+  // 分布级评分：Brier 只看涨/跌，CRPS 评整张分布对实现收益的匹配
+  mean_crps?: number | null
+  mean_crps_flat?: number | null
+  crps_skill_vs_flat?: number | null
+  crps_samples?: number | null
+  // 独立下注口径（stride = 尺度）：重叠样本折算后还剩多少可信度
+  nonoverlapping_samples?: number | null
+  accuracy_nonoverlapping?: number | null
+  coverage_nonoverlapping?: number | null
+  // 幅度技能：目标价偏离实际的 MAPE 相对「永远报零」的技能分
+  magnitude_mape?: number | null
+  magnitude_skill_vs_flat?: number | null
+  interval_sharpness_80?: number | null
+  effective_sample_size?: number | null
+  // 期望收益被护栏封顶的样本占比（封顶不是美化，比例本身是健康度指标）
+  expected_cap_rate?: number | null
+  // 看空喊话的口径：次数为 0 就是「没有可评估的下注」，展示时必须照实说
+  down_calls?: number | null
+  down_call_accuracy?: number | null
+  down_call_edge_vs_up?: number | null
+  accuracy_ci95?: number[] | null
+  p_value_vs_up?: number | null
+  accuracy_diff_vs_up?: number | null
+  direction_edge_vs_up_ci95?: number[] | null
   regimes?: {
     split_date?: string
     note?: string
@@ -731,6 +813,12 @@ export interface ResearchPeriod {
   mean_crps: number | null
   crps_skill_vs_flat: number | null
   accuracy_diff_vs_up: number | null
+  /** 相对「永远看多」的增量 CI（下界 > 0 才算有增量） */
+  direction_edge_vs_up_ci95: number[] | null
+  /** 模型敢在看空时看空：喊跌次数为 0 就没有可评估的看空下注 */
+  down_calls: number | null
+  down_call_accuracy: number | null
+  down_call_edge_vs_up: number | null
   accuracy_ci95: number[] | null
   p_value_vs_up: number | null
   interval_coverage_80: number | null
@@ -739,8 +827,10 @@ export interface ResearchPeriod {
   // 独立下注口径（stride = 尺度）：重叠样本折算后还剩多少可信度
   independent_bets: number | null
   independent_bet_stride: number | null
-  accuracy_independent_bets: number | null
+    accuracy_independent_bets: number | null
   interval_coverage_80_independent_bets: number | null
+  /** 期望收益被护栏封顶的样本占比 */
+  expected_cap_rate: number | null
   reason: string | null
 }
 
@@ -774,6 +864,52 @@ export interface ResearchFactor {
   hit_rate: number | null
   ic: number | null
   rank_ic: number | null
+  /** 与「永远看多」的方向对齐度及 HAC t / p（只进研究台，不改变生产口径） */
+  alignment: number | null
+  alignment_t: number | null
+  alignment_p_value: number | null
+  alignment_naive_t: number | null
+}
+
+/** 前向裁决的 Beta 后验（先验 Beta(1,1)）与整张分布的 CRPS，并排给证据。 */
+export interface ForwardPosterior {
+  prior: number[]
+  alpha: number
+  beta: number
+  successes: number
+  independent_bets: number
+  mean: number | null
+  ci95: number[] | null
+  threshold: number | null
+  probability_above_threshold: number | null
+  mean_crps: number | null
+  crps_skill_vs_flat: number | null
+}
+
+export interface ResearchBenchmarkAlternative {
+  key: string
+  name: string
+  note: string
+  available: boolean
+  reason: string
+}
+
+export interface ResearchBenchmark {
+  key: string
+  name: string
+  /** 「含展期」这类口径提示：收益里有没有换月价差必须让读者知道 */
+  note: string
+  alternatives: ResearchBenchmarkAlternative[]
+}
+
+export interface ResearchRegimeCandidate {
+  key: string
+  name: string
+  series_key: string
+  description: string
+  /** lab_only = 只进研究台；过前向窗口闸门之前不应出现别的取值 */
+  status: string
+  note: string
 }
 
 export interface HorizonResearch {
@@ -787,6 +923,8 @@ export interface HorizonResearch {
     full: ResearchPeriod
   }
   forward_readiness: ForwardWindowReadiness
+  /** 后端字段：Beta 后验 + CRPS；当前响应模型可能尚未透出，缺失时如实标注 */
+  forward_posterior?: ForwardPosterior | null
   reliability_bins: ResearchReliabilityBin[]
   factors: ResearchFactor[]
 }
@@ -815,6 +953,10 @@ export interface QuantResearchResponse {
   generated_at: string
   cached: boolean
   verdict: ResearchVerdict
+  /** 研究基准口径（含不含展期）与对照候选 */
+  benchmark: ResearchBenchmark
+  /** 第四轮 Regime 候选登记表（lab_only） */
+  regime_candidates: ResearchRegimeCandidate[]
   horizons: HorizonResearch[]
 }
 
@@ -886,6 +1028,10 @@ export interface DigestItem {
   importance: number
   confidence: number
   signals: string[]
+  /** 确定性事件标注（id + 中文标签）与聚合入口标记 */
+  event_tags: string[]
+  event_labels: string[]
+  via_aggregator: boolean
   coverage_count: number
   related: DigestRelatedItem[]
 }
@@ -947,6 +1093,110 @@ export const newsDigestApi = {
     const response = await api.post<DigestRefreshResponse>('/api/gold/news/digest/refresh', null, {
       timeout: 120000,
     })
+    return response.data
+  },
+}
+
+// --------------------------------------------------------------------------- //
+// 数据源可用性看板（2.0.2 第 2 条整改）：GET /api/gold/sources/status
+// --------------------------------------------------------------------------- //
+export interface FetchSourceStatus {
+  channel: string
+  channel_label: string
+  source_key: string
+  status: string
+  status_label: string
+  stale: boolean
+  age_hours: number | null
+  started_at: string | null
+  finished_at: string | null
+  items: number | null
+  error: string | null
+}
+
+export interface SourcesStatusSummary {
+  total: number
+  ok: number
+  empty: number
+  error: number
+  skipped: number
+  stale: number
+}
+
+export interface SourcesStatusResponse {
+  generated_at: string | null
+  summary: SourcesStatusSummary
+  sources: FetchSourceStatus[]
+}
+
+export const sourcesApi = {
+  getStatus: async (): Promise<SourcesStatusResponse> => {
+    const response = await getJson<SourcesStatusResponse>('/api/gold/sources/status')
+    return response.data
+  },
+}
+
+// --------------------------------------------------------------------------- //
+// /health：bootstrap（初始化进度）、config_watch（.env 热加载）与各服务状态
+// --------------------------------------------------------------------------- //
+export interface BootstrapPhase {
+  key: string
+  label: string
+  status: string
+  note: string | null
+  at: string | null
+}
+
+export interface BootstrapStep {
+  index: number
+  total: number
+}
+
+export interface BootstrapGapEntry {
+  rows?: number | null
+  last_date?: string | null
+  last_published_at?: string | null
+  series_without_data?: string[] | null
+  sparse_year_count?: number | null
+  window_years?: number | null
+}
+
+export interface BootstrapStatus {
+  enabled: boolean
+  status: string
+  ready: boolean
+  step: BootstrapStep
+  phases: BootstrapPhase[]
+  gaps: Record<string, BootstrapGapEntry>
+  error: string | null
+  started_at: string | null
+  finished_at: string | null
+  migrations: unknown
+}
+
+export interface ConfigWatchStatus {
+  enabled: boolean
+  status: string
+  env_file: string
+  interval_seconds: number
+  last_check_at: string | null
+  last_reload_at: string | null
+  reloaded_keys: string[]
+  note: string | null
+}
+
+export interface HealthResponse {
+  status: string
+  timestamp: string
+  version: string
+  bootstrap: BootstrapStatus
+  config_watch: ConfigWatchStatus
+  services: Record<string, unknown>
+}
+
+export const healthApi = {
+  getHealth: async (): Promise<HealthResponse> => {
+    const response = await getJson<HealthResponse>('/health', { timeout: 15000 })
     return response.data
   },
 }

@@ -9,6 +9,13 @@
  *   3. 两个量化区块（预测 / 回测）挂在同一组尺度 tab 上，默认停在「1 日」——
  *      想拍 1 年或 1 季就必须先点 tab，否则拍到的是另一个尺度的数字。
  *
+ * 拍摄前会先轮询 `/health` 的 bootstrap：只有引导阶段结束（done / disabled /
+ * skipped，或各阶段都已落定）才开拍；字段缺失（旧后端）也会给出提示后继续，
+ * 因为那种情况由每个区块自己的「非空 + 无空态标记」检查兜底。
+ *
+ * 选择器与 app/src/testids.ts 里的 TESTIDS 是同一批字符串；本文件是 .mjs，
+ * 不能直接 import TS，改动选择器时两处必须同步（见 docs/20-前端设计规范.md 第八节）。
+ *
  * 前置：真实后端（含真实 LLM）与前端 dev/preview 都要已经在跑。
  *   SCREENSHOT_BASE_URL  默认 http://127.0.0.1:5173
  *   SCREENSHOT_OUT       默认 <repo>/docs/images/screenshots
@@ -92,18 +99,18 @@ const SHOTS = [
     allowMarkers: ['不可用'],
     minNumbers: 15,
   },
-  // 总结表的目标价列有若干「暂无」（对应机构没给目标价），数值列另有真实价格；
-  // 要求出现「风险提示」并至少有 8 个数字。
+  // 今日结论：一行核心观点 + 关键数字，论据与生成信息收在折叠层里。
+  // 「暂无」会在机构目标价为空的表格行里如实出现，放行；数字下限防退化成空壳。
   {
     name: 'market-summary',
     url: '/',
     selector: '#conclusion',
     minChars: 300,
-    allowMarkers: ['暂无'],
-    minNumbers: 8,
-    requireAll: ['风险提示'],
+    allowMarkers: ['暂无', '重新分析'],
+    minNumbers: 4,
+    requireAll: ['今日结论', '置信度'],
   },
-  // 预测卡里会如实列出「不可用」的因子行，放行该标记但要求有足够数字。
+  // 回测评估按尺度切换：不点 tab 拍到的是默认的 1 日面板。
   {
     name: 'quant-accuracy',
     url: '/',
@@ -171,8 +178,42 @@ function assertRealContent(name, text, options = {}) {
   }
 }
 
+/** 轮询 /health 的 bootstrap，直到引导阶段结束。 */
+async function waitForBootstrap() {
+  const deadline = Date.now() + 10 * 60 * 1000
+  let last = '（读不到 /health）'
+  while (Date.now() < deadline) {
+    let bootstrap = null
+    try {
+      const resp = await fetch(new URL('/health', BASE_URL))
+      if (resp.ok) bootstrap = (await resp.json()).bootstrap ?? null
+    } catch {
+      bootstrap = null
+    }
+    if (bootstrap) {
+      last = `${bootstrap.status}（步骤 ${bootstrap.step?.index ?? '?'}/${bootstrap.step?.total ?? '?'}）`
+      const phases = bootstrap.phases ?? []
+      const settled = ['done', 'disabled', 'skipped', 'failed'].includes(bootstrap.status)
+      const phasesSettled =
+        phases.length > 0 &&
+        phases.every((phase) => ['done', 'skipped', 'failed'].includes(phase.status))
+      if (settled || phasesSettled) {
+        console.log(`[bootstrap] ${last}`)
+        if (bootstrap.status === 'failed') {
+          console.warn('[bootstrap] 引导失败，继续拍摄；内容检查会兜底')
+        }
+        return
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+  }
+  throw new Error(`等待 /health bootstrap 完成超时（最后状态：${last}）`)
+}
+
 async function main() {
   await mkdir(OUT_DIR, { recursive: true })
+  await waitForBootstrap()
+
   const browser = await chromium.launch({ channel: BROWSER })
   // 每个缩放档一个上下文：默认 2x（文字锐利），超长区块用 1x 控制体积。
   const states = new Map()
@@ -190,49 +231,49 @@ async function main() {
   const problems = []
 
   for (const shot of SHOTS) {
-    const state = await stateFor(shot.scale ?? 2)
-    const { page } = state
-    const url = new URL(shot.url, BASE_URL).toString()
-    if (url !== state.url) {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 })
-      state.url = url
-      state.tab = null
-    }
-    if (shot.tab && shot.tab !== state.tab) {
-      // 预测与回测共用一组尺度 tab；不点就会拍到默认的 1 日。
-      await page.getByRole('tab', { name: shot.tab, exact: true }).last().click()
-      state.tab = shot.tab
-      await page.waitForTimeout(400)
-    }
-    const target = page.locator(shot.selector).first()
-    await target.waitFor({ state: 'visible', timeout: 60000 })
-    // 折线图与表格有入场动画/延迟渲染，等一拍再拍。
-    await page.waitForTimeout(1200)
-
-    const text = await target.innerText().catch(() => '')
     try {
-      assertRealContent(shot.name, text, shot)
-    } catch (error) {
-      problems.push(error.message)
-      continue
-    }
+      const state = await stateFor(shot.scale ?? 2)
+      const { page } = state
+      const url = new URL(shot.url, BASE_URL).toString()
+      if (url !== state.url) {
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 })
+        state.url = url
+        state.tab = null
+      }
+      if (shot.tab && shot.tab !== state.tab) {
+        // 预测与回测共用一组尺度 tab；不点就会拍到默认的 1 日。
+        await page.getByRole('tab', { name: shot.tab, exact: true }).last().click()
+        state.tab = shot.tab
+        await page.waitForTimeout(400)
+      }
+      const target = page.locator(shot.selector).first()
+      await target.waitFor({ state: 'visible', timeout: 60000 })
+      // 折线图与表格有入场动画/延迟渲染，等一拍再拍。
+      await page.waitForTimeout(1200)
 
-    const file = path.join(OUT_DIR, `${shot.name}.png`)
-    if (shot.pad) {
-      const box = await target.boundingBox()
-      await page.screenshot({
-        path: file,
-        clip: {
-          x: Math.max(0, box.x - 12),
-          y: Math.max(0, box.y - 12),
-          width: box.width + 24,
-          height: shot.pad + 24,
-        },
-      })
-    } else {
-      await target.screenshot({ path: file })
+      const text = await target.innerText().catch(() => '')
+      assertRealContent(shot.name, text, shot)
+
+      const file = path.join(OUT_DIR, `${shot.name}.png`)
+      if (shot.pad) {
+        const box = await target.boundingBox()
+        await page.screenshot({
+          path: file,
+          clip: {
+            x: Math.max(0, box.x - 12),
+            y: Math.max(0, box.y - 12),
+            width: box.width + 24,
+            height: shot.pad + 24,
+          },
+        })
+      } else {
+        await target.screenshot({ path: file })
+      }
+      console.log(`captured ${shot.name} (${text.replace(/\s+/g, '').length} chars)`)
+    } catch (error) {
+      // 任何区块失败都只记录问题、不写图；其余区块继续，最后统一非零退出。
+      problems.push(`${shot.name}: ${error.message}`)
     }
-    console.log(`captured ${shot.name} (${text.replace(/\s+/g, '').length} chars)`)
   }
 
   await browser.close()

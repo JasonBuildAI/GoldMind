@@ -46,12 +46,26 @@ function factor(overrides: Partial<QuantFactorSnapshot> & { key: string }): Quan
     description: '持有黄金的机会成本。',
     age_days: 1,
     max_age_days: 7,
+    publication_lag_days: 5,
     ...overrides,
   }
 }
 
 const FACTORS: QuantFactorSnapshot[] = [
-  factor({ key: 'real_yield_10y', name: '美债 10 年期实际利率' }),
+  factor({
+    key: 'real_yield_10y',
+    name: '美债 10 年期实际利率',
+    // 覆盖画像（2.0.2 第 11 条）：窗口、逐年观测数、缺口年、积累期
+    coverage: {
+      observations: 6538,
+      years: [2016, 2017, 2026],
+      year_counts: { '2016': 249, '2017': 1, '2026': 188 },
+      sparse_years: [2017],
+      first_date: '2016-01-04',
+      last_date: '2026-09-30',
+      accumulating: false,
+    },
+  }),
   factor({
     key: 'vix',
     name: 'VIX 波动率指数',
@@ -145,6 +159,8 @@ const FAIR_VALUE: QuantDecomposition = {
   status: 'ok',
   reason: null,
   as_of: '2026-09-30',
+  basis: 'close',
+  basis_label: '日收盘',
   market_price: 4200,
   fair_value: 4130.5,
   deviation_pct: 0.0168,
@@ -175,7 +191,11 @@ function prediction(overrides: Partial<QuantPredictionItem>): QuantPredictionIte
     reason: null,
     direction: 'up',
     direction_label: '看涨',
+    direction_status: 'published',
+    direction_reason: null,
     as_of: '2026-09-30',
+    base_basis: 'close',
+    base_basis_label: '日收盘',
     base_price: 4200,
     target_price: 4260,
     expected_return: 0.0143,
@@ -232,6 +252,7 @@ function prediction(overrides: Partial<QuantPredictionItem>): QuantPredictionIte
 const PREDICTION_RESPONSE: QuantPredictionsResponse = {
   model_version: 'quant-v1',
   as_of: '2026-09-30',
+  price_basis: null,
   fair_value: FAIR_VALUE,
   predictions: [
     prediction({ horizon_days: 1 }),
@@ -461,9 +482,12 @@ describe('Quant', () => {
     expect(await screen.findByText('量化预测')).toBeInTheDocument()
     // 默认 5 个交易日：接口说看跌，页面必须同时给符号与文字
     expect(screen.getByText('▼ 看跌')).toBeInTheDocument()
-    expect(screen.getByText('$4,150.00')).toBeInTheDocument()
-    expect(screen.getByText('38%')).toBeInTheDocument()
-    expect(screen.getByText('−1.19%')).toBeInTheDocument()
+    const panel = await screen.findByTestId('quant-prediction-5')
+    expect(within(panel).getByTestId('field-predictions.target_price')).toHaveTextContent('$4,150.00')
+    expect(within(panel).getByTestId('field-predictions.probability_up')).toHaveTextContent('38%')
+    expect(within(panel).getByTestId('field-predictions.expected_return')).toHaveTextContent(
+      '−1.19%',
+    )
   })
 
   it('显示区间的实际名义水平与封顶标记', async () => {
@@ -570,7 +594,7 @@ describe('Quant', () => {
     await screen.findByText('▼ 看跌')
 
     const panel = screen.getByTestId('quant-prediction-5')
-    expect(within(panel).getByText(/校准后的漂移/)).toBeInTheDocument()
+    expect(within(panel).getAllByText(/校准后的期望收益/).length).toBeGreaterThan(0)
     // 未校准的因子偏向不再占主表一行：折进详情，默认收起
     const metrics = panel.querySelector('.metrics')
     expect(metrics).not.toBeNull()
@@ -579,7 +603,7 @@ describe('Quant', () => {
     expect(tiltDetails.tagName).toBe('DETAILS')
     expect(tiltDetails).not.toHaveAttribute('open')
     // 1 周这一档：得分为负、方向也是负 —— 值还在（在详情里），两行各说各的，不是同一份结论
-    expect(within(tiltDetails).getByText(/因子偏向（未校准）/)).toBeInTheDocument()
+    expect(within(tiltDetails).getAllByText(/未校准的因子偏向/).length).toBeGreaterThan(0)
     expect(within(tiltDetails).getByText('偏空 -0.31')).toBeInTheDocument()
   })
 
@@ -612,10 +636,23 @@ describe('Quant', () => {
     render(<Quant />)
     await screen.findByText('▼ 看跌')
 
-    expect(screen.getByText('基准情景')).toBeInTheDocument()
-    expect(screen.getByText('$4,150.00 ~ $4,280.00')).toBeInTheDocument()
-    expect(screen.getByText('$4,280.00 以上')).toBeInTheDocument()
-    expect(screen.getByText('$4,150.00 以下')).toBeInTheDocument()
+    const baseRow = screen.getByText('基准情景').closest('tr') as HTMLElement
+    expect(within(baseRow).getByTestId('field-predictions.scenarios.price_low')).toHaveTextContent(
+      '$4,150.00',
+    )
+    expect(within(baseRow).getByTestId('field-predictions.scenarios.price_high')).toHaveTextContent(
+      '$4,280.00',
+    )
+    const bullRow = screen.getByText('看涨情景').closest('tr') as HTMLElement
+    expect(within(bullRow).getByTestId('field-predictions.scenarios.price_low')).toHaveTextContent(
+      '$4,280.00',
+    )
+    expect(within(bullRow).getByText(/以上/)).toBeInTheDocument()
+    const bearRow = screen.getByText('看跌情景').closest('tr') as HTMLElement
+    expect(within(bearRow).getByTestId('field-predictions.scenarios.price_high')).toHaveTextContent(
+      '$4,150.00',
+    )
+    expect(within(bearRow).getByText(/以下/)).toBeInTheDocument()
     expect(screen.getByText(/VIX 方向对齐 z 停留在 ±1 之间/)).toBeInTheDocument()
     expect(screen.getAllByText(/金价跌破 200 日均线/).length).toBeGreaterThan(0)
   })
@@ -630,7 +667,9 @@ describe('Quant', () => {
     await user.click(screen.getAllByRole('tab', { name: '1 季' })[0])
 
     expect(await screen.findByTestId('quant-scenarios-unavailable-60')).toBeInTheDocument()
-    expect(screen.getByText(/200 日均线历史样本不足，无法生成触发条件/)).toBeInTheDocument()
+    expect(
+      screen.getAllByText(/200 日均线历史样本不足，无法生成触发条件/).length,
+    ).toBeGreaterThan(0)
   })
 
   it('公允价分解给出四块构成与偏离度', async () => {
@@ -640,12 +679,12 @@ describe('Quant', () => {
     await screen.findByText('▼ 看跌')
 
     expect(screen.getByText('公允价值分解')).toBeInTheDocument()
-    expect(screen.getByText('$4,130.50')).toBeInTheDocument()
-    expect(screen.getByText('+1.68%')).toBeInTheDocument()
-    expect(screen.getByText('0.912')).toBeInTheDocument()
+    expect(screen.getByTestId('field-fair_value.fair_value')).toHaveTextContent('$4,130.50')
+    expect(screen.getAllByTestId('field-fair_value.deviation_pct')[0]).toHaveTextContent('+1.68%')
+    expect(screen.getAllByTestId('field-fair_value.r2')[0]).toHaveTextContent('0.912')
     expect(screen.getByText('宏观锚（实际利率 + 美元）')).toBeInTheDocument()
     expect(screen.getByText('情绪残差')).toBeInTheDocument()
-    expect(screen.getByText('92.9%')).toBeInTheDocument()
+    expect(screen.getAllByText('92.9%').length).toBeGreaterThan(0)
   })
 
   it('公允价不可用时只给原因，不摆分解数字', async () => {
@@ -676,17 +715,66 @@ describe('Quant', () => {
 
     render(<Quant />)
 
-    // 类别名在预测的贡献表里也会出现，所以按每个面板的标题（h3）来认
-    expect(await screen.findByRole('heading', { name: '货币政策与利率' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '避险与信用' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '供需结构' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '市场与技术面' })).toBeInTheDocument()
+    // 类别名在预测的贡献表里也会出现，所以按每个面板的标题（h4，尾部带 key）来认
+    expect(await screen.findByRole('heading', { name: /货币政策与利率/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /避险与信用/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /供需结构/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /市场与技术面/ })).toBeInTheDocument()
 
     expect(screen.getByText('美国财政部（TIPS 实际收益率曲线）')).toBeInTheDocument()
     expect(screen.getAllByText(/2026-09-30/).length).toBeGreaterThan(0)
     // 陈旧因子：带标记，并说明为什么没有参与合成
-    expect(screen.getByText('陈旧')).toBeInTheDocument()
+    expect(screen.getAllByText('陈旧').length).toBeGreaterThan(0)
     expect(screen.getByText(/超过该因子的更新周期（3 天）/)).toBeInTheDocument()
+
+    // 覆盖画像：窗口 + 条数 + 年数 + 缺口年都在明细行里（不进头部数字）
+    expect(screen.getByTestId('field-quant.factors.coverage.observations')).toHaveTextContent(
+      '6538',
+    )
+    expect(screen.getByTestId('field-quant.factors.coverage.years')).toHaveTextContent('3')
+    expect(screen.getByTestId('field-quant.factors.coverage.first_date')).toHaveTextContent(
+      '2016-01-04',
+    )
+    expect(screen.getByTestId('field-quant.factors.coverage.last_date')).toHaveTextContent(
+      '2026-09-30',
+    )
+    expect(screen.getByTestId('field-quant.factors.coverage.sparse_years')).toHaveTextContent(
+      '缺口年：2017',
+    )
+    expect(screen.getByTestId('field-quant.factors.coverage.year_counts')).toHaveTextContent(
+      '2016: 249',
+    )
+  })
+
+  it('覆盖画像是积累期时标注「积累期」，不当成缺口', async () => {
+    mockApi()
+    mocked.getFactors.mockResolvedValue({
+      ...FACTOR_RESPONSE,
+      factors: [
+        factor({
+          key: 'new_series',
+          name: '新序列',
+          coverage: {
+            observations: 12,
+            years: [2026],
+            year_counts: { '2026': 12 },
+            sparse_years: [],
+            first_date: '2026-09-01',
+            last_date: '2026-09-30',
+            accumulating: true,
+          },
+        }),
+      ],
+    })
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    expect(screen.getByTestId('field-quant.factors.coverage.accumulating')).toHaveTextContent(
+      '积累期',
+    )
+    // 积累期不是缺口：没有缺口年标记
+    expect(screen.queryByTestId('field-quant.factors.coverage.sparse_years')).not.toBeInTheDocument()
   })
 
   it('「未到期」等同步噪音只出现在折叠的数据源状态区', async () => {
@@ -724,11 +812,11 @@ describe('Quant', () => {
     const details = screen.getByTestId('quant-sources-details')
     expect(details.tagName).toBe('DETAILS')
     expect(details).not.toHaveAttribute('open')
-    expect(within(details).getByText('数据源状态（1/3 正常，展开看逐个源）')).toBeInTheDocument()
-    expect(within(details).getByText('未到期')).toBeInTheDocument()
+    expect(details.querySelector('summary')?.textContent).toContain('数据源状态（1/3 正常')
+    expect(within(details).getAllByText('未到期').length).toBeGreaterThan(0)
     expect(within(details).getByText('距上次抓取未超过该源的最小间隔')).toBeInTheDocument()
     // 报错源在展开区里可见；主界面顶部另有「数据源不可用」提示
-    expect(within(details).getByText(/HTTPError: 503/)).toBeInTheDocument()
+    expect(within(details).getAllByText(/HTTPError: 503/).length).toBeGreaterThan(0)
     expect(within(details).getByText('美国财政部收益率曲线')).toBeInTheDocument()
 
     // 「未到期」是同步口径的噪音：只能出现在折叠区里，不许出现在主界面别处
@@ -744,27 +832,32 @@ describe('Quant', () => {
 
     render(<Quant />)
 
-    expect(await screen.findByText('回测命中率')).toBeInTheDocument()
-    expect(screen.getAllByText('本模型').length).toBeGreaterThan(0)
-    expect(screen.getByText('62.1%')).toBeInTheDocument()
+    const accuracy = await screen.findByTestId('quant-accuracy-5')
+    expect(
+      within(accuracy).getAllByTestId('field-accuracy.latest.accuracy')[0],
+    ).toHaveTextContent('62.1%')
+    expect(screen.getAllByText(/本模型/).length).toBeGreaterThan(0)
+    expect(
+      within(accuracy).getAllByTestId('field-accuracy.latest.baseline_up_accuracy')[0],
+    ).toHaveTextContent('54.0%')
     expect(screen.getAllByText('永远看多').length).toBeGreaterThan(0)
-    expect(screen.getByText('54.0%')).toBeInTheDocument()
     expect(screen.getByText('动量（60 日）')).toBeInTheDocument()
     expect(screen.getByText('抛硬币')).toBeInTheDocument()
     expect(screen.getByText('50.0%')).toBeInTheDocument()
     expect(screen.getByText(/样本 780 个交易日/)).toBeInTheDocument()
 
     // 未校准的因子偏向在这段历史里的成绩：折进详情，不占主表一行
-    const accuracy = screen.getByTestId('quant-accuracy-5')
     const summaryTable = within(accuracy).getAllByRole('table')[0]
     expect(within(summaryTable).queryByText(/因子偏向（未校准）/)).not.toBeInTheDocument()
     const tiltDetails = within(accuracy).getByTestId('quant-accuracy-tilt-5')
     expect(tiltDetails.tagName).toBe('DETAILS')
     expect(tiltDetails).not.toHaveAttribute('open')
-    expect(within(tiltDetails).getByText(/因子偏向（未校准）/)).toBeInTheDocument()
+    expect(within(tiltDetails).getAllByText(/未校准的因子偏向/).length).toBeGreaterThan(0)
     expect(within(tiltDetails).getByText(/51\.2%/)).toBeInTheDocument()
 
-    expect(screen.getByText(/实际覆盖率 76.4%/)).toBeInTheDocument()
+    expect(
+      within(accuracy).getAllByTestId('field-accuracy.latest.metrics.interval_coverage_80')[0],
+    ).toHaveTextContent('76.4%')
     expect(screen.getByText('2022-01-01 之前')).toBeInTheDocument()
     expect(screen.getByText('2022-01-01 起')).toBeInTheDocument()
     expect(screen.getByText('65.8%')).toBeInTheDocument()
@@ -792,9 +885,11 @@ describe('Quant', () => {
     await screen.findByText('▼ 看跌')
 
     const accuracy = screen.getByTestId('quant-accuracy-5')
-    expect(within(accuracy).queryByText('因子偏向（未校准）')).not.toBeInTheDocument()
-    expect(within(accuracy).queryByTestId('quant-accuracy-tilt-5')).not.toBeInTheDocument()
-    expect(within(accuracy).getAllByText('本模型').length).toBeGreaterThan(0)
+    // 没有成绩的字段仍有展示位，但只写「—」，不拿别的数字顶替
+    expect(
+      within(accuracy).getByTestId('field-accuracy.latest.metrics.score_direction_accuracy'),
+    ).toHaveTextContent('—')
+    expect(within(accuracy).getAllByText(/本模型/).length).toBeGreaterThan(0)
   })
 
   it('监测仪表盘给出值、数据截至与信号，不可用的行说明原因', async () => {
@@ -803,21 +898,33 @@ describe('Quant', () => {
     render(<Quant />)
     await screen.findByText('▼ 看跌')
 
-    expect(screen.getByText('监测仪表盘（周更表）')).toBeInTheDocument()
-    expect(screen.getByText('金价 vs 200 日均线')).toBeInTheDocument()
-    expect(screen.getByText('4050 美元')).toBeInTheDocument()
-    expect(screen.getByText('+3.70')).toBeInTheDocument()
-    expect(screen.getByText('2026-09-29')).toBeInTheDocument()
-    expect(screen.getAllByText('▲ 看涨').length).toBeGreaterThan(0)
+    expect(screen.getByText('监测信号（周更表）')).toBeInTheDocument()
+    // 参与信号与只看不评分两张表
+    expect(screen.getByText('参与信号（有确定性多空规则）')).toBeInTheDocument()
+    expect(screen.getByText('只看不评（信息型指标）')).toBeInTheDocument()
+    const participating = screen.getByTestId('quant-monitor-participating-table')
+    const ma200Row = within(participating)
+      .getByText('金价 vs 200 日均线')
+      .closest('tr') as HTMLElement
+    expect(ma200Row).toHaveTextContent('4050')
+    expect(ma200Row).toHaveTextContent('美元')
+    expect(ma200Row).toHaveTextContent('+3.70')
+    expect(ma200Row).toHaveTextContent('2026-09-30')
+    expect(within(participating).getAllByText('▲ 看涨').length).toBeGreaterThan(0)
     // 信息型指标不给方向，照实标「信息」
-    expect(screen.getAllByText('信息').length).toBeGreaterThan(0)
+    const infoOnly = screen.getByTestId('quant-monitor-info-only-table')
+    expect(within(infoOnly).getAllByText('信息').length).toBeGreaterThan(0)
     // 上海金溢价拿不到数据：只给原因，不编一个数
     expect(screen.getByText('上海金溢价')).toBeInTheDocument()
     expect(screen.getByTestId('quant-monitor-reason-shanghai_premium')).toBeInTheDocument()
-    expect(screen.getByText(/AU9999）实测返回空，不编数/)).toBeInTheDocument()
+    expect(screen.getAllByText(/AU9999）实测返回空，不编数/).length).toBeGreaterThan(0)
     // 量级很小的比值不能被两位小数压成 0.00（那是「有数但看不见」）
-    expect(screen.getByText('0.00156 倍')).toBeInTheDocument()
-    expect(screen.getByText('−0.0000234')).toBeInTheDocument()
+    // 铜金比是信息型指标（只看不评），在第二张表里
+    const ratioRow = within(infoOnly)
+      .getByText('铜金比（铜价 ÷ 金价）')
+      .closest('tr') as HTMLElement
+    expect(ratioRow).toHaveTextContent('0.00156')
+    expect(ratioRow).toHaveTextContent('−0.0000234')
   })
 
   it('接口失败时如实说不可用，不摆内置数字', async () => {

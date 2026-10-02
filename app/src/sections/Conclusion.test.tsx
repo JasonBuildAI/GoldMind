@@ -78,7 +78,7 @@ describe('Conclusion', () => {
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
   })
 
-  it('接口没给当前价格时不显示「当前价格」这一行', async () => {
+  it('接口没给当前价格时显示「—」，不摆写死的数字', async () => {
     // 回归：原实现把当前价格写死成 5067 —— 那是凭空的数字，
     // 会被当成「当前价格」摆在目标价表里。
     mocked.getMarketSummary.mockResolvedValue({
@@ -89,7 +89,9 @@ describe('Conclusion', () => {
     render(<Conclusion />)
 
     await screen.findByText('$5,400.00')
-    expect(screen.queryByText('当前价格')).not.toBeInTheDocument()
+    // 字段有展示位，但取不到就显示「—」，不摆写死的数字
+    expect(screen.getByText('当前价格')).toBeInTheDocument()
+    expect(screen.getByTestId('field-summary.current_price')).toHaveTextContent('—')
     expect(screen.queryByText('$5,067.00')).not.toBeInTheDocument()
   })
 
@@ -98,7 +100,7 @@ describe('Conclusion', () => {
 
     render(<Conclusion />)
 
-    expect(await screen.findByText('市场总结暂不可用')).toBeInTheDocument()
+    expect(await screen.findByText('今日结论暂不可用')).toBeInTheDocument()
     expect(screen.queryByText('核心看涨逻辑')).not.toBeInTheDocument()
     expect(screen.getByText(/无法连接后端/)).toBeInTheDocument()
   })
@@ -131,7 +133,7 @@ describe('Conclusion', () => {
 
     render(<Conclusion />)
 
-    expect(await screen.findByText('市场总结正在分析中')).toBeInTheDocument()
+    expect(await screen.findByText('今日结论正在分析中')).toBeInTheDocument()
   })
 
   it('市场总结的占位标记（cache_source=default）也会被标注', async () => {

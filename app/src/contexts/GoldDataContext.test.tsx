@@ -37,6 +37,9 @@ const STATS = {
   updated_at: '2026-02-03T10:00:00',
   data_source: '腾讯财经-纽约黄金',
   is_realtime: true,
+  price_basis: 'realtime',
+  price_basis_label: '实时报价',
+  price_as_of: '2026-02-03T10:00:00',
 }
 
 const DAILY = [

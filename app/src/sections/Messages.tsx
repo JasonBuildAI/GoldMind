@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import RefreshButton from '@/components/RefreshButton'
-import Section from '@/components/Section'
 import StateBlock from '@/components/StateBlock'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useFreshnessBlock } from '@/contexts/FreshnessContext'
 import { describeApiError } from '@/lib/apiError'
 import { displayStamp, formatNumber } from '@/lib/format'
 import {
@@ -12,6 +12,7 @@ import {
   type DigestRefreshResponse,
   type DigestResponse,
 } from '@/services/api'
+import { fieldTestId, TESTIDS } from '@/testids'
 
 /**
  * 消息：高权威来源的黄金相关消息，按重要性与置信度排序。
@@ -19,9 +20,13 @@ import {
  * 三件不能妥协的事：
  * 1. 分数与排序全部来自后端确定性评分（来源权威 + 黄金相关 + 同题覆盖 + 时效），
  *    前端不重排、不补算；三个窗口允许重叠（同一事件出现在多个窗口是设计行为）。
- * 2. 抓不到就显示「不可用 + 原因」，不摆任何内置消息文案。
- * 3. 原文链接一律新窗口打开，展开区给出摘要、评分依据与同题报道。
+ * 2. 抓不到就显示「不可用 + 原因」，不摆任何内置消息。
+ * 3. 原文链接一律新窗口打开，展开区给出摘要、评分依据、事件标注与同题报道。
  */
+
+function field(path: string) {
+  return fieldTestId(path)
+}
 
 function DigestRow({ item }: { item: DigestItem }) {
   const published = displayStamp(item.published_at)
@@ -29,21 +34,46 @@ function DigestRow({ item }: { item: DigestItem }) {
   return (
     <li className="digest__item" data-testid={`message-${item.id}`}>
       <div className="digest__head">
-        <span className="digest__rank num">{item.rank}</span>
-        <h3 className="digest__title">{item.title}</h3>
+        <span className="digest__rank num" data-testid={field('digest.items.rank')}>
+          {item.rank}
+        </span>
+        <h3 className="digest__title" data-testid={field('digest.items.title')}>
+          {item.title}
+        </h3>
       </div>
 
       <p className="digest__meta">
-        <span>{item.source}</span>
-        <span>{item.tier_label}</span>
-        {published ? <span>发布 {published}</span> : null}
-        <span>重要性 {formatNumber(item.importance, 1)}</span>
-        <span>置信度 {formatNumber(item.confidence, 1)}</span>
+        <span data-testid={field('digest.items.source')}>{item.source}</span>
+        <span data-testid={field('digest.items.tier_label')}>{item.tier_label}</span>
+        <span data-testid={field('digest.items.tier')}>
+          {item.tier_label}（T{item.tier}）
+        </span>
+        {published ? (
+          <span data-testid={field('digest.items.published_at')}>发布 {published}</span>
+        ) : null}
+        <span data-testid={field('digest.items.age_hours')}>
+          {formatNumber(item.age_hours, 1)} 小时前
+        </span>
+        <span data-testid={field('digest.items.importance')}>
+          重要性 {formatNumber(item.importance, 1)}
+        </span>
+        <span data-testid={field('digest.items.confidence')}>
+          置信度 {formatNumber(item.confidence, 1)}
+        </span>
+        {item.event_labels.length > 0 ? (
+          <span data-testid={field('digest.items.event_labels')}>
+            事件 {item.event_labels.join(' / ')}
+          </span>
+        ) : null}
+        {item.via_aggregator ? (
+          <span data-testid={field('digest.items.via_aggregator')}>经聚合入口</span>
+        ) : null}
         <a
           href={item.url}
           target="_blank"
           rel="noreferrer noopener"
           aria-label={`原文：${item.title}（新窗口打开）`}
+          data-testid={field('digest.items.url')}
         >
           原文 ↗
         </a>
@@ -53,13 +83,36 @@ function DigestRow({ item }: { item: DigestItem }) {
         <summary>展开详情</summary>
         <div className="digest__body">
           {item.summary ? (
-            <p data-testid={`message-summary-${item.id}`}>{item.summary}</p>
+            <p data-testid={`message-summary-${item.id}`}>
+              <span data-testid={field('digest.items.summary')}>{item.summary}</span>
+            </p>
           ) : (
             <p className="note">这条消息没有摘要，只保留标题与原文链接。</p>
           )}
 
+          <dl className="metrics">
+            <div>
+              <dt>编号 / 排名</dt>
+              <dd className="num" data-testid={field('digest.items.id')}>
+                {item.id} / {item.rank}
+              </dd>
+            </div>
+            <div>
+              <dt>同题报道数</dt>
+              <dd className="num" data-testid={field('digest.items.coverage_count')}>
+                {item.coverage_count}
+              </dd>
+            </div>
+            <div>
+              <dt>事件标注</dt>
+              <dd data-testid={field('digest.items.event_tags')}>
+                {item.event_tags.length > 0 ? item.event_tags.join('、') : '—'}
+              </dd>
+            </div>
+          </dl>
+
           {item.signals.length > 0 ? (
-            <div className="digest__block">
+            <div className="digest__block" data-testid={field('digest.items.signals')}>
               <h4>评分依据</h4>
               <ul data-testid={`message-signals-${item.id}`}>
                 {item.signals.map((signal) => (
@@ -71,19 +124,28 @@ function DigestRow({ item }: { item: DigestItem }) {
 
           {item.related.length > 0 ? (
             <div className="digest__block">
-              <h4>同题报道</h4>
+              <h4>同题报道（{item.coverage_count} 家来源）</h4>
               <ul data-testid={`message-related-${item.id}`}>
                 {item.related.map((related) => {
                   const stamp = displayStamp(related.published_at)
                   return (
                     <li key={related.url}>
-                      <a href={related.url} target="_blank" rel="noreferrer noopener">
+                      <a
+                        href={related.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        data-testid={field('digest.related.title')}
+                      >
                         {related.title}
                       </a>
-                      <span className="digest__related-meta">
+                      <span className="digest__related-meta" data-testid={field('digest.related.source')}>
                         {' '}
                         — {related.source}
-                        {stamp ? ` · ${stamp}` : ''}
+                        {stamp ? <span data-testid={field('digest.related.published_at')}> · {stamp}</span> : null}
+                      </span>
+                      <span className="note" data-testid={field('digest.related.url')}>
+                        {' '}
+                        {related.url}
                       </span>
                     </li>
                   )
@@ -109,6 +171,78 @@ function reportLine(report: DigestRefreshResponse): string {
   return bits.join(' · ')
 }
 
+/** 抓取报告：所有计数进表格；来源明细各占一行。 */
+function FetchReport({ report, testId }: { report: DigestRefreshResponse | NonNullable<DigestResponse['last_fetch']>; testId?: string }) {
+  return (
+    <div className="panel" data-testid={testId}>
+      <h4 className="panel__title">抓取报告</h4>
+      <div className="table-scroll">
+        <table className="data-table">
+          <tbody>
+            {(
+              [
+                ['抓取时间', displayStamp(report.fetched_at) ?? report.fetched_at, field('digest.fetch.fetched_at')],
+                ['来源总数', String(report.total_sources), field('digest.fetch.total_sources')],
+                ['成功来源', String(report.ok_sources), field('digest.fetch.ok_sources')],
+                ['失败来源', String(report.failed_sources), field('digest.fetch.failed_sources')],
+                ['抓到条目', String(report.entries), field('digest.fetch.entries')],
+                ['保留条目', String(report.kept), field('digest.fetch.kept')],
+                ['新增条目', String(report.new_items), field('digest.fetch.new_items')],
+                ['重复条目', String(report.duplicates), field('digest.fetch.duplicates')],
+                ['无标题跳过', String(report.skipped_no_title), field('digest.fetch.skipped_no_title')],
+                ['无链接跳过', String(report.skipped_no_url), field('digest.fetch.skipped_no_url')],
+                ['无时间跳过', String(report.skipped_no_time), field('digest.fetch.skipped_no_time')],
+                ['相关性过滤', String(report.skipped_filtered), field('digest.fetch.skipped_filtered')],
+                ['落库失败跳过', String(report.skipped_unstorable), field('digest.fetch.skipped_unstorable')],
+              ] as const
+            ).map(([label, value, id]) => (
+              <tr key={label}>
+                <th scope="row">{label}</th>
+                <td className="num" data-testid={id}>
+                  {value}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {report.sources.length > 0 ? (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th scope="col">来源</th>
+                <th scope="col">状态</th>
+                <th scope="col" className="num">抓到</th>
+                <th scope="col" className="num">保留</th>
+                <th scope="col" className="num">新增</th>
+                <th scope="col">错误</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.sources.map((source) => (
+                <tr key={source.name}>
+                  <th scope="row" data-testid={field('digest.fetch.sources.name')}>{source.name}</th>
+                  <td data-testid={field('digest.fetch.sources.status')}>{source.status}</td>
+                  <td className="num" data-testid={field('digest.fetch.sources.entries')}>{source.entries}</td>
+                  <td className="num" data-testid={field('digest.fetch.sources.kept')}>{source.kept}</td>
+                  <td className="num" data-testid={field('digest.fetch.sources.new')}>{source.new}</td>
+                  <td className="note" data-testid={field('digest.fetch.sources.error')}>{source.error ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {'success' in report ? (
+        <p className="note" data-testid={field('digest.refresh.success')}>
+          本次抓取结果：{report.success ? '至少一个来源成功' : '所有来源都失败'}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 export default function Messages() {
   const [data, setData] = useState<DigestResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -124,7 +258,6 @@ export default function Messages() {
       setData(await newsDigestApi.getDigest())
     } catch (err) {
       setError(describeApiError(err, { fallback: '获取消息失败。' }))
-      // 不填充任何内置消息：保持为空，由空状态如实说明。
       setData(null)
     } finally {
       setLoading(false)
@@ -156,7 +289,15 @@ export default function Messages() {
   }, [])
 
   const lastFetch = data?.last_fetch ?? null
+  const hasData = Boolean(data?.has_data)
   const stamp = displayStamp(lastFetch?.fetched_at)
+
+  useFreshnessBlock(
+    'messages',
+    '消息',
+    hasData ? 'fresh' : loading ? 'pending' : 'unavailable',
+    data?.generated_at || lastFetch?.fetched_at || null,
+  )
 
   const refreshButton = (
     <RefreshButton
@@ -168,10 +309,9 @@ export default function Messages() {
   )
 
   let body
-
   if (loading && !data) {
     body = <StateBlock title="正在读取消息…" testId="messages-loading" />
-  } else if (!data?.has_data) {
+  } else if (!hasData) {
     body = (
       <StateBlock
         kind="unavailable"
@@ -187,62 +327,91 @@ export default function Messages() {
     )
   } else {
     body = (
-      <div className="panel">
+      <div>
         <p className="panel__meta">
-          {stamp ? <span>上次抓取 {stamp}</span> : null}
-          <span>来源：央行 / 通讯社 / 行业机构 / 专业财经媒体</span>
+          <span data-testid={field('digest.has_data')}>
+            {data?.has_data ? '有可用消息' : '无可用消息'}
+          </span>
+          {stamp ? (
+            <span data-testid={field('digest.generated_at')}>生成时间 {stamp}</span>
+          ) : null}
+          {data?.unavailable_reason ? (
+            <span className="panel__error" data-testid={field('digest.unavailable_reason')}>
+              {data.unavailable_reason}
+            </span>
+          ) : null}
           {error ? <span className="panel__error">刷新失败：{error}</span> : null}
         </p>
 
         {report ? (
-          <p className="note" data-testid="messages-report">
+          <p className="note" data-testid={TESTIDS.messageReport}>
             {reportLine(report)}
+            <span data-testid={field('digest.refresh.success')}>
+              {' '}
+              本次抓取结果：{report.success ? '至少一个来源成功' : '所有来源都失败'}
+            </span>
           </p>
         ) : null}
 
-        <Tabs value={activeWindow} onValueChange={setActiveWindow}>
-          <TabsList aria-label="消息时间范围">
-            {data.windows.map((window) => (
-              <TabsTrigger key={window.key} value={window.key}>
-                {window.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        <div data-testid={TESTIDS.messagesWindows}>
+          <Tabs value={activeWindow} onValueChange={setActiveWindow}>
+            <TabsList aria-label="消息时间范围">
+              {data?.windows.map((window) => (
+                <TabsTrigger key={window.key} value={window.key}>
+                  {window.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
-          {data.windows.map((window) => (
-            <TabsContent key={window.key} value={window.key}>
-              {window.items.length === 0 ? (
-                <p className="note" data-testid={`messages-empty-${window.key}`}>
-                  {window.label}内没有符合条件的消息。
+            {data?.windows.map((window) => (
+              <TabsContent key={window.key} value={window.key}>
+                <p className="panel__meta">
+                  <span data-testid={field('digest.windows.key')}>窗口 {window.key}</span>
+                  <span data-testid={field('digest.windows.label')}>{window.label}</span>
+                  <span data-testid={field('digest.windows.hours')}>{window.hours} 小时</span>
+                  <span data-testid={field('digest.windows.total_clusters')}>
+                    共 {window.total_clusters} 组同题报道
+                  </span>
+                  <span>展示前 {window.items.length} 条，按重要性排序</span>
                 </p>
-              ) : (
-                <>
-                  <p className="panel__meta">
-                    <span>共 {window.total_clusters} 组同题报道</span>
-                    <span>展示前 {window.items.length} 条，按重要性排序</span>
+                {window.items.length === 0 ? (
+                  <p className="note" data-testid={`messages-empty-${window.key}`}>
+                    {window.label}内没有符合条件的消息。
                   </p>
+                ) : (
                   <ol className="digest" data-testid={`messages-${window.key}`}>
                     {window.items.map((item) => (
                       <DigestRow key={item.id} item={item} />
                     ))}
                   </ol>
-                </>
-              )}
-            </TabsContent>
-          ))}
-        </Tabs>
+                )}
+              </TabsContent>
+            ))}
+          </Tabs>
+        </div>
+
+        {lastFetch ? (
+          <details className="row-details" data-testid={field('digest.last_fetch')}>
+            <summary>上次抓取报告（{displayStamp(lastFetch.fetched_at) ?? '时间未知'}）</summary>
+            <FetchReport report={lastFetch} />
+          </details>
+        ) : null}
       </div>
     )
   }
 
   return (
-    <Section
+    <section
+      className="panel"
       id="messages"
-      title="消息"
-      intro="高权威来源（央行 / 通讯社 / 行业机构 / 专业财经媒体）的黄金相关消息，按重要性与置信度排序；24 小时 / 7 天 / 30 天三个窗口各取前 10 条，同一事件可以同时出现在多个窗口。评分由来源权威、黄金相关度、同题覆盖与时效确定性算出，不经过模型生成。"
-      actions={refreshButton}
+      data-testid={TESTIDS.driversMessages}
+      aria-label="消息"
     >
+      <div className="panel__head">
+        <h3 className="panel__title">消息</h3>
+        {refreshButton}
+      </div>
       {body}
-    </Section>
+    </section>
   )
 }

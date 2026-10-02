@@ -29,6 +29,9 @@ function stats(overrides: Partial<GoldStats> = {}): GoldStats {
     updated_at: '2026-02-03T10:00:00',
     data_source: '腾讯财经-纽约黄金',
     is_realtime: true,
+    price_basis: 'close',
+    price_basis_label: '日收盘',
+    price_as_of: '2026-02-03T10:00:00',
     ...overrides,
   }
 }
@@ -90,7 +93,7 @@ describe('Market 不编造数据', () => {
   it('没有历史序列时说明「价格数据暂不可用」，不画内置曲线', () => {
     renderMarket({ stats: stats(), dailyError: '获取图表数据失败。' })
 
-    expect(screen.getByText('价格数据暂不可用')).toBeInTheDocument()
+    expect(screen.getAllByText('价格数据暂不可用').length).toBeGreaterThan(0)
     expect(screen.queryByText(/最近 \d+ 个交易日/)).not.toBeInTheDocument()
   })
 })
@@ -111,10 +114,12 @@ describe('Market 的窗口口径', () => {
   it('标注窗口长度，不把高低振幅叫成波动率', () => {
     renderMarket({ stats: stats() })
 
-    expect(screen.getAllByText(/近 12 个月涨跌/).length).toBeGreaterThan(0)
-    expect(screen.getByText('关键数据（近 12 个月）')).toBeInTheDocument()
+    expect(screen.getAllByText(/近 12 个月/).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('market-snapshot-table')).toBeInTheDocument()
     expect(screen.getByText('高低振幅')).toBeInTheDocument()
-    expect(screen.getByText('(最高−最低)/最低，非波动率')).toBeInTheDocument()
+    // 口径注解跟着数字走：不把它叫成「波动率」，也不改名
+    expect(screen.getByText('stats.amplitude')).toBeInTheDocument()
+    expect(screen.queryByText(/波动率/)).not.toBeInTheDocument()
     expect(screen.queryByText('波动区间')).not.toBeInTheDocument()
     expect(screen.queryByText('年初至今')).not.toBeInTheDocument()
   })
