@@ -20,6 +20,9 @@
 
 恒等式 ``中枢 + 需求溢价 + 风险溢价 + 情绪残差 = 市场价`` 按定义成立，有测试钉住；
 把实现改成做空头样本的「全样本拟合」会被未来的垃圾数据打红（no-lookahead 测试）。
+
+当前取值落在拟合窗口的支撑范围之外时，这一行**不给数**（``unavailable`` + 是哪个回归量），
+而不是把指数外推成一个看起来像数字的东西。
 """
 from __future__ import annotations
 
@@ -34,6 +37,12 @@ from app.services.quant.definitions import factor_by_key
 
 # 水平回归至少要有这么多个已实现样本，否则返回「不可用 + 原因」
 MIN_DECOMPOSE_SAMPLES = 120
+# 支撑范围：溢价是 ``exp(β·(x − x̄))``，把拟合窗口没覆盖过的取值指数外推，
+# 得到的就不是「溢价」而是一个没法解释的天文数字（vix 尖峰会真的把 expm1 打到 inf）。
+# 判据用该回归量**自己**在拟合窗口内的散布，不引入魔数：偏离超过 6 个标准差即视为外推；
+# 另有一条 β 兜底，防止共线解出的巨大系数把指数推到溢出。
+MAX_SUPPORT_SIGMAS = 6.0
+MAX_LOG_PREMIUM = 12.0
 
 
 @dataclass(frozen=True)
@@ -152,6 +161,7 @@ def decompose_frame(factors: dict[str, pd.Series], close: pd.Series) -> pd.DataF
     deviation = np.full(rows, np.nan)
     r_squared = np.full(rows, np.nan)
     samples = np.zeros(rows, dtype="int64")
+    unsupported: list[Optional[str]] = [None] * rows
     driver_logs = {key: np.full(rows, np.nan) for key in ("real_yield_10y", "dollar_index")}
 
     demand_index = 1 + keys.index("central_bank")
@@ -175,6 +185,21 @@ def decompose_frame(factors: dict[str, pd.Series], close: pd.Series) -> pd.DataF
 
         mean = np.concatenate([[1.0], (sxx[1:, 0] / count)])
         current = design[position]
+        spread = np.sqrt(np.clip(np.diag(sxx)[1:] / count - mean[1:] ** 2, 0.0, None))
+        deviations = current[1:] - mean[1:]
+        violation = next(
+            (
+                spec.key
+                for index, spec in enumerate(REGRESSORS)
+                if abs(deviations[index]) > MAX_SUPPORT_SIGMAS * spread[index]
+                or abs(beta[1 + index] * deviations[index]) > MAX_LOG_PREMIUM
+            ),
+            None,
+        )
+        if violation is not None:
+            # 外推越远，exp() 越大方：这一行不是「溢价很大」，是「模型没看过这种取值」。
+            unsupported[position] = violation
+            continue
         log_center = float(
             beta[0]
             + sum(beta[index] * current[index] for index in anchor_indices)
@@ -223,6 +248,7 @@ def decompose_frame(factors: dict[str, pd.Series], close: pd.Series) -> pd.DataF
     frame["deviation_pct"] = deviation
     frame["r2"] = r_squared
     frame["samples"] = samples
+    frame["unsupported_by"] = unsupported
     for key, values in driver_logs.items():
         frame[f"driver_{key}"] = values
     return frame
@@ -269,6 +295,17 @@ def decompose_latest(
     frame = decompose_frame(factors, close)
     position = _position_of(close.index, as_of)
     row = frame.iloc[position]
+    violation = row.get("unsupported_by")
+    if isinstance(violation, str) and violation:
+        name = factor_by_key[violation].name if violation in factor_by_key else violation
+        return Decomposition(
+            STATUS_UNAVAILABLE,
+            f"当前{name}的取值超出拟合窗口的支撑范围（{int(row['samples'])} 组样本），"
+            "四层分解不外推，因此不给公允价",
+            close.index[position].date(),
+            float(row["market_price"]),
+            None, None, None, int(row["samples"]), (),
+        )
     if pd.isna(row["fair_value"]) or pd.isna(row["residual"]):
         count = int(row["samples"]) if "samples" in row and pd.notna(row["samples"]) else 0
         return Decomposition(
@@ -312,6 +349,8 @@ def decompose_latest(
 __all__ = [
     "BLOCK_NAMES",
     "Decomposition",
+    "MAX_LOG_PREMIUM",
+    "MAX_SUPPORT_SIGMAS",
     "MIN_DECOMPOSE_SAMPLES",
     "REGRESSORS",
     "decompose_frame",

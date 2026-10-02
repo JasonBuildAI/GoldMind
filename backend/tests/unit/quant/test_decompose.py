@@ -1,6 +1,8 @@
 """四层分解：恒等式、无前视、降级与已知答案。"""
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -111,3 +113,30 @@ def test_missing_regressor_is_unavailable_with_its_name(panel):
     assert result.status == decompose.STATUS_UNAVAILABLE
     assert "央行" in result.reason
     assert result.blocks == ()
+
+
+def test_out_of_support_values_are_refused_not_extrapolated(calendar, make_panel):
+    """拟合窗口没见过的取值：拒答并点名，而不是 ``exp()`` 外推出一个像数字的东西。
+
+    盯的是真实缺陷：``expm1(β·(x − x̄))`` 无界时溢出成 inf（VIX 尖峰足以触发），
+    inf 一旦进了溢价，「中枢 + 需求 + 风险 + 残差 = 市场价」这条恒等式也就失去意义。
+    """
+    factors, close = make_panel(calendar)
+    spiked = factors["vix"].copy()
+    spiked.iloc[-1] = float(spiked.median()) + 400.0
+    probed = dict(factors, vix=spiked)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        frame = decompose.decompose_frame(probed, close)
+        result = decompose.decompose_latest(probed, close)
+
+    assert result.status == decompose.STATUS_UNAVAILABLE
+    assert "VIX" in result.reason
+    assert "支撑范围" in result.reason
+    assert result.fair_value is None
+    assert result.blocks == ()
+    assert frame["unsupported_by"].iloc[-1] == "vix"
+    for column in ("fair_value", "center", "demand_premium", "risk_premium", "residual"):
+        values = frame[column].dropna().to_numpy(dtype="float64")
+        assert np.isfinite(values).all(), column
