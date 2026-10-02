@@ -41,6 +41,10 @@ INTERVAL_Z_80 = engine.INTERVAL_Z_80
 INTERVAL_NOMINAL_80 = 0.80
 # 「2022 年后定价函数变了」的分段口径（央行购金放量）
 REGIME_SPLIT = date(2022, 1, 1)
+# 波动率分档：日收益的 rolling 标准差窗口（一年），以及「攒够多少历史才允许分档」
+# （expanding 分位在冷启动阶段没有参照系，硬分出来的档是假的）
+VOL_REGIME_WINDOW = 250
+VOL_REGIME_MIN_HISTORY = 250
 # 置信区间/覆盖率自助的重采样次数（种子固定 → 同一输入产出同一条区间）
 BOOTSTRAP_DRAWS = 1000
 
@@ -336,6 +340,10 @@ def _evaluate(
         "magnitude_mape": magnitude_mape,
         "magnitude_skill_vs_flat": magnitude_skill_vs_flat,
         "interval_sharpness_80": sharpness_80,
+        # 整体覆盖率对不代表校准对：分档才看得出没跟着风险走的那一段（见 helper 文档）
+        "interval_coverage_by_vol_regime": coverage_by_vol_regime(
+            horizon, close, forward[mask], frame["lower_return"][mask], frame["upper_return"][mask]
+        ),
         # 「模型原本想报更夸张的数」被封顶拦住的比例：封顶不是美化，是把不可信的幅度
         # 关回市场真的动过的那个量级里，比例本身是要给用户看的健康度指标。
         "expected_cap_rate": float(frame["expected_capped"][mask].mean()),
@@ -475,6 +483,90 @@ def interval_coverage_80(
     return float(indicator.mean())
 
 
+def _tail_stride(values: pd.Series, stride: int) -> pd.Series:
+    """从尾部往前每 ``stride`` 行取一行（与 ``stats.nonoverlapping`` 同一锚点）。"""
+    return values.iloc[::-stride][::-1] if stride > 1 else values
+
+
+def coverage_by_vol_regime(
+    horizon: int,
+    close: pd.Series,
+    forward: pd.Series,
+    lower: pd.Series,
+    upper: pd.Series,
+) -> dict:
+    """把区间覆盖率按**预测当天已实现的波动率**分档，看它在平静档与热闹档是否一致。
+
+    为什么整体覆盖率不够：一个整体 80% 的区间，完全可能是「平静档过宽 + 动荡档过窄」
+    平均出来的 —— 那正是最需要报大不确定性时把它报小了。只有把覆盖率与**档内宽度**
+    放在一起看，才能分辨两种完全不同的病：尺度没跟着风险走，还是尾部整体被低估。
+
+    26 年面板实测（见 spec 第二轮 §六）：两档之差只有 ±6pp，而整体覆盖率随尺度单调恶化
+    （5 日 0.793 → 20 日 0.762 → 60 日 0.715），宽度确实随波动率放大 ——
+    也就是说这个指标当场否掉了「分档失衡」这个猜想，把病灶指向长尺度整体低估尾部。
+
+    三条纪律：
+    1. 分档用的波动率与阈值都只取**当时已知**的信息（rolling 窗口 + expanding 分位），
+       不许用全样本分位数 —— 那是事后信息；
+    2. 每档再按 ``stride = horizon`` 抽成独立下注，重叠样本不能当独立证据；
+    3. 某一档的下注数不足 ``MIN_NONOVERLAPPING_SAMPLES`` 就给 None，并如实报出次数。
+    """
+    vol = close.pct_change().rolling(VOL_REGIME_WINDOW, min_periods=VOL_REGIME_MIN_HISTORY).std()
+    low_q = vol.expanding(min_periods=VOL_REGIME_MIN_HISTORY).quantile(1.0 / 3.0)
+    high_q = vol.expanding(min_periods=VOL_REGIME_MIN_HISTORY).quantile(2.0 / 3.0)
+    # 两侧阈值必须**同时**开始可用（同一个 expanding 过程、同一个 min_periods）。
+    # 只有一侧改成全样本分位数时，两者的 NaN 形状就会错开 —— 那是事后信息，直接抛。
+    if bool((low_q.notna() != high_q.notna()).any()):
+        raise AssertionError(
+            "波动率分档的两侧阈值可用区间不一致：有一侧不是 expanding（用了事后信息）"
+        )
+    indicator = interval_coverage_indicator(forward, lower, upper)
+    result = {
+        "window_days": VOL_REGIME_WINDOW,
+        "min_history": VOL_REGIME_MIN_HISTORY,
+        "min_bets": MIN_NONOVERLAPPING_SAMPLES,
+        # 有多少行真的能被分档（阈值只在前 min_history 个波动率观测之后才存在）。
+        # 摊开这个数，是为了让「用全样本分位数冒充 expanding 阈值」这种改法一眼可见：
+        # 那样一来面板最前面的行也会带上档位标签，eligible_rows 会顶到面板长度。
+        "eligible_rows": int((low_q.notna() & high_q.notna() & (low_q < high_q)).sum()),
+        "buckets": {},
+        "gap_turbulent_minus_calm": None,
+        "reason": None,
+    }
+    if indicator is None or result["eligible_rows"] == 0:
+        result["reason"] = (
+            f"波动率分档需要至少 {VOL_REGIME_MIN_HISTORY} 个交易日的前序历史，"
+            f"当前样本不足以分档 —— 不给「整体覆盖率」冒充分档结论"
+        )
+        return result
+
+    width = upper - lower
+    buckets: dict[str, dict] = {}
+    for label, selector in (
+        ("calm", (vol <= low_q).fillna(False)),
+        ("turbulent", (vol >= high_q).fillna(False)),
+    ):
+        chosen = indicator[selector.reindex(indicator.index).fillna(False)]
+        sampled = _tail_stride(chosen, horizon)
+        sampled_width = _tail_stride(
+            width.reindex(indicator.index)[selector.reindex(indicator.index).fillna(False)], horizon
+        )
+        enough = len(sampled) >= MIN_NONOVERLAPPING_SAMPLES
+        buckets[label] = {
+            "bets": int(len(sampled)),
+            "coverage": float(sampled.mean()) if enough else None,
+            "mean_width": float(sampled_width.mean()) if enough else None,
+        }
+    result["buckets"] = buckets
+    calm = buckets["calm"]["coverage"]
+    turbulent = buckets["turbulent"]["coverage"]
+    if calm is not None and turbulent is not None:
+        result["gap_turbulent_minus_calm"] = turbulent - calm
+    else:
+        result["reason"] = "至少一档的独立下注数不足，分档结论不成立"
+    return result
+
+
 def _regime_block(
     label: str,
     direction: pd.Series,
@@ -612,6 +704,9 @@ __all__ = [
     "HOLDOUT_START",
     "INTERVAL_NOMINAL_80",
     "REGIME_SPLIT",
+    "VOL_REGIME_MIN_HISTORY",
+    "VOL_REGIME_WINDOW",
+    "coverage_by_vol_regime",
     "evaluate_all",
     "evaluate_horizon",
     "evaluate_periods",

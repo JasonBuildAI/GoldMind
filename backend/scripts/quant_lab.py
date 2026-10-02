@@ -159,6 +159,10 @@ ROW_FIELDS = (
     "coverage_80",
     "coverage_ci_low",
     "coverage_ci_high",
+    "coverage_calm",
+    "coverage_bets_calm",
+    "coverage_turbulent",
+    "coverage_bets_turbulent",
     "effective_sample_size",
     "magnitude_skill",
     "down_calls",
@@ -216,6 +220,7 @@ def _row(candidate: Candidate, horizon: int, period: str, evaluation) -> dict:
     metrics = evaluation.metrics or {}
     accuracy_ci = metrics.get("accuracy_ci95") or (None, None)
     coverage_ci = metrics.get("interval_coverage_ci95") or (None, None)
+    bands = (metrics.get("interval_coverage_by_vol_regime") or {}).get("buckets") or {}
     return {
         "candidate": candidate.key,
         "group": candidate.group,
@@ -236,6 +241,11 @@ def _row(candidate: Candidate, horizon: int, period: str, evaluation) -> dict:
         "coverage_80": metrics.get("interval_coverage_80"),
         "coverage_ci_low": coverage_ci[0],
         "coverage_ci_high": coverage_ci[1],
+        # 覆盖率按波动率分档：整体那一个数字可以掩盖「平静期过宽、动荡期过窄」
+        "coverage_calm": (bands.get("calm") or {}).get("coverage"),
+        "coverage_turbulent": (bands.get("turbulent") or {}).get("coverage"),
+        "coverage_bets_calm": (bands.get("calm") or {}).get("bets"),
+        "coverage_bets_turbulent": (bands.get("turbulent") or {}).get("bets"),
         "effective_sample_size": metrics.get("effective_sample_size"),
         # 独立下注次数与它给出的成绩：长尺度上这两个数才是「可不可判定」的答案
         "magnitude_skill": metrics.get("magnitude_skill_vs_flat"),
@@ -371,6 +381,42 @@ def _verdict_cell(flag: dict) -> str:
     return "".join(marks) or "—"
 
 
+def _coverage_band_section(index: dict, order: list[Candidate], horizons: tuple[int, ...]) -> str:
+    """线上口径的 80% 区间覆盖率，按预测当天已实现的波动率分档（全样本期）。
+
+    为什么要单列一节：整体那一个数会把「平静档偏宽 + 动荡档偏窄」平均成刚好合格。
+    分档之后，覆盖率与档内独立下注次数一起给 —— 次数不够的档如实显示「—」，
+    不拿十次下注的比例当结论。
+    """
+    baseline = next((item.key for item in order if item.group == "baseline"), None)
+    lines = [
+        "## 覆盖率按波动率分档（全样本，线上口径）",
+        "",
+        "名义 80% 的区间要在**每个**风险状态下都接近 80% 才叫校准；"
+        "只看整体平均，会把「平静档过宽 + 动荡档过窄」糊成一个合格数字。",
+        "",
+        "| 尺度(日) | 整体 | 平静档 | 下注 | 热闹档 | 下注 | 档间差 |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    if baseline is None:
+        lines.append("| — | — | — | — | — | — | 本轮候选里没有 baseline 组 |")
+        return "\n".join(lines)
+    for horizon in horizons:
+        row = index.get((baseline, horizon, "full"))
+        if row is None:
+            continue
+        calm, turbulent = row.get("coverage_calm"), row.get("coverage_turbulent")
+        gap = "—" if _missing(calm) or _missing(turbulent) else f"{100.0 * (turbulent - calm):+.1f}pp"
+        lines.append(
+            f"| {horizon} | {_pct(row.get('coverage_80'))} | {_pct(calm)} "
+            f"| {row.get('coverage_bets_calm') or 0} | {_pct(turbulent)} "
+            f"| {row.get('coverage_bets_turbulent') or 0} | {gap} |"
+        )
+    lines.append("")
+    lines.append("「—」= 该档独立下注次数不足（阈值见 `backtest.MIN_NONOVERLAPPING_SAMPLES`），不是 0%。")
+    return "\n".join(lines)
+
+
 def format_markdown(
     rows: list[dict],
     *,
@@ -417,6 +463,8 @@ def format_markdown(
                     _pct(holdout["coverage_80"]),
                 )
             )
+
+    lines += ["", _coverage_band_section(index, order, horizons)]
 
     failures = [row for row in rows if _missing(row["accuracy"])]
     lines += ["", "## 失败的尝试（样本不足 / 数据缺失）", ""]

@@ -168,7 +168,7 @@ def test_bench_rows_carry_the_round_two_adjudication_metrics(make_panel, monkeyp
 
     这是补出来的洞：`backtest` 已经算了 `magnitude_skill_vs_flat` / `down_calls` /
     `interval_sharpness_80`，但表格列没带上，于是「用幅度技能裁决」写在 spec 里却跑不出来。
-    变异验证：把这三列从 `COLUMNS` / 行构造里删掉，本测试必红。
+    变异验证：把这三列从 `ROW_FIELDS` / 行构造里删掉，本测试必红。
     """
     _fast_bootstrap(monkeypatch)
     factors, close = make_panel(_long_calendar())
@@ -176,9 +176,49 @@ def test_bench_rows_carry_the_round_two_adjudication_metrics(make_panel, monkeyp
     rows = quant_lab.run_lab(factors, close, horizons=(20,), candidates=_subset("B0"))
 
     for row in rows:
-        for key in ("magnitude_skill", "down_calls", "down_call_accuracy", "interval_sharpness_80"):
+        for key in (
+            "magnitude_skill",
+            "down_calls",
+            "down_call_accuracy",
+            "interval_sharpness_80",
+            "coverage_calm",
+            "coverage_turbulent",
+            "coverage_bets_calm",
+            "coverage_bets_turbulent",
+        ):
             assert key in row, f"{row['period']} 缺少 {key}：第二轮规则无法裁决"
+        for key in (
+            "coverage_calm",
+            "coverage_turbulent",
+            "coverage_bets_calm",
+            "coverage_bets_turbulent",
+        ):
+            # 行里有、ROW_FIELDS 里没有 = CSV 里静默丢掉这一列
+            assert key in quant_lab.ROW_FIELDS, f"{key} 没有进 ROW_FIELDS，导出的 CSV 会缺列"
         if row["period"] == "development":
             assert row["magnitude_skill"] is not None
             assert isinstance(row["down_calls"], int)
+
+    # 分档覆盖率要出现在报告里，否则「整体 0.79 ≈ 0.80」还能继续糊
+    markdown = quant_lab.format_markdown(rows, horizons=(20,), generated_at=None)
+    assert "覆盖率按波动率分档" in markdown
+    assert "档间差" in markdown
+
+
+@pytest.mark.unit
+def test_the_band_section_marks_short_buckets_as_unknown_rather_than_zero(make_panel):
+    """分档下注数不足时，那一行要显示「—」并解释含义，不许显示 0%。
+
+    变异验证：把 `_pct(...)` 换成 `f\"{100.0 * value:.1f}%\"`（None 时抛错或印成 0.0%），
+    或把末尾那句解释删掉，本测试红。
+    """
+    factors, close = make_panel(pd.date_range("2015-01-02", "2016-06-30", freq="B"))
+
+    rows = quant_lab.run_lab(factors, close, horizons=(20,), candidates=_subset("B0"))
+    markdown = quant_lab.format_markdown(rows, horizons=(20,), generated_at=None)
+
+    section = markdown.split("覆盖率按波动率分档", 1)[1]
+    line = next(item for item in section.splitlines() if item.startswith("| 20 |"))
+    assert line.count("—") >= 3, f"分档未知时应当印「—」：{line}"
+    assert "不是 0%" in section
 
