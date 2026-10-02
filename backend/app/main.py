@@ -87,34 +87,24 @@ async def warmup_cache():
 # --------------------------------------------------------------------------- #
 # 启动引导（2.0.2）
 # --------------------------------------------------------------------------- #
-# 「填好 backend/.env → 启动」是唯一人工步骤：迁移在 lifespan 里自动应用，
-# 结果暴露在 /health 的 bootstrap 字段。失败不阻塞服务 —— 下轮启动自动重试。
-_bootstrap_state: dict = {
-    "status": "pending" if settings.AUTO_BOOTSTRAP else "disabled",
-    "enabled": bool(settings.AUTO_BOOTSTRAP),
-    "migrations": None,
-    "error": None,
-}
-
+# 「填好 backend/.env → 启动」是唯一人工步骤：迁移、数据回填与首轮分析都在
+# lifespan 里自动进行，进度暴露在 /health 的 bootstrap 字段（见 app/bootstrap.py）。
+# 失败不阻塞服务 —— 下一轮启动自动重试。
 
 def _run_bootstrap() -> None:
-    """应用迁移注册表；异常不外抛 —— 引导失败不该拖垮整个服务。"""
+    """应用迁移注册表并把结果写进引导进度；异常不外抛 —— 引导失败不该拖垮服务。"""
     from app import bootstrap
 
     try:
         results = bootstrap.run_migrations(engine)
         failed = next((item for item in results if item["status"] == "failed"), None)
-        _bootstrap_state.update(
-            status="failed" if failed else "done",
-            migrations=bootstrap.registry_snapshot(engine),
+        bootstrap.progress.set_migrations(
+            bootstrap.registry_snapshot(engine),
             error=failed.get("error") if failed else None,
-            at=timeutil.now_iso(),
         )
-        logger.info(f"[引导] 迁移完成：{_bootstrap_state['migrations']}")
+        logger.info(f"[引导] 迁移完成：{bootstrap.registry_snapshot(engine)}")
     except Exception as exc:  # noqa: BLE001 —— 任何引导异常都不该阻止服务启动
-        _bootstrap_state.update(
-            status="failed", error=f"{type(exc).__name__}: {exc}", at=timeutil.now_iso()
-        )
+        bootstrap.progress.set_migrations(None, error=f"{type(exc).__name__}: {exc}")
         logger.error(f"[引导] 迁移阶段异常：{exc}")
 
 
@@ -137,6 +127,12 @@ async def lifespan(app: FastAPI):
 
     if settings.AUTO_BOOTSTRAP:
         _run_bootstrap()
+
+    # 数据回填与首轮分析放后台线程；AUTO_BOOTSTRAP/SCHEDULER_ENABLED 的降级
+    # 语义（disabled / skipped）都由 bootstrap.start_background 内部处理。
+    from app import bootstrap
+
+    bootstrap.start_background(engine)
 
     if settings.SCHEDULER_ENABLED:
         init_scheduler()
@@ -310,6 +306,12 @@ async def root():
     """服务信息与文档入口。"""
     return {"message": "黄金市场分析系统 API", "version": "2.0.1", "docs": "/docs"}
 
+def _bootstrap_snapshot() -> dict:
+    from app import bootstrap
+
+    return bootstrap.progress.snapshot()
+
+
 @app.get("/health")
 async def health_check():
     """增强健康检查 - 检查所有关键依赖服务"""
@@ -319,7 +321,7 @@ async def health_check():
         "status": "healthy",
         "timestamp": timeutil.now_iso(),
         "version": "2.0.1",
-        "bootstrap": dict(_bootstrap_state),
+        "bootstrap": _bootstrap_snapshot(),
         "services": {}
     }
     
