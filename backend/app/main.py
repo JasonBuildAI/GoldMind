@@ -130,9 +130,11 @@ async def lifespan(app: FastAPI):
 
     # 数据回填与首轮分析放后台线程；AUTO_BOOTSTRAP/SCHEDULER_ENABLED 的降级
     # 语义（disabled / skipped）都由 bootstrap.start_background 内部处理。
-    from app import bootstrap
+    from app import bootstrap, config_watch
 
     bootstrap.start_background(engine)
+    # LLM 配置热生效：.env 里 LLM_* 一出现/变化就自动重载 + 补一轮分析，无需重启。
+    config_watch.start_watcher(engine)
 
     if settings.SCHEDULER_ENABLED:
         init_scheduler()
@@ -312,6 +314,12 @@ def _bootstrap_snapshot() -> dict:
     return bootstrap.progress.snapshot()
 
 
+def _config_watch_snapshot() -> dict:
+    from app import config_watch
+
+    return config_watch.snapshot()
+
+
 @app.get("/health")
 async def health_check():
     """增强健康检查 - 检查所有关键依赖服务"""
@@ -322,6 +330,7 @@ async def health_check():
         "timestamp": timeutil.now_iso(),
         "version": "2.0.1",
         "bootstrap": _bootstrap_snapshot(),
+        "config_watch": _config_watch_snapshot(),
         "services": {}
     }
     

@@ -661,8 +661,12 @@ def _phase_revisions(ctx: _Context, db) -> dict:
     return {"status": "done", "note": f"补齐修订流水 {seeded} 行"}
 
 
-def _phase_analyses(ctx: _Context, db) -> dict:
-    """数据就绪后自动跑五个分析（受指纹门控与每日预算约束）。"""
+def _phase_analyses(ctx: _Context, db, *, force: bool = False) -> dict:
+    """数据就绪后自动跑五个分析（受指纹门控与每日预算约束）。
+
+    ``force=True``（配置热更新后）跳过输入指纹门控：换了供应商 / 模型，
+    旧指纹对应的缓存结果是另一份产物，必须重算。
+    """
     from app.services.llm_provider import is_configured
 
     if not is_configured():
@@ -691,7 +695,7 @@ def _phase_analyses(ctx: _Context, db) -> dict:
         ("机构", institution_service),
     ):
         try:
-            service.refresh_analysis_sync()
+            service.refresh_analysis_sync(force=force)
             notes.append(f"{name}✓")
         except Exception as exc:  # 单个分析失败不拖垮其它分析
             notes.append(f"{name}✗({type(exc).__name__})")
@@ -706,7 +710,7 @@ def _phase_analyses(ctx: _Context, db) -> dict:
 
     try:
         InvestmentAdviceService(db).refresh_analysis_sync(
-            market_status, bullish, bearish, institutions
+            market_status, bullish, bearish, institutions, force=force
         )
         notes.append("策略✓")
     except Exception as exc:
@@ -782,6 +786,19 @@ def run_bootstrap(
         error=("；".join(f"{phase['key']}: {phase['note']}" for phase in failed) or None),
     )
     return progress.snapshot()
+
+
+def warm_analyses(engine: Engine, *, force: bool = False) -> dict:
+    """配置热更新后立即补一轮分析（不触碰引导进度快照）。"""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return _phase_analyses(
+            _Context(engine=engine, today=_today()), db, force=force
+        ) or {}
+    finally:
+        db.close()
 
 
 def start_background(engine: Engine) -> dict:

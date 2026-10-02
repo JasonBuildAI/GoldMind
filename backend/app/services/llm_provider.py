@@ -165,6 +165,22 @@ def get_chat_llm(*, temperature: float = 0.7, max_tokens: int | None = None) -> 
     )
 
 
+def reset_clients() -> None:
+    """丢弃共享的 httpx 客户端（配置热更新后旧端点 / 代理设置不再复用）。
+
+    同步客户端显式关闭；异步客户端只解除引用（其 close 是协程，在没有事件
+    循环的监听线程里无法安全 await，交给 GC 回收）。
+    """
+    global _http_client, _async_http_client
+    old_sync, _http_client = _http_client, None
+    _async_http_client = None
+    if old_sync is not None:
+        try:
+            old_sync.close()
+        except Exception as exc:  # noqa: BLE001 —— 旧客户端关不掉不该影响重载
+            logger.debug(f"关闭旧 LLM http 客户端失败（忽略）：{exc}")
+
+
 def get_search_client() -> Any:
     """返回用于联网搜索的原生 OpenAI 客户端。
 

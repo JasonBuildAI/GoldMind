@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 load_dotenv()
 
@@ -194,3 +194,42 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def reload_settings(env_path=None, *, changed_keys=None) -> list[str]:
+    """就地重载配置（配置热更新的实现，2.0.2）。
+
+    只把 ``changed_keys`` 里刚在 .env 中变化的键作为显式入参构造新 Settings ——
+    部署环境变量注入的**其它**值不会被磁盘文件覆盖；被删除的字符串 / 密钥类
+    配置项按「置空」处理（否则 load_dotenv 留在 os.environ 里的旧值会复活）。
+    返回实际发生变化的字段名。取值为空 / 未知的键不会被应用。
+    """
+    path = Path(env_path) if env_path else BACKEND_DIR / ".env"
+    fields = type(settings).model_fields
+    raw: dict = {}
+    if path.exists():
+        raw = {key: value for key, value in dotenv_values(path).items() if value is not None}
+
+    overrides: dict = {}
+    for key in changed_keys or set():
+        if key not in fields:
+            continue
+        if key in raw:
+            overrides[key] = raw[key]
+            continue
+        annotation = fields[key].annotation
+        if annotation is str:
+            overrides[key] = ""
+        elif annotation is SecretStr:
+            overrides[key] = SecretStr("")
+
+    fresh = Settings(**overrides)
+    changed: list[str] = []
+    # 只应用**本次变化的键**：其它字段继续沿用运行中的值（其中可能有部署环境
+    # 注入、而磁盘 .env 里没有的配置，不能被磁盘快照覆盖）。
+    for name in overrides:
+        new_value = getattr(fresh, name)
+        if getattr(settings, name) != new_value:
+            setattr(settings, name, new_value)
+            changed.append(name)
+    return changed

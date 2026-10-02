@@ -156,6 +156,16 @@ class CallGate:
             return cached
         return None
 
+    def reset_fingerprints(self) -> None:
+        """清空输入指纹（供应商 / 模型热切换后，旧模型的缓存结果不得复用）。
+
+        只清指纹，**不动**当日调用计数：钱已经花出去了，预算是事实记录。
+        """
+        with _STATE_LOCK:
+            state = _load_state()
+            state["fingerprints"] = {}
+            _save_state(state)
+
     def snapshot(self) -> Dict[str, Any]:
         """供 /health 展示的只读快照（不含 prompt / 密钥）。"""
         state = _load_state()
@@ -168,3 +178,8 @@ class CallGate:
 
 
 gate = CallGate()
+
+
+def reset_fingerprints() -> None:
+    """模块级入口：配置热更新时由 config_watch 调用。"""
+    gate.reset_fingerprints()
