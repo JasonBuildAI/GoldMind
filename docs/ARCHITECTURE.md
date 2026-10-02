@@ -288,6 +288,15 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 - **限流**：按客户端 IP 的滑动窗口；普通接口与「会调用 LLM」的接口分开计数，
   后者上限更严。`/health` 不限流。过期键会被清理，内存不会无界增长。
 - **CORS**：显式来源列表；若来源里出现 `*`，中间件会强制关闭凭证。
+- **失败传播**（2026-10-02 加固）：
+  - 缺库/缺表（MySQL 1146/1049、SQLite `no such table`）统一翻译成
+    **503 + `python init_db.py` 修复指引**，不再是裸 500；启动时做 schema 自检，
+    缺表打 ERROR。其余 SQL 错误仍是 500，不被这句指引掩盖。
+  - 前端对幂等 GET 的 **429 / 5xx / 网络错误**做指数退避（±25% 抖动）重试，最多 3 次
+    尝试；429 优先按 `Retry-After`（其次 body `retry_after`）等待。`POST` 与
+    `GET ...?refresh=true` 一律不重试 —— 它们可能触发一次付费 LLM 调用。
+  - 同一 URL 的在飞 GET 合并成一个请求（StrictMode 双挂载、轮询与手动刷新撞车不再
+    翻倍请求量）；看板轮询 30 秒一档、`document.hidden` 时暂停、恢复立即补一次。
 
 > 本项目**没有鉴权**。若要公开部署，请在反向代理层加访问控制，
 > 否则任何人都能触发会消耗 LLM 额度的 `/refresh` 接口。

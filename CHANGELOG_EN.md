@@ -19,6 +19,10 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 - When the external quote source (Yahoo) is rate-limited or down, the quant engine falls back to the locally synced `gold_prices` / `dollar_index` tables for the benchmark and the dollar factor, labelled as such; no more whole-page "missing gold price series"
 - The frontend retries **429 / 5xx / network errors** with exponential backoff (429 honours `Retry-After`, at most 3 attempts); in-flight GETs for the same URL are merged into one request; `POST` and `?refresh=true` are never retried
 
+### Changed
+
+- Dashboard polling drops from 10 s to 30 s, pauses while the tab is hidden and catches up immediately on return (idle request rate ~30/min -> ~8/min)
+
 ---
 
 ## [2.0.1] - 2026-10-02

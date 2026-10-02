@@ -752,8 +752,10 @@ npm run dev
   load can take 1–2 minutes"), then fill in. You can also trigger each section's re-run button.
 - The quant forecast needs a multi-year factor backfill first; it stays "unavailable" until the
   fetch completes, then updates incrementally.
-- The page polls the market endpoint every 10 seconds; default limits are 60 req/min (6 req/min
-  for LLM endpoints), so normal browsing never trips them.
+- The page polls the market endpoint every 30 seconds (paused while the tab is hidden, with an
+  immediate catch-up on return); default limits are 60 req/min (6 req/min for LLM endpoints).
+  429 / 5xx / network errors are retried with backoff (429 honours `Retry-After`), so normal
+  browsing does not turn the page into a wall of failures.
 
 **URLs:**
 - Frontend: http://localhost:5173
@@ -995,6 +997,22 @@ and a human decides when to merge.
   `python scripts/migrate_quant.py --dry-run` prints how many rows are missing. Ledger rows from
   the historical backfill carry the backfill day, so earlier dates correctly return empty.
 
+- **Whole sections fail to "analyse / fetch", and a refresh sometimes fixes it** — the error text
+  now distinguishes the causes:
+  - *Too many requests*: the dashboard polls every 30 s (paused when hidden) and 429s are retried
+    with backoff. If it persists, multiple tabs or clients share one backend's rate budget; raise
+    `RATE_LIMIT_PER_MINUTE`.
+  - *Data tables missing … run `python init_db.py`*: the API answers **503** (no longer a bare
+    500) with the fix command, and startup logs a `[启动自检]` line. Rebuild, then backfill.
+  - The quant section's "missing gold price series" has one more cause: Yahoo Finance rate-limits
+    this host (`YFRateLimitError: Too Many Requests`). The engine then falls back to the locally
+    synced `gold_prices` / `dollar_index` tables (source labelled "本地行情表…兜底") instead of
+    going dark.
+
+- **Tests refuse to start with "database name does not contain test"** — that is the guard, not a
+  bug: the suite drops every table it connects to. Point `GOLDMIND_TEST_DATABASE_URL` at a
+  dedicated database whose name contains `test`, or leave it unset for in-memory SQLite.
+
 ---
 
 ## 🗂️ Directory layout
@@ -1085,7 +1103,7 @@ English one mirrors it.
    per-horizon weights → one calibrated distribution → walk-forward backtest and monitor table
 5. **Caching**: two levels, in-memory + JSON files (2-hour TTL), surviving restarts and shared
    across processes
-6. **Presentation**: the frontend polls the market endpoint every 10s; analyses are fetched on
+6. **Presentation**: the frontend polls the market endpoint every 30s (paused while the tab is hidden); analyses are fetched on
    demand; a stored quant forecast carries the measured skill of its own horizon
 
 ---
