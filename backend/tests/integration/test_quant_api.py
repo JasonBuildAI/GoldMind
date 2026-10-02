@@ -16,18 +16,29 @@ def test_predictions_endpoint_returns_every_horizon_with_numbers(client, db_sess
     assert [item["horizon_days"] for item in body["predictions"]] == list(HORIZONS)
     for item in body["predictions"]:
         assert item["status"] == "ok"
-        assert item["direction"] in ("up", "down")
-        assert item["direction_label"] in ("看涨", "看跌")
         assert item["target_price"] > 0
         assert 0.0 <= item["probability_up"] <= 1.0
         assert item["uncertainty"] >= 0.0
         assert item["headline"]
         contributions = [f["contribution"] for f in item["factors"] if f["contribution"] is not None]
         assert sum(contributions) == pytest.approx(item["score"], abs=1e-9)
+        if item["horizon_days"] == 250:
+            # 1 年尺度停发方向：只发布公允价值偏离与校准区间，且必须给出原因
+            assert item["direction"] is None
+            assert item["direction_label"] is None
+            assert item["direction_status"] == "not_published"
+            assert item["direction_reason"]
+        else:
+            assert item["direction"] in ("up", "down")
+            assert item["direction_label"] in ("看涨", "看跌")
+            assert item["direction_status"] == "published"
+            assert item["direction_reason"] is None
 
     long_run = next(item for item in body["predictions"] if item["horizon_days"] == 250)
     assert "公允价值" in long_run["headline"]
     assert "区间" in long_run["headline"]
+    # 停发方向不等于停发区间：1 年尺度照样给公允价值与区间
+    assert long_run["range_low"] < long_run["range_high"]
 
 
 @pytest.mark.integration

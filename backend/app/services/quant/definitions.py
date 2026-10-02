@@ -108,6 +108,28 @@ HORIZONS: tuple[int, ...] = tuple(spec.horizon for spec in HORIZON_SPECS)
 
 horizon_spec = {spec.horizon: spec for spec in HORIZON_SPECS}
 
+# 方向发布策略：算得出方向 ≠ 该发布方向。
+# 留出期里 1 年尺度的方向与「永远看多」逐日一致（+0.0pp）、Brier 技能分为负 ——
+# 拿不出可核实的信息优势就不发，只保留公允价值偏离与校准区间（2026-10-02 第三轮
+# 预注册裁决，见 docs/specs/2026-10-02-量化策略提升路线图.md 第五节）。
+# 引擎内部仍算方向供回测评估，只是不在产品里发布。
+DIRECTION_PUBLISHED = "published"
+DIRECTION_NOT_PUBLISHED = "not_published"
+NOT_PUBLISHED_DIRECTION_REASONS: dict[int, str] = {
+    250: (
+        "1 年尺度在留出期与「永远看多」逐日一致（差 +0.0pp），Brier 技能分为负："
+        "方向拿不出可核实的信息优势，按预注册规则停发；公允价值偏离与校准区间照常发布"
+    ),
+}
+
+
+def direction_publication(horizon: int) -> tuple[str, Optional[str]]:
+    """该尺度发不发方向：返回 ``(status, reason)``；发布时 reason 为 None。"""
+    reason = NOT_PUBLISHED_DIRECTION_REASONS.get(horizon)
+    if reason is None:
+        return DIRECTION_PUBLISHED, None
+    return DIRECTION_NOT_PUBLISHED, reason
+
 
 @dataclass(frozen=True)
 class FactorDefinition:

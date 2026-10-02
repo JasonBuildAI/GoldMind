@@ -328,7 +328,7 @@ carries different weights at different horizons:
 | 5 trading days | 1w | intraday–1 week | market & technicals → risk & credit | weekly flows and event impulses; macro still secondary |
 | 20 trading days | 1m | 1–3 months | monetary policy & rates → supply & demand | policy expectations, data and the dollar dominate |
 | 60 trading days | 1q | 1–3 months | monetary policy & rates → supply & demand | policy path and demand structure both matter |
-| 250 trading days | 1y | 6–18 months | supply & demand → monetary policy & rates | real-rate cycles, the easing path and central-bank buying dominate |
+| 250 trading days | 1y | 6–18 months | supply & demand → monetary policy & rates | real-rate cycles, the easing path and central-bank buying dominate; **no direction is published** (it matched "always long" day by day in the holdout) — only the fair-value deviation and the annual calibrated interval |
 
 This is why each of the 14 factors carries five weights instead of one global weight: explaining
 tomorrow's gold price with central-bank buying, or next year's with VIX, gets the horizon wrong.

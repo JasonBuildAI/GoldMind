@@ -437,6 +437,9 @@ ACI 判错区间之后升为 `quant-v5`，同日引擎加固再升为 `quant-v6`
 第三轮的 C2 候选同样按预注册判据淘汰 ——
 裁决细节见 `docs/specs/2026-10-02-研究台报告.md` 与
 `docs/specs/2026-10-02-量化引擎第三轮预注册.md`，规则实现见 `preregistered.py`）。
+按这条结论，1 年尺度在 2.0.2 起**停发方向**：预测响应带 `direction_status: not_published`
+与原因文本，方向字段置空，公允价值偏离与校准区间照常发布（策略表见
+`definitions.NOT_PUBLISHED_DIRECTION_REASONS`，同处定义、不另抄）。
 
 **自适应 α 的上界是 0.5，且必须 ≤ 0.5**：区间端点取分位 `α/2` 与 `1−α/2`，情景固定取
 `QUARTILE_LOW` / `QUARTILE_HIGH`（0.25 / 0.75）；`α/2 > 0.25` 时区间下界会越过情景下界，

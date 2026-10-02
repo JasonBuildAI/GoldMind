@@ -29,9 +29,11 @@ from app.services.quant.definitions import (
     ACTIVE_HOLDOUT_START,
     BENCHMARK_KEY,
     CATEGORY_NAMES,
+    DIRECTION_NOT_PUBLISHED,
     HOLDOUT_START,
     HORIZONS,
     MODEL_VERSION,
+    direction_publication,
     factor_by_key,
     horizon_spec,
 )
@@ -103,6 +105,11 @@ def live_predictions(
 def _prediction_payload(snapshot: engine.SignalSnapshot, close: pd.Series) -> dict:
     spec = horizon_spec.get(snapshot.horizon_days)
     scenario_set = scenarios.build_scenarios(snapshot, close)
+    # 方向发布策略：算得出方向 ≠ 该发布方向（长尺度没有可核实的信息优势）。
+    direction_status, direction_reason = direction_publication(snapshot.horizon_days)
+    published_direction = (
+        None if direction_status == DIRECTION_NOT_PUBLISHED else snapshot.direction
+    )
     return {
         "horizon_days": snapshot.horizon_days,
         "scale_label": spec.label if spec else None,
@@ -111,8 +118,10 @@ def _prediction_payload(snapshot: engine.SignalSnapshot, close: pd.Series) -> di
         "headline": spec.headline if spec else None,
         "status": snapshot.status,
         "reason": snapshot.reason,
-        "direction": snapshot.direction,
-        "direction_label": _direction_label(snapshot.direction, snapshot.status),
+        "direction": published_direction,
+        "direction_label": _direction_label(published_direction, snapshot.status),
+        "direction_status": direction_status,
+        "direction_reason": direction_reason,
         "as_of": snapshot.as_of,
         "base_price": snapshot.base_price,
         "target_price": snapshot.target_price,

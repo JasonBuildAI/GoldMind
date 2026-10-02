@@ -57,6 +57,29 @@ def test_score_changes_when_the_horizon_changes():
     assert short < 0 < long
 
 
+def test_direction_publication_stops_only_the_horizons_without_an_edge():
+    """方向发布策略：算得出方向 ≠ 该发布方向，只停留出期拿不出优势的尺度。
+
+    变异验证：把 250 从 NOT_PUBLISHED_DIRECTION_REASONS 里删掉（方向照发），
+    本用例必红。
+    """
+    from app.services.quant.definitions import (
+        DIRECTION_NOT_PUBLISHED,
+        DIRECTION_PUBLISHED,
+        NOT_PUBLISHED_DIRECTION_REASONS,
+        direction_publication,
+    )
+
+    assert set(NOT_PUBLISHED_DIRECTION_REASONS) == {250}
+    status, reason = direction_publication(250)
+    assert status == DIRECTION_NOT_PUBLISHED
+    assert reason and "预注册" in reason
+    for horizon in HORIZONS:
+        if horizon == 250:
+            continue
+        assert direction_publication(horizon) == (DIRECTION_PUBLISHED, None)
+
+
 def test_weight_for_falls_back_to_the_base_weight():
     momentum = factor_by_key["momentum"]
 

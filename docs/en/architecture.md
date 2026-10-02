@@ -466,6 +466,10 @@ recomputation, pending a real-stack recomputation under v7; the third-round C2 c
 likewise retired by its pre-registered bar —
 details in `docs/specs/2026-10-02-研究台报告.md` and
 `docs/specs/2026-10-02-量化引擎第三轮预注册.md`, rules in `preregistered.py`).
+Following that verdict, the 1-year horizon **stops publishing a direction** from 2.0.2 on: the
+prediction response carries `direction_status: not_published` plus the reason, the direction
+fields are empty, and the fair-value deviation and calibrated interval are still published
+(the policy table lives in `definitions.NOT_PUBLISHED_DIRECTION_REASONS`).
 The page honestly shows coverage side by side with the "always long / momentum" benchmarks
 (see section 4 of docs/00-产品方向.md).
 Guard: `tests/unit/quant/test_engine.py` (four criteria — direction / probability / σ / empirical

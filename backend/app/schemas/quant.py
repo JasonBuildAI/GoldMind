@@ -103,6 +103,10 @@ class QuantPredictionItem(BaseModel):
     reason: Optional[str] = None
     direction: Optional[str] = None
     direction_label: Optional[str] = None
+    # published / not_published：停发的尺度照样给公允价值偏离与校准区间，
+    # 只是不给方向（原因见 direction_reason）。
+    direction_status: str = "published"
+    direction_reason: Optional[str] = None
     as_of: Optional[date] = None
     base_price: Optional[float] = None
     target_price: Optional[float] = None
