@@ -57,3 +57,34 @@ def test_init_db_creates_every_table_on_sqlite(tmp_path):
 
     missing = EXPECTED_TABLES - tables
     assert not missing, f"init_db.py 没有建出这些表: {sorted(missing)}"
+
+
+@pytest.mark.integration
+def test_init_db_survives_a_gbk_console(tmp_path):
+    """默认中文 Windows 控制台是 GBK：emoji 打印必须降级，而不是让初始化崩掉。
+
+    回归：全新 clone 按 README 跑 `python init_db.py`，第一个
+    `print("🚀 数据库初始化")` 就抛 UnicodeEncodeError —— 快速开始的第一步即失败。
+    用 PYTHONIOENCODING=gbk 复现该控制台。
+    """
+    db_path = tmp_path / "gbk.db"
+    env = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite:///{db_path.as_posix()}",
+        "SKIP_SEED": "1",
+        "PYTHONIOENCODING": "gbk",
+    }
+    result = subprocess.run(
+        [sys.executable, "init_db.py"],
+        cwd=BACKEND_DIR,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "UnicodeEncodeError" not in result.stderr
+    assert db_path.exists()

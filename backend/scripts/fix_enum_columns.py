@@ -109,6 +109,11 @@ def fix_column(cur, table: str, column: str, wanted: list[str], dry_run: bool) -
 
 
 def main() -> int:
+    try:  # Windows 控制台默认可能是 GBK，直接打印 emoji 会抛 UnicodeEncodeError
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     parser = argparse.ArgumentParser(description="修正枚举列取值，使其与模型一致")
     parser.add_argument("--dry-run", action="store_true", help="只显示会做什么")
     parser.add_argument("--database-url", default=None, help="覆盖库连接")

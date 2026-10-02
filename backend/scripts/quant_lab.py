@@ -482,6 +482,11 @@ def _parse_horizons(value: Optional[str]) -> tuple[int, ...]:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    try:  # Windows 控制台默认可能是 GBK，直接打印勾叉会抛 UnicodeEncodeError
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     parser = argparse.ArgumentParser(description="量化研究台：预注册候选 × 尺度 × 三个样本期")
     parser.add_argument("--out", type=Path, default=None, help="输出目录（quant_lab.md / quant_lab.csv）")
     parser.add_argument("--horizons", default=None, help="逗号分隔的尺度；默认 " + ",".join(map(str, HORIZONS)))

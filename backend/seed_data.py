@@ -537,6 +537,11 @@ def save_dollar_index(session, data: List[Dict]) -> int:
 
 def main():
     """主函数"""
+    try:  # Windows 控制台默认可能是 GBK，直接打印 emoji 会抛 UnicodeEncodeError
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     print("=" * 60)
     print("🚀 数据库种子数据初始化")
     print("=" * 60)

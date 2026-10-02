@@ -273,6 +273,11 @@ def render(lang: str = "zh") -> str:
 
 
 def main() -> int:
+    try:  # Windows 控制台默认可能是 GBK，直接打印勾叉会抛 UnicodeEncodeError
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="只校验文档是否最新")
     args = parser.parse_args()
