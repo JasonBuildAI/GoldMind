@@ -151,7 +151,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="黄金市场分析系统",
     description="基于AI的黄金市场分析平台，提供实时数据、市场分析和价格预测",
-    version="2.0.1",
+    version="2.0.2",
     lifespan=lifespan
 )
 
@@ -306,7 +306,7 @@ app.include_router(sources.router, prefix="/api/gold", tags=["数据源状态"])
 @app.get("/")
 async def root():
     """服务信息与文档入口。"""
-    return {"message": "黄金市场分析系统 API", "version": "2.0.1", "docs": "/docs"}
+    return {"message": "黄金市场分析系统 API", "version": "2.0.2", "docs": "/docs"}
 
 def _bootstrap_snapshot() -> dict:
     from app import bootstrap
@@ -328,7 +328,7 @@ async def health_check():
     health_status = {
         "status": "healthy",
         "timestamp": timeutil.now_iso(),
-        "version": "2.0.1",
+        "version": "2.0.2",
         "bootstrap": _bootstrap_snapshot(),
         "config_watch": _config_watch_snapshot(),
         "services": {}
