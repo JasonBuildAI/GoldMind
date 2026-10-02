@@ -498,7 +498,37 @@ def test_gpr_fetch_returns_parsed_series_and_reports_http_errors(monkeypatch):
 
     ok = gpr.fetch(get=lambda url, **kwargs: _Response(200, b"fake"))
 
-    assert ok["gpr_daily"] is parsed
+    # 值原样保留，日期右移一个工作日（见下一条用例）
+    assert list(ok["gpr_daily"]) == [150.571]
+    assert ok["gpr_daily"].index[0] == pd.Timestamp("2026-10-01")
     with pytest.raises(SourceError):
         gpr.fetch(get=lambda url, **kwargs: _Response(503))
+
+
+@pytest.mark.unit
+def test_gpr_fetch_shifts_the_index_to_the_next_trading_day(monkeypatch):
+    """GPRD(D) 不可能在 D 日黄金收盘前拿到，必须右移一个工作日。
+
+    官方 `.xls` 是周期性刷新的工作簿（不是逐日发布的接口），所以 D 日的指数值
+    在 D 日盘中根本不在手上。其它后发布源（财政部收益率曲线 15:30 ET、EFFR 次日
+    9:00 ET、TGA 次日 16:00 ET）一律走 `shift_to_next_trading_day`，GPR 此前漏了 ——
+    第二轮引用它的那几行实测 t 值因此带前视偏差。
+
+    变异验证：去掉 `shift_to_next_trading_day` 本测试必红。
+    """
+    class _Response:
+        status_code = 200
+        content = b"fake"
+
+    parsed = pd.Series(
+        [120.0, 130.0],
+        index=[pd.Timestamp("2026-01-05"), pd.Timestamp("2026-01-06")],
+        name="gpr_daily",
+    )
+    monkeypatch.setattr(gpr, "parse_workbook", lambda content: parsed)
+
+    series = gpr.fetch(get=lambda url, **kwargs: _Response())["gpr_daily"]
+
+    assert list(series.index) == [pd.Timestamp("2026-01-06"), pd.Timestamp("2026-01-07")]
+    assert list(series) == [120.0, 130.0]
 
