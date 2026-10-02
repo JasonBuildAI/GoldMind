@@ -136,6 +136,76 @@ def test_refresh_is_idempotent_for_the_same_day(db_session, seed_quant_panel):
 
 
 @pytest.mark.integration
+def test_same_day_recompute_updates_the_snapshot_in_place(db_session):
+    # 同一天、同尺度重算：仍是同一行，内容就地更新，不堆流水账。
+    from app.services.quant import engine
+
+    def snapshot(target):
+        return engine.SignalSnapshot(
+            as_of=date(2026, 10, 2),
+            horizon_days=20,
+            status=engine.STATUS_OK,
+            reason=None,
+            base_price=4200.0,
+            score=0.5,
+            probability_up=0.6,
+            expected_return=0.02,
+            uncertainty=0.05,
+            target_price=target,
+            states=(),
+            weight_used=1.0,
+        )
+
+    service._store_prediction(db_session, snapshot(4260.0))
+    db_session.flush()
+    first = db_session.query(Prediction).filter(Prediction.horizon_days == 20).one()
+
+    service._store_prediction(db_session, snapshot(4380.0))
+    db_session.flush()
+
+    rows = db_session.query(Prediction).filter(Prediction.horizon_days == 20).all()
+    assert len(rows) == 1, '同一天同尺度重算不应新增行'
+    assert rows[0].id == first.id, '当天那一行应当就地更新'
+    assert rows[0].target_price == 4380.0
+
+
+@pytest.mark.integration
+def test_next_day_appends_a_snapshot_and_keeps_the_old_one(db_session):
+    # 跨天重算：追加新行，旧行原样保留 —— 这张表是预测存档。
+    from app.services.quant import engine
+
+    def snapshot(day, target):
+        return engine.SignalSnapshot(
+            as_of=day,
+            horizon_days=20,
+            status=engine.STATUS_OK,
+            reason=None,
+            base_price=4200.0,
+            score=0.5,
+            probability_up=0.6,
+            expected_return=0.02,
+            uncertainty=0.05,
+            target_price=target,
+            states=(),
+            weight_used=1.0,
+        )
+
+    service._store_prediction(db_session, snapshot(date(2026, 10, 2), 4260.0))
+    db_session.flush()
+    service._store_prediction(db_session, snapshot(date(2026, 10, 3), 4300.0))
+    db_session.flush()
+
+    rows = (
+        db_session.query(Prediction)
+        .filter(Prediction.horizon_days == 20)
+        .order_by(Prediction.as_of)
+        .all()
+    )
+    assert [row.as_of.isoformat() for row in rows] == ['2026-10-02', '2026-10-03']
+    assert [row.target_price for row in rows] == [4260.0, 4300.0]
+
+
+@pytest.mark.integration
 def test_backtest_runs_once_a_day_unless_forced(db_session, seed_quant_panel):
     seed_quant_panel()
 

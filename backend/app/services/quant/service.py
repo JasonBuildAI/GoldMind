@@ -670,53 +670,63 @@ def _backtest_due(db: Session, horizon: int) -> bool:
 
 
 def _store_prediction(db: Session, snapshot: engine.SignalSnapshot) -> None:
-    """同一 (版本, 周期, 截止日, 方向, 目标价) 只存一行 —— 两小时一次的刷新
-    不应该把表撑成流水账。"""
-    latest = (
+    """每天每个尺度只留一行快照 —— 跨天追加，当天刷新就地更新。
+
+    去重键 = (model_version, horizon_days, as_of)：
+
+    - 同一天内每两小时一次的重算只更新当天这一行，库里的这一天与页面最后
+      看到的结果一致，也不会把表撑成流水账；
+    - 新的一天到来时 ``as_of`` 变化，自然追加新行、旧行原样保留 —— 这条历史
+      轨迹就是预测的存档，``created_at`` 记录该行首次落库的时刻。
+
+    旧实现按「最新一行是否与之完全相同」去重：同一天重算只要方向或目标价
+    变了就再插一行（一天可堆出好几行），而跨天又没有稳定键。现在键就是
+    天数与尺度，跨天保留、当天一行。
+    """
+    row = (
         db.query(Prediction)
         .filter(
             Prediction.model_version == MODEL_VERSION,
             Prediction.horizon_days == snapshot.horizon_days,
+            Prediction.as_of == snapshot.as_of,
         )
-        .order_by(Prediction.as_of.desc(), Prediction.id.desc())
+        .order_by(Prediction.id.desc())
         .first()
     )
-    if (
-        latest is not None
-        and latest.as_of == snapshot.as_of
-        and latest.direction == snapshot.direction
-        and latest.target_price is not None
-        and abs(latest.target_price - snapshot.target_price) < 1e-9
-    ):
+    values = {
+        "prediction_type": snapshot.direction,
+        "target_price": snapshot.target_price,
+        "confidence": snapshot.probability_up,
+        "timeframe": f"{snapshot.horizon_days}D",
+        "reasoning": _reasoning(snapshot, _skill_note(db, snapshot.horizon_days)),
+        "factors": stats.json_safe(
+            [
+                {
+                    "key": state.key,
+                    "name": state.name,
+                    "contribution": state.contribution,
+                    "signed_z": state.signed_z,
+                }
+                for state in snapshot.states
+                if state.available
+            ]
+        ),
+        "direction": snapshot.direction,
+        "base_price": snapshot.base_price,
+        "score": snapshot.score,
+        "expected_return": snapshot.expected_return,
+        "uncertainty": snapshot.uncertainty,
+    }
+    if row is not None:
+        for field, value in values.items():
+            setattr(row, field, value)
         return
-
     db.add(
         Prediction(
-            prediction_type=snapshot.direction,
-            target_price=snapshot.target_price,
-            confidence=snapshot.probability_up,
-            timeframe=f"{snapshot.horizon_days}D",
-            reasoning=_reasoning(snapshot, _skill_note(db, snapshot.horizon_days)),
-            factors=stats.json_safe(
-                [
-                    {
-                        "key": state.key,
-                        "name": state.name,
-                        "contribution": state.contribution,
-                        "signed_z": state.signed_z,
-                    }
-                    for state in snapshot.states
-                    if state.available
-                ]
-            ),
-            direction=snapshot.direction,
+            model_version=MODEL_VERSION,
             horizon_days=snapshot.horizon_days,
             as_of=snapshot.as_of,
-            base_price=snapshot.base_price,
-            score=snapshot.score,
-            expected_return=snapshot.expected_return,
-            uncertainty=snapshot.uncertainty,
-            model_version=MODEL_VERSION,
+            **values,
         )
     )
 

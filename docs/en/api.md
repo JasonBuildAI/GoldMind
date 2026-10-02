@@ -51,7 +51,7 @@ The running service also serves interactive documentation at `http://localhost:8
 | `POST` | `/api/gold/news/digest/refresh` | Crawl every configured source now and store new items, returning the fetch report (sources ok/failed, new items, skipped entries). No LLM calls. (**heavy operation**, stricter rate limit) |
 | `GET` | `/api/gold/news/sentiment/summary` | News sentiment distribution. Note: rows are always stored as NEUTRAL — this project does no sentiment analysis, so this is always all-neutral; the field exists only to keep the response shape stable. |
 | `GET` | `/api/gold/news/{news_id}` | Single news item. |
-| `GET` | `/api/gold/predictions` | Stored price predictions. The table holds real rows: the quant engine (services/quant) writes one per refresh. |
+| `GET` | `/api/gold/predictions` | Stored price predictions. The table holds real rows: the quant engine (services/quant) keeps one row per `(model version, horizon, as_of)` — same-day recomputes update in place, a new day appends. |
 | `GET` | `/api/gold/predictions/latest` | Latest stored price prediction. |
 | `GET` | `/api/gold/prices/correlation` | Gold vs. dollar index correlation. |
 | `GET` | `/api/gold/prices/daily` | Daily gold price series. |

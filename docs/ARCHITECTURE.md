@@ -171,7 +171,7 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | `news_digest_items` | 消息板块的高权威条目（与 `gold_news` 存储隔离）；`url` 为 `TEXT`（Google News 链接实测超 500 字符，`VARCHAR(500)` 在 MySQL 下整批落库失败，老库升级走 `scripts/migrate_news_digest_url.py`）、去重靠前缀索引 191、`published_at` 有索引 |
 | `market_factors` | 多空因子（`type` 区分） |
 | `institution_views` | 机构观点；`as_of_date` / `source` 记录每条预测最近一次被核实的日期与线索来源（`web_search` / `news_scan` / `legacy`），老库升级走 `scripts/migrate_institution_views.py`（只加列/补数据，不删行） |
-| `predictions` | 量化引擎（`services/quant/service.py`）每次刷新写入：方向、周期、基准价、目标价、得分、期望收益、不确定度与模型版本 |
+| `predictions` | 量化引擎（`services/quant/service.py`）预测存档：每个 `(模型版本, 尺度, 截止日)` 一行 —— 同一天重算就地更新、跨天追加保留；含方向、周期、基准价、目标价、得分、期望收益、不确定度与模型版本 |
 | `factor_observations` | 量化因子观测，`(factor_key, obs_date)` 唯一；只存成功观测，失败在同步报告里说明 |
 | `factor_observation_revisions` | 因子观测的**追加式修订流水**：每次写入（首见或回修）留一行，带 `recorded_at`（项目时区）。有它才能按「当时可见的输入」重建面板（`storage.load_series_as_of`，研究台 `--as-of`），预注册裁决才可复现 |
 | `model_evaluations` | 走查式回测结果（命中率 / 基准对照 / Brier / 逐因子指标），每次评估追加一行 |

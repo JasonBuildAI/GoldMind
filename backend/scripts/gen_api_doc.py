@@ -117,7 +117,8 @@ SUMMARY_EN: dict[str, str] = {
     "GET /api/gold/news/{news_id}": "Single news item.",
     "GET /api/gold/predictions": (
         "Stored price predictions. The table holds real rows: the quant engine "
-        "(services/quant) writes one per refresh."
+        "(services/quant) keeps one row per `(model version, horizon, as_of)` — same-day "
+        "recomputes update in place, a new day appends."
     ),
     "GET /api/gold/predictions/latest": "Latest stored price prediction.",
     "GET /api/gold/prices/correlation": "Gold vs. dollar index correlation.",

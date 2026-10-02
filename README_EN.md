@@ -240,7 +240,9 @@ If this project helps or inspires you, a ⭐ **Star** is the best thank-you.
 > so the shots above are the 1-year and 1-quarter tabs. In the monitor table the last five of the
 > 21 rows are the second round's **information-only** series: GVZ, gold/silver ratio, copper/gold
 > ratio, CFTC net-long share of open interest and official daily GPR — none cleared the gates, so
-> they show values and dates but no bull/bear label.
+> they show values and dates but no bull/bear label. Stored forecasts keep one row per
+> (model version, horizon, as_of): same-day recomputes update in place, a new day appends,
+> so the table is the forecast archive.
 
 ### Research page (pre-registered verdict + skill overview)
 <p align="center">

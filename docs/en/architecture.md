@@ -183,7 +183,7 @@ are **not committed** (`.gitignore` ignores them).
 | `news_digest_items` | high-authority message-board items (storage-isolated from `gold_news`); `url` is `TEXT` (Google News links exceed 500 chars, and `VARCHAR(500)` makes MySQL reject the whole batch — upgrade old databases with `scripts/migrate_news_digest_url.py`), deduplicated via prefix index 191, `published_at` is indexed |
 | `market_factors` | bullish/bearish factors (separated by `type`) |
 | `institution_views` | institutional views; `as_of_date` / `source` record the date each prediction was last verified and where the lead came from (`web_search` / `news_scan` / `legacy`); upgrading an old database goes through `scripts/migrate_institution_views.py` (adds columns / backfills data only, never deletes rows) |
-| `predictions` | written on every refresh by the quant engine (`services/quant/service.py`): direction, horizon, base price, target price, score, expected return, uncertainty and model version |
+| `predictions` | prediction archive written by the quant engine (`services/quant/service.py`): one row per `(model version, horizon, as_of)` — same-day recomputes update in place, a new day appends and older rows are kept; direction, horizon, base price, target price, score, expected return, uncertainty and model version |
 | `factor_observations` | quant factor observations, unique on `(factor_key, obs_date)`; only successful observations are stored, failures are explained in the sync report |
 | `model_evaluations` | walk-forward backtest results (hit rate / benchmark comparison / Brier / per-factor metrics); every evaluation appends one row |
 

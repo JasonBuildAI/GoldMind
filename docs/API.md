@@ -51,7 +51,7 @@
 | `POST` | `/api/gold/news/digest/refresh` | 立即抓取一轮全部来源并落库，返回本次抓取报告。 （**重操作**，限流更严） |
 | `GET` | `/api/gold/news/sentiment/summary` | 新闻情感分布统计。注：入库时 sentiment 一律为 NEUTRAL，本项目没有做情感分析，这里恒为全中性，保留字段只为接口形状稳定。 |
 | `GET` | `/api/gold/news/{news_id}` | 获取单条新闻详情。 |
-| `GET` | `/api/gold/predictions` | 价格预测列表。表里现在有真实数据：量化引擎（services/quant）每次刷新写入。 |
+| `GET` | `/api/gold/predictions` | 价格预测列表。表里现在有真实数据：量化引擎（services/quant）每个 `(模型版本, 尺度, 截止日)` 一行 —— 同一天重算就地更新、跨天追加保留。 |
 | `GET` | `/api/gold/predictions/latest` | 最新一条已落库的价格预测。 |
 | `GET` | `/api/gold/prices/correlation` | 获取黄金与美元指数相关性数据 |
 | `GET` | `/api/gold/prices/daily` | 获取日线价格数据 |

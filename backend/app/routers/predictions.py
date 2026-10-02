@@ -10,7 +10,7 @@ router = APIRouter()
 
 @router.get("/predictions", response_model=List[PredictionResponse])
 async def get_predictions(limit: int = 10, db: Session = Depends(get_db)):
-    """价格预测列表。表里现在有真实数据：量化引擎（services/quant）每次刷新写入。
+    """价格预测列表。表里现在有真实数据：量化引擎（services/quant）每个 `(模型版本, 尺度, 截止日)` 一行 —— 同一天重算就地更新、跨天追加保留。
 
     想读「此刻重算」的预测与逐因子贡献，用 `/quant/predictions`；这里返回的是
     落库的历史记录。
