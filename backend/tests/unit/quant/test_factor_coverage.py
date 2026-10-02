@@ -89,3 +89,35 @@ def test_empty_series_reports_zero(db_session):
     assert report["observations"] == 0
     assert report["accumulating"] is True
     assert report["sparse_years"] == []
+    assert report["first_date"] is None and report["last_date"] is None
+
+
+def test_coverage_from_index_uses_the_same_rules():
+    """页面侧的覆盖画像必须与库侧同一口径（同一条稀疏年规则）。"""
+    index = pd.bdate_range("2016-01-01", "2016-12-31").append(
+        pd.bdate_range("2018-01-01", "2018-12-31")
+    )
+
+    report = storage.coverage_from_index("gpr", index)
+
+    assert report["observations"] == len(index)
+    assert report["years"] == [2016, 2018]
+    assert report["sparse_years"] == [2017], "整年缺口在页面侧也要显形"
+    assert report["accumulating"] is False
+    assert report["first_date"] == index.min().date()
+    assert report["last_date"] == index.max().date()
+
+
+def test_coverage_from_index_flags_accumulating():
+    report = storage.coverage_from_index("gpr", pd.bdate_range("2026-01-01", "2026-06-30"))
+
+    assert report["accumulating"] is True
+    assert report["sparse_years"] == []
+
+
+def test_coverage_from_index_handles_empty():
+    report = storage.coverage_from_index("gpr", pd.DatetimeIndex([]))
+
+    assert report["observations"] == 0
+    assert report["accumulating"] is True
+    assert report["first_date"] is None

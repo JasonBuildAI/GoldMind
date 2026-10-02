@@ -101,6 +101,14 @@ def test_factors_endpoint_reports_source_and_freshness(client, db_session, seed_
         assert factor["status"] in ("ok", "stale", "missing", "warming")
         if factor["status"] != "ok":
             assert factor["reason"], f"{factor['key']} 不可用却没有原因"
+        coverage = factor["coverage"]
+        assert coverage is not None, f"{factor['key']} 没有覆盖画像"
+        assert coverage["observations"] == sum(coverage["year_counts"].values())
+        assert coverage["first_date"] is not None and coverage["last_date"] is not None
+        assert coverage["first_date"] <= coverage["last_date"]
+        assert coverage["accumulating"] == (len(coverage["years"]) < 2)
+        if coverage["accumulating"]:
+            assert coverage["sparse_years"] == [], "积累期不应被误判成缺口"
 
 
 @pytest.mark.integration

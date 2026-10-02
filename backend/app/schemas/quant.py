@@ -11,6 +11,22 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 
+class FactorCoverage(BaseModel):
+    """单因子的覆盖画像（2.0.2 第 11 条）：窗口、缺口年与积累期。
+
+    ``accumulating`` = 有数据的年份少于 2 个。新序列允许先入库积累，
+    页面显式标注「积累期」，与「缺口」分开报告。
+    """
+
+    observations: int
+    years: List[int]
+    year_counts: Dict[int, int]
+    sparse_years: List[int]
+    first_date: Optional[date] = None
+    last_date: Optional[date] = None
+    accumulating: bool
+
+
 class FactorSnapshot(BaseModel):
     key: str
     name: str
@@ -31,6 +47,7 @@ class FactorSnapshot(BaseModel):
     contribution: Optional[float] = None
     status: str
     reason: Optional[str] = None
+    coverage: Optional[FactorCoverage] = None
 
 
 class CategoryStatus(BaseModel):

@@ -229,7 +229,7 @@ def factor_dashboard(db: Session, *, category: Optional[str] = None) -> dict:
         "available_factors": sum(1 for state in states if state.available),
         "total_factors": len(states),
         "categories": categories,
-        "factors": [_factor_payload(state) for state in visible],
+        "factors": [_factor_payload(state, factors) for state in visible],
         "sources": sources,
         "sync": {
             "started_at": report.get("started_at"),
@@ -241,8 +241,14 @@ def factor_dashboard(db: Session, *, category: Optional[str] = None) -> dict:
     }
 
 
-def _factor_payload(state: engine.FactorState) -> dict:
+def _factor_payload(state: engine.FactorState, panel: dict[str, pd.Series]) -> dict:
     payload = _contribution_payload(state)
+    series = panel.get(state.key)
+    coverage = (
+        storage.coverage_from_index(state.key, series.index)
+        if series is not None and not series.empty
+        else storage.coverage_rules(state.key, {})
+    )
     payload.update(
         {
             "weight": state.weight,
@@ -252,6 +258,8 @@ def _factor_payload(state: engine.FactorState) -> dict:
             "age_days": state.age_days,
             "max_age_days": state.max_age_days,
             "publication_lag_days": state.publication_lag_days,
+            # 覆盖窗口与「积累期」：短历史序列照实标注，不当作数据故障
+            "coverage": coverage,
         }
     )
     return payload

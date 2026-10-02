@@ -235,9 +235,8 @@ def year_counts(db: Session, factor_key: str) -> dict[int, int]:
     return counts
 
 
-def sparse_years(
-    db: Session,
-    factor_key: str,
+def sparse_years_from_counts(
+    counts: dict[int, int],
     *,
     window: Optional[Iterable[int]] = None,
     ratio: float = 0.2,
@@ -251,8 +250,9 @@ def sparse_years(
 
     ``window`` 缺省取「首末观测之间的所有年份」；要检查观测范围之外的年份
     （如今年尚未抓到数据）必须显式传入窗口。
+
+    纯函数：计数从 DB（``year_counts``）或已加载的内存面板来，规则只有这一份。
     """
-    counts = year_counts(db, factor_key)
     if not counts:
         return set(window or ())
     threshold = max(float(min_obs), statistics.median(counts.values()) * ratio)
@@ -263,6 +263,52 @@ def sparse_years(
     return {year for year in years if counts.get(year, 0) < threshold}
 
 
+def sparse_years(
+    db: Session,
+    factor_key: str,
+    *,
+    window: Optional[Iterable[int]] = None,
+    ratio: float = 0.2,
+    min_obs: int = 1,
+) -> set[int]:
+    """DB 版：先数每年观测，再走 ``sparse_years_from_counts`` 的同一份规则。"""
+    return sparse_years_from_counts(
+        year_counts(db, factor_key), window=window, ratio=ratio, min_obs=min_obs
+    )
+
+
+def coverage_rules(
+    factor_key: str,
+    counts: dict[int, int],
+    *,
+    window: Optional[Iterable[int]] = None,
+    ratio: float = 0.2,
+    min_obs: int = 1,
+    first_date: Optional[date] = None,
+    last_date: Optional[date] = None,
+) -> dict:
+    """覆盖画像的纯规则：年份计数、缺口年、覆盖窗口、是否仍在积累期。
+
+    少于 2 个年份有数据 → ``accumulating``（新序列允许先入库积累，单独报告）；
+    首末观测之间样本数低于年样本中位数 20% 的年份 → ``sparse_years``。
+    DB 侧（``coverage``）与页面侧（``coverage_from_index``）共用这一份实现。
+    """
+    gaps = sorted(
+        sparse_years_from_counts(counts, window=window, ratio=ratio, min_obs=min_obs)
+    )
+    years = sorted(counts)
+    return {
+        "factor_key": factor_key,
+        "observations": sum(counts.values()),
+        "years": years,
+        "year_counts": counts,
+        "sparse_years": gaps,
+        "first_date": first_date,
+        "last_date": last_date,
+        "accumulating": len(years) < 2,
+    }
+
+
 def coverage(
     db: Session,
     factor_key: str,
@@ -271,20 +317,32 @@ def coverage(
     ratio: float = 0.2,
     min_obs: int = 1,
 ) -> dict:
-    """单因子的覆盖画像：年份计数、缺口年、是否仍在积累期。
+    """DB 版覆盖画像：从库里取计数与首末日期，再走 ``coverage_rules``。
 
-    守卫（`tests/unit/quant/test_factor_coverage.py`）与回填报告共用这一份口径：
-    少于 2 个年份有数据 → ``accumulating``（新序列允许先入库积累，单独报告）；
-    首末观测之间样本数低于年样本中位数 20% 的年份 → ``sparse_years``。
+    守卫（`tests/unit/quant/test_factor_coverage.py`）与回填报告共用这一份口径。
     """
-    counts = year_counts(db, factor_key)
-    gaps = sorted(sparse_years(db, factor_key, window=window, ratio=ratio, min_obs=min_obs))
-    years = sorted(counts)
-    return {
-        "factor_key": factor_key,
-        "observations": sum(counts.values()),
-        "years": years,
-        "year_counts": counts,
-        "sparse_years": gaps,
-        "accumulating": len(years) < 2,
-    }
+    return coverage_rules(
+        factor_key,
+        year_counts(db, factor_key),
+        window=window,
+        ratio=ratio,
+        min_obs=min_obs,
+        first_date=earliest_date(db, factor_key),
+        last_date=latest_date(db, factor_key),
+    )
+
+
+def coverage_from_index(factor_key: str, index) -> dict:
+    """面板版覆盖画像：指数已在内存里，不再为同一事实多打一次库。"""
+    stamps = pd.DatetimeIndex(index)
+    if stamps.empty:
+        return coverage_rules(factor_key, {})
+    counts: dict[int, int] = {}
+    for stamp in stamps:
+        counts[stamp.year] = counts.get(stamp.year, 0) + 1
+    return coverage_rules(
+        factor_key,
+        counts,
+        first_date=stamps.min().date(),
+        last_date=stamps.max().date(),
+    )
