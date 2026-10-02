@@ -346,7 +346,7 @@ it — documentation does not copy a second version.
 
 | Stage | Location | Key points |
 |---|---|---|
-| Data sources | `sources/*.py` | all free, no keys required (including the Treasury DTS TGA, the New York Fed RRP, CFTC open interest, Yahoo USDCNY); the HTTP client is injectable, and tests never really go online |
+| Data sources | `sources/*.py` | all free, no keys required (including the Treasury DTS TGA, the New York Fed RRP, CFTC open interest, Yahoo USDCNY); the HTTP client is injectable, and tests never really go online. When the external quote source (Yahoo) fails, the gold benchmark and the dollar factor fall back to the locally synced `gold_prices` / `dollar_index` tables (source labelled "本地行情表…兜底"): only the provenance changes, never the factor set or weights |
 | Derivation | `derive.py` | raw series → factor values; units and conventions are fixed in this layer only |
 | Persistence | `storage.py` | `factor_observations`, unique constraint `(factor_key, obs_date)`, idempotent |
 | Sync | `sync.py` | per-source throttling (6h ~ 24h), incremental fetching, per-source degradation, and a sync report |
