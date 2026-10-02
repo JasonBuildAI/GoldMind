@@ -333,7 +333,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 出口 | `service.py` | 调度任务与 `POST /api/gold/quant/refresh` 共用同一条链路 |
 | 统计 | `stats.py` | 重叠样本的显著性工具箱：Newey–West HAC 标准误、圆周分块自助区间、HAC t / Diebold–Mariano、Brier 技能分与可靠性分桶（不引入 scipy） |
 | 预注册 | `preregistered.py` | 候选清单、选择规则与通过线的**唯一实现**：先注册、后检验；看到留出期成绩后再改常量即破坏预注册 |
-| 研究台 | `scripts/quant_lab.py` | 预注册候选 × 尺度的全档留出期评估（默认读缓存，`--refresh` 全量重算），结论进「研究」页与研究台报告 |
+| 研究台 | `scripts/quant_lab.py` | 预注册候选 × 尺度的全档评估（`--from-db` 读库 / `--out` 落盘 / `--horizons` 选尺度 / `--group` 选候选族 / `--as-of` 按时点重建面板 / `--holdout-start` 改历史留出期起点），结论进「研究」页与研究台报告 |
 
 三条不能破的口径：
 
@@ -409,11 +409,18 @@ F̂ = 最近 `CALIBRATION_WINDOW` 个 studentized 误差 `e_s/scale_s` 的**半�
 
 回测（`backtest.py`）在命中率之外报告 80% 名义区间的实际覆盖率
 （`metrics.interval_coverage_80`）与以 2022-01-01 为界的 `metrics.regimes`
-分段成绩；某段样本不足时只给样本数与原因，不凑数字。
+分段成绩；某段样本不足时只给样本数与原因，不凑数字。样本期切成四段，混用等于偷换证据：
+`development`（`HOLDOUT_START = 2023-10-02` 之前，唯一可以调参的一段）、
+`holdout`（历史留出期，已被前两轮裁决看过，只作记录）、
+`forward`（前向留出期，`ACTIVE_HOLDOUT_START = 2026-10-02` 起，**唯一**的裁决窗口；
+窗口没攒够 20 次独立下注时状态是 `pending` 并写明还差多少个交易日，不许拿历史那段顶替）、
+`full`（全样本）。
 守卫：`backend/tests/unit/quant/test_backtest_metrics.py`。
 
-监测仪表盘（`monitor.py`）覆盖 16 行指标；其中 usdcny / cny_gold / tga / rrp /
-cftc_oi 是监控专用序列，与因子同表（`factor_observations`）存储但不参与信号合成。
+监测仪表盘（`monitor.py`）覆盖 21 行指标；其中 usdcny / cny_gold / tga / rrp /
+cftc_oi 与第二轮接入的 gvz / gold_silver_ratio / copper_gold_ratio /
+cftc_net_oi_ratio / gpr_daily 是监控专用序列，与因子同表（`factor_observations`）
+存储但不参与信号合成 —— 顺序、数量与 `monitor.ROW_SPECS` 逐行对齐。
 上海金溢价的公开接口实测不可用，行内如实显示「不可用 + 原因」。
 守卫：`backend/tests/unit/quant/test_monitor.py`。
 

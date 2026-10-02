@@ -374,16 +374,48 @@ Three conventions that must not be broken:
 3. **Time flows in one time zone only.** Every "now" uses `app.utils.timeutil` (the scheduler time
    zone), the same convention as section 7.
 
-Predictions have a single distribution exit (`engine.build_prediction_frame`): at time t,
-μ = α + β·score (expanding-window OLS, with sample pairs satisfying s + h ≤ t),
-σ = std(r_s − μ_s | s + h ≤ t) × q80(|r_s − μ_s| / (1.2816·σ_s)) (the standard deviation of the
-**walk-forward prediction error**, with the width further calibrated by the error's **empirical
-quantile** — normal quantiles are systematically too narrow at long horizons; when fewer than 60
-realised errors exist it falls back to "the expanding standard deviation of realised h-day
-returns", still using past data only), p_up = Φ(μ/σ).
-Target price = base price ×(1+μ), 80% interval = μ ± 1.2816σ, three scenarios = quantiles of
-N(μ, σ²), all derived from this single distribution; the "direction" on the page = sign(μ) (exactly
-0 is recorded as "flat").
+Predictions have a single distribution exit (`engine.build_prediction_frame` +
+`engine.calibrate_distribution`): at time t, μ = α + β·score (expanding-window OLS, with sample pairs
+satisfying s + h ≤ t) and **|μ| ≤ `EXPECTED_CAP_SIGMAS` × the expanding standard deviation of
+realised h-day returns** (an OLS over a nearly constant score can push β to 1e4; on 2019-01-08 it
+produced a 60-day expected return of +1261, so the cap is mandatory);
+scale = std(e_s | s + h ≤ t) (the standard deviation of the **walk-forward prediction error**, not
+the regression residual; with fewer than 60 realised errors it falls back to the expanding standard
+deviation of realised h-day returns, still using past data only);
+F̂ = the **half-life-weighted empirical distribution** of the last `CALIBRATION_WINDOW` studentized
+errors `e_s/scale_s`, with the nominal miss rate α updated online by ACI
+(`α ← α + γ(α_target − miss)`). Two details were forced by measurement:
+
+- **`miss` scores the interval that was issued for that bet**, not the interval shown on the current
+  row: the error series is already shifted right by `horizon` rows, so the error on row t belongs to
+  the bet issued on row `t − horizon` (`calibrate_distribution(issued_lag=)`). Mixing the two up
+  leaves long horizons systematically under-covered (development period, before the fix: 20-day
+  0.767, 60-day 0.726; after: 0.791 / 0.744);
+- calibration samples come in two modes (`engine.CALIBRATION_MODES`, research-bench candidates C0 /
+  C1): `row` counts every row (the live convention), `bet` counts every `horizon`-th row — h-day
+  forward errors overlap at daily frequency, so one bet is counted h times and the conformal
+  "exchangeable samples" premise breaks. The four constants that belong to `bet` are given in one
+  place, `engine.calibration_settings()`: change the sampling unit and γ / half-life / look-back
+  window must move with it.
+
+All four outputs come from that one F̂:
+
+```
+80% interval    = μ + scale · [ F̂⁻¹(α/2),  F̂⁻¹(1−α/2) ]   ← asymmetric; default interval="aci"
+scenario band   = μ + scale · [ F̂⁻¹(0.25), F̂⁻¹(0.75) ]    ← same quantile sample, nested by construction
+upside prob.    = 1 − F̂( −μ / scale )                     ← not Φ(μ/σ)
+displayed scale = (upper − lower) / (2 × 1.2816)           ← the `uncertainty` field
+```
+
+`uncertainty` only converts the interval width into a normal-scale display value: **under the
+asymmetric convention the interval midpoint is not μ**, so "μ ± 1.2816·uncertainty" equals the shown
+interval only in the symmetric modes (`normal` / `empirical`). It takes **no part** in the
+probability: using it as the denominator of Φ once pushed every probability toward 50% (one of the
+direct reasons the Brier skill score was negative across the board; fixed 2026-10-02).
+The "direction" on the page = sign(μ) (exactly 0 is recorded as "flat"). Deriving it from the
+distribution median was tried and lost 60-day hit rate on the real 20-year panel, because the
+walk-forward error's location term is systematically negative: the location term sets the scale for
+probability and interval, it does not make the decision (see `engine.SignalSnapshot.direction`).
 The factor-composite score is an **uncalibrated** input: it appears only in the factor table and the
 "factor tilt (uncalibrated)" row, and backtests score it separately
 (`metrics.score_direction_accuracy`). When there are fewer than 60 regression samples,
