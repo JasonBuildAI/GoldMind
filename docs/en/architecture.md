@@ -485,8 +485,9 @@ table, its own fetch cadence, and it never enters a prompt (implementation:
 - **Admission rules**: an item must have both a link and a published time — anything missing
   either is skipped and counted in the fetch report, never backfilled with the fetch time.
   `gold` sources must match financial-context gold terms (`gold medal` and other sports uses
-  are excluded); `monetary` sources additionally accept FOMC / rates / inflation / central-bank
-  terms.
+  are excluded, as are fashion and idiom metaphors such as `gold dream` and `go for gold`; the
+  list is maintained from real misclassifications seen in the feeds); `monetary` sources
+  additionally accept FOMC / rates / inflation / central-bank terms.
 - **Deterministic scoring** (no LLM):
   `importance = 100×(0.40·authority + 0.25·relevance + 0.20·coverage + 0.15·recency)`,
   `confidence = 100×(0.45·authority + 0.30·coverage + 0.25·relevance)`; recency decays

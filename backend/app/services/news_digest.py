@@ -94,9 +94,13 @@ RECENCY_SCALE_HOURS = 168.0
 # 关键词
 # --------------------------------------------------------------------------- #
 _GOLD_SPECIFIC = re.compile(r"(gold\s+prices?|gold\s+market|bullion|xau|precious\s+metals?)", re.I)
-# "gold" 加否定环视排除体育金 / 奖项类语境（如 "wins her third swimming gold medal"），
-# 这类条目在美联社等综合源里真实存在，不排除就会混进榜单。
-_GOLD_WORD = re.compile(r"\bgold\b(?!\s+(?:medals?|awards?|records?|cups?))", re.I)
+# "gold" 加否定环视排除非金融语境 —— 体育金 / 奖项 / 时尚（如 "wins her third swimming
+# gold medal"、"Eala's gold dream ends in Nagoya"）。这类条目在美联社、路透社等综合源里
+# 真实存在，不排除就会混进榜单；名单按真实抓取到的误判样本维护，加样例前先改测试。
+_GOLD_WORD = re.compile(r"\bgold\b(?!\s+(?:medals?|awards?|records?|cups?|dreams?))", re.I)
+# 习语「go for gold」= 争冠 / 夺魁，与贵金属无关（如 "Saint Laurent goes for gold in
+# Paris show"）。它出现在 gold 之前，否定环视管不到，单列一条。
+_GOLD_IDIOM = re.compile(r"\b(?:go|goes|going|went)\s+for\s+gold\b", re.I)
 _MONETARY = re.compile(
     r"\b(fomc|federal\s+reserve|fed|ecb|monetary\s+policy|interest\s+rates?|"
     r"rate\s+(?:cut|hike|rise|hold)|inflation|cpi|pce|central\s+banks?|"
@@ -121,12 +125,15 @@ _WS_RE = re.compile(r"\s+")
 def matches_relevance(title: str, summary: str, mode: str) -> bool:
     """这条消息与黄金（或货币政策）相关吗？
 
-    `gold` 模式：必须命中金融语境的黄金词；体育/奖项类 `gold medal` 不算。
+    `gold` 模式：必须命中金融语境的黄金词；体育 / 时尚等隐喻不算
+    （`gold medal`、`gold dream`、`go for gold`）。
     `monetary` 模式：官方央行源额外接受 FOMC / 利率 / 通胀 / 央行等货币词 ——
     货币政策类信息天然与金价相关，不能因为标题里没有 "gold" 就丢掉。
     """
     text = f"{title} {summary}"
-    if _GOLD_SPECIFIC.search(text) or _GOLD_WORD.search(text):
+    if _GOLD_SPECIFIC.search(text):
+        return True
+    if _GOLD_WORD.search(text) and not _GOLD_IDIOM.search(text):
         return True
     if mode == "monetary" and _MONETARY.search(text):
         return True

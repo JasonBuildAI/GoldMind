@@ -159,6 +159,20 @@ def test_gold_mode_accepts_plain_gold_headline():
 
 
 @pytest.mark.unit
+def test_gold_mode_rejects_figurative_gold_seen_in_real_feeds():
+    """真实抓取（2026-10-02）里混进过榜单的隐喻式 gold，两类都要挡掉。"""
+    sports = "Eala's gold dream ends in Nagoya as India set for cricket showdown with Pakistan"
+    fashion = "Saint Laurent goes for gold in Paris show that may be Vaccarello's finale"
+
+    # 综合源的摘要经常只是「标题 + 来源名」，用同样的文本验证摘要路径不会放行
+    assert matches_relevance(sports, f"{sports} Reuters", "gold") is False
+    assert matches_relevance(fashion, f"{fashion} Reuters", "gold") is False
+    # 同一天同一条真实行情标题仍是正例：修误判不能把真新闻一起挡掉
+    market = "Gold steadies ahead of US payrolls data, heads for weekly decline"
+    assert matches_relevance(market, f"{market} Reuters", "gold") is True
+
+
+@pytest.mark.unit
 def test_gold_mode_rejects_unrelated_and_goldman():
     assert matches_relevance("Stocks rally as earnings beat", "Equities extend gains", "gold") is False
     # "Goldman" 里没有独立的 gold 词，不能误命中
