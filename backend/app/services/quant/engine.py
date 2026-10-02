@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from datetime import date
 from math import erf, sqrt
 from statistics import NormalDist
-from typing import Optional
+from typing import Mapping, Optional
 
 import numpy as np
 import pandas as pd
@@ -296,6 +296,7 @@ def composite_score(
     horizon: Optional[int] = None,
     mode: str = "weighted",
     include: Optional[tuple[str, ...]] = None,
+    weights_override: Optional[Mapping[str, float]] = None,
 ) -> pd.Series:
     """加权合成得分，权重按当日**可用**因子归一（缺因子不等于该因子为 0）。
 
@@ -305,6 +306,8 @@ def composite_score(
     ``mode`` 是研究台的预注册变体：``weighted``（线上口径）、``equal``（等权）、
     ``winsor``（z 截尾到 ±2 再加权）、``trimmed``（每行剔除绝对值最大的一个贡献）。
     ``include`` 限定因子子集（研究台用；默认全部）。
+    ``weights_override`` 只给权重敏感性分析用（``scripts/weight_sensitivity.py``）：
+    逐因子替换权重后走**同一份**公式，生产调用一律不传 —— 唯一真源仍是 definitions。
     """
     if signals.empty:
         return pd.Series(dtype="float64", index=signals.index)
@@ -324,6 +327,10 @@ def composite_score(
     )
     if weights.empty:
         return pd.Series(np.nan, index=signals.index)
+    if weights_override:
+        for key, value in weights_override.items():
+            if key in weights.index:
+                weights[key] = float(value)
     if mode == "equal":
         weights = pd.Series(1.0, index=weights.index)
     values = frame.clip(-WINSOR_LIMIT, WINSOR_LIMIT) if mode == "winsor" else frame
