@@ -12,6 +12,7 @@ from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
+from app.services.ai_payload import with_last_updated
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.llm_provider import (
@@ -411,6 +412,7 @@ class BullishFactorService:
         self.analyzer = BullishFactorAnalyzer()
         self.cache = CacheManager("bullish_factors", ttl=AI_ANALYSIS_CACHE_TTL)
     
+    @with_last_updated
     def get_bullish_factors(self, use_cache: bool = True) -> Dict[str, Any]:
         """
         获取看涨因子 - 快速响应版本（<50ms）

@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.analysis import InstitutionView
 from app.models.news import GoldNews
+from app.services.ai_payload import with_last_updated
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.llm_provider import (
     describe_completion,
@@ -632,6 +633,7 @@ class InstitutionPredictionService:
         self.cache = CacheManager("institution_predictions", ttl=AI_ANALYSIS_CACHE_TTL)  # 与调度器的刷新间隔对齐，见该常量的说明
         self.web_search_service = get_web_search_service()
 
+    @with_last_updated
     def get_institution_predictions(self, use_cache: bool = True) -> Dict[str, Any]:
         """
         获取机构预测 - 快速响应版本（<50ms）

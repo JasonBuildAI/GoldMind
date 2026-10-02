@@ -14,6 +14,7 @@ from app.utils import timeutil
 from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
+from app.services.ai_payload import with_last_updated
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.llm_provider import (
@@ -445,6 +446,7 @@ class BearishFactorService:
         with _cache_lock:
             _cache[self._cache_key] = (data, time.time())
 
+    @with_last_updated
     def get_bearish_factors(self, use_cache: bool = True) -> Dict[str, Any]:
         """
         获取看空因子 - 快速响应版本（<50ms）

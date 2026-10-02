@@ -147,3 +147,49 @@ def test_placeholder_responses_are_marked_as_such(client):
         assert metadata.get("status") == "analyzing" or metadata.get("cache_source") == "default", (
             f"{path} 的占位标记无法被 isPlaceholder 识别：{metadata}"
         )
+
+
+# 端点 -> (缓存键, 一份「模型漏吐 last_updated」的载荷)
+_CACHE_PAYLOADS_WITHOUT_LAST_UPDATED = {
+    "/api/gold/bullish-factors-ai": (
+        "bullish_factors",
+        {"bullish_factors": [], "analysis_summary": ""},
+    ),
+    "/api/gold/bearish-factors-ai": (
+        "bearish_factors",
+        {"bearish_factors": [], "analysis_summary": ""},
+    ),
+    "/api/gold/institution-predictions-ai": (
+        "institution_predictions",
+        {"institutions": [], "analysis_summary": ""},
+    ),
+}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "path,cache_key,payload",
+    [
+        (path, cache_key, payload)
+        for path, (cache_key, payload) in sorted(_CACHE_PAYLOADS_WITHOUT_LAST_UPDATED.items())
+    ],
+)
+def test_cache_hit_without_last_updated_is_backfilled(client, path, cache_key, payload):
+    """回归（2026-10-02 实测 500）：模型漏吐 `last_updated` → 缓存命中 → 整个接口崩。
+
+    缓存里存的是分析器原样交给 CacheManager 的 JSON；模型不写这个键时，
+    它就一直缺。服务出口的兜底必须把它补成服务端产生的时间，且响应为 200。
+    """
+    from app.services.cache_manager import CacheManager
+
+    CacheManager(cache_key).set(dict(payload))
+
+    response = client.get(f"{path}?refresh=false")
+
+    assert response.status_code == 200, (
+        f"{path} 在缺少 last_updated 的缓存命中路径返回 {response.status_code}"
+    )
+    body = response.json()
+    assert isinstance(body.get("last_updated"), str) and body["last_updated"], (
+        f"{path} 没有把 last_updated 兜底成非空字符串：{body.get('last_updated')!r}"
+    )
