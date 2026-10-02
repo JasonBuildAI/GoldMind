@@ -20,8 +20,8 @@
 #   pandas + numpy + beautifulsoup4 (yfinance)
 
 # FastAPI and Server
-fastapi==0.115.0
-uvicorn[standard]==0.22.0
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
 python-multipart==0.0.32
 
 # Database
@@ -29,13 +29,13 @@ sqlalchemy==2.1.1
 pymysql==1.2.3
 
 # LLM (all clients are built by app/services/llm_provider.py)
-langchain-core==1.2.7
-langchain-openai==1.1.6
-openai==2.54.0
+langchain-core==1.6.5
+langchain-openai==1.6.6
+openai==3.20.0
 
 # Validation
-pydantic==2.10.0
-pydantic-settings==2.12.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
 
 # External Data
 yfinance==1.7.0
@@ -44,7 +44,7 @@ feedparser==6.0.14
 # GPR official daily index is a legacy .xls workbook; xlrd 2.x reads exactly
 # that format (and nothing else), so it stays pinned alongside the other
 # external-data clients.
-xlrd==2.0.1
+xlrd==2.0.2
 
 # Scheduler
 apscheduler==3.11.3
