@@ -10,10 +10,15 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ---
 
-## [Unreleased]
+## [2.0.1] - 2026-10-02
 
 ### Added
 
+- Factor gate and screening tool `backend/scripts/screen_factors.py`: de-meaned covariance + Newey–West HAC + Bonferroni + |t| >= 3, same sign across horizons, forward-window confirmation; none of the 255 cells on the 26-year panel passes, and after the engine fixes the 17 candidates are indistinguishable — the negative result is what points this round at new information sources
+- The monitor dashboard grows to **21 rows**: GVZ / gold-silver ratio / copper-gold ratio / CFTC net share of open interest / GPR are added as information-only rows that never emit a direction; with zero rows in the database they show "unavailable + reason" instead of vanishing from the table
+- Factor observations now store a current value plus an append-only revision log, and `--as-of` rebuilds the panel as of any past date; upgrading an old database backfills ten years of revisions
+- New evaluation conventions: independent bets drawn at stride=h (the 250-day holdout has 506 overlapping samples but really 2 bets), per-factor HAC t next to the inflated iid value, a coverage audit bucketed by realised volatility, and a register-only outlet for reverse-significant factors
+- The third gate (forward window) is now executable: its window starts on 2026-10-02, reports pending with the number of trading days still missing, and its section always appears in the report
 - Generic LLM access: any OpenAI-compatible endpoint works, configured through `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` (all three must be set); `LLM_PROVIDER` is a display-only label
 - New `LLM_MAX_TOKENS` (default `8192`), `LLM_SEARCH_ENABLED` (default `false`), `LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` and `LLM_SEARCH_MAX_KEYWORD`
 - Quant research bench and pre-registration: the single implementation of the candidate list, selection rules and pass lines in `backend/app/services/quant/preregistered.py`, the full evaluation tool `backend/scripts/quant_lab.py`, the endpoint `GET /api/gold/quant/research` and the separate "Research" page `app/research.html`
@@ -22,8 +27,13 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ### Changed
 
+- Model version `quant-v5`: direction, upside probability, the 80% interval and the three scenarios all come from the same calibrated distribution F-hat (interval widths are F-hat empirical quantiles, no longer inflated a second time by `uncertainty`); direction again follows the sign of the calibrated mu, which measured better than the distribution median
+- The four-layer fair-value decomposition no longer extrapolates: targets beyond 6 sigma or 12 log-premium are listed under `unsupported_by` and refuse to give a number
+- Stale factors become NaN at composition time instead of being forward-filled into a fake level; scales with too few samples are labelled "undecidable" rather than "failed", and every persisted prediction carries the measured skill status of its own scale
+- The monitor dashboard judges freshness row by row: stale rows show only the value and the observation date, with no bullish/bearish label
+- Pre-registered candidate C2 (per-bet calibration plus window) is rejected for missing the 0.78 pass line at 60 days (0.7679), thresholds unchanged; the control candidate C0 matches B0 value for value
 - **The default database is now a single SQLite file** (`backend/goldmind.db`, zero install, zero configuration): under SQLite `init_db.py` creates tables with the models' `create_all`, and `seed_data.py` no longer opens a raw pymysql connection; MySQL is now an optional path (not exercised by this round's gate)
-- Quant evaluation now follows a **pre-registered** protocol: the candidate list and pass lines are frozen before looking at the holdout (from 2023-10-02). The 2026-10-02 verdict was 17 candidates × 5 horizons with none passing, so `quant-v4` is kept and labelled "no statistical edge" on the research page
+- Quant evaluation now follows a **pre-registered** protocol: the candidate list and pass lines are frozen before looking at the holdout (from 2023-10-02); after the engine fixes the re-run leaves 17 candidates × 5 horizons indistinguishable and none of the 255 cells on the 26-year panel passes the gate, so the research page honestly labels the model "no statistical edge"
 
 ### Changed (breaking)
 
@@ -31,12 +41,16 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ### Fixed
 
+- **ACI interval-coverage lag**: the alpha update judged "the bet issued h days ago" against "the current row interval"; after the fix, development-period coverage rises from 76.7% to 79.3% at 20 days and from 72.6% to 73.6% at 60 days
+- Observations dated later than today are rejected; the frontend monitor table no longer rounds ratios below 0.01 to 0.00
 - **Investment strategy showed "temporarily unavailable" for a long time**: the 5 analysis services hardcoded `max_tokens=4096`, truncating the full three-tier JSON; they now take `LLM_MAX_TOKENS` (default 8192), and a failed parse logs `finish_reason` and token usage
 - Automatic single retry when the endpoint returns `finish_reason=content_filter`; the default news prompt cap is now 10 items
 - Smoke script renamed to `backend/scripts/smoke_llm.py` (was `smoke_mimo.py`); the web-search probe only runs when `LLM_SEARCH_ENABLED=true`
 
 ### Docs
 
+- `README.md` / `README_EN.md` fully rewritten: the ten-section quant strategy (21-row monitor table, pre-registration verdicts, known limitations), verified quick-start commands, and 14 screenshots captured from the live stack on 2026-10-02 (the script refuses to write empty images)
+- New drift guards: architecture-document claims, the README monitor table vs `monitor.ROW_SPECS`, and README commands vs the real `--help` of each script (all mutation-tested)
 - README reproduction gaps fixed: the Node floor is now ≥22.22.2 (or 24.15+/26+), a Google Chrome prerequisite was added, the non-existent `.\start_all.ps1` was removed, and cold-start expectations were added
 - The masthead / trend / bullish-bearish / institutional / strategy / summary screenshots were all retaken; institutional views keeps its honest "no recent prediction" empty state and the docs state the exact error message
 - README (Chinese and English) synced to the SQLite zero-configuration quick start; Section 6 of the quant strategy now reports the measured holdout coverage and direction hit rates, a "Research Bench and Pre-registration" section was added, and the known limitations were rewritten to the holdout convention
@@ -102,5 +116,6 @@ First public release.
 - Two-level cache (in-memory + JSON file) shared across processes and restarts
 - APScheduler refresh tasks and one-command Docker Compose deployment
 
+[2.0.1]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.1
 [2.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.0
 [1.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v1.0.0

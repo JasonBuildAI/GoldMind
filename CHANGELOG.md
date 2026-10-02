@@ -10,10 +10,15 @@
 
 ---
 
-## [Unreleased]
+## [2.0.1] - 2026-10-02
 
 ### 新增
 
+- 因子闸门与筛选工具 `backend/scripts/screen_factors.py`：去均值协方差 + Newey–West HAC + Bonferroni + |t| ≥ 3、跨尺度同号、前向窗口确认；26 年面板 255 格无一过线，17 个候选在修好引擎后彼此不可区分 —— 这条阴性结果是本轮把预算指向新信息源的依据
+- 监测仪表盘扩到 **21 行**：新增 GVZ / 金银比 / 铜金比 / CFTC 净多头占未平仓比 / GPR 五条信息行，一律不给多空方向；库里 0 行时显示「不可用 + 原因」而不是从表上消失
+- 因子观测改为「当前值 + 追加式修订流水」双表，支持 `--as-of` 按时点重建面板；老库升级自动回填 10 年流水
+- 评测新口径：按 stride=h 抽取的独立下注数（250 日留出期 506 个重叠样本实际只有 2 次下注）、逐因子 HAC t 与 iid 对照、按已实现波动率分档的覆盖率审计、「反向显著」只登记不采纳的出口
+- 第三道前向窗口闸门落地为代码：窗口起点写死 2026-10-02，判不了时报 pending 并列出还差多少个交易日
 - 通用 LLM 接入：任何 OpenAI 兼容端点都行，配置面是 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（三项齐备才算已配置），`LLM_PROVIDER` 仅作界面展示标签
 - 新增 `LLM_MAX_TOKENS`（默认 `8192`）、`LLM_SEARCH_ENABLED`（默认 `false`）、`LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` 与 `LLM_SEARCH_MAX_KEYWORD`
 - 量化研究台与预注册：候选清单、选择规则与通过线的唯一实现 `backend/app/services/quant/preregistered.py`，全档评估工具 `backend/scripts/quant_lab.py`，接口 `GET /api/gold/quant/research`，独立「研究」页 `app/research.html`
@@ -22,8 +27,13 @@
 
 ### 变更
 
+- 模型版本 `quant-v5`：方向、上行概率、80% 区间与三情景统一到同一张校准分布 F̂（区间宽度取 F̂ 的经验分位，不再被 uncertainty 二次放大）；方向判定退回校准后 μ 的符号（实测优于分布中位数）
+- 四层公允价分解不再外推：目标价超出 6 个 σ 或 12 个 log 溢价时单列 `unsupported_by` 并拒绝给数
+- 陈旧因子在合成阶段即变 NaN，不再向前填充成假水位；样本不足的尺度如实标「不可判定」而非「未通过」，每条落库预测自带该尺度实测技能状态
+- 监测仪表盘逐行判新鲜度：超龄行只给数值与观测日，不再给多空标签
+- 预注册候选 C2（每注校准 + 窗口）以 60 日 0.7679 未跨 0.78 通过线被淘汰，阈值不动；控制候选 C0 与 B0 逐值相同
 - **默认数据库改为 SQLite 单文件**（`backend/goldmind.db`，零安装、零配置）：`init_db.py` 在 SQLite 下用模型 `create_all` 建表，`seed_data.py` 去掉 pymysql 直连；MySQL 降级为可选路径（未随本轮闸门实测）
-- 量化评估改为**预注册**口径：候选清单与通过线先写死，再看留出期（2023-10-02 起）。2026-10-02 的裁决为 17 个候选 × 5 个尺度无一过线，保留 `quant-v4` 并在研究页标注「无统计优势」
+- 量化评估改为**预注册**口径：候选清单与通过线先写死，再看留出期（2023-10-02 起）；修好引擎口径后重裁，17 个候选 × 5 个尺度彼此不可区分，26 年面板 255 格无一过闸门，研究页如实标注「无统计优势」
 
 ### 变更（破坏性）
 
@@ -31,12 +41,16 @@
 
 ### 修复
 
+- **ACI 区间覆盖错位**：α 更新曾拿「当前行的区间」判「h 天前发出的那一注」，修后开发期 20 日覆盖率 76.7%→79.3%、60 日 72.6%→73.6%
+- 拒收任何观测日期晚于「今天」的记录；前端监测表不再把 <0.01 的比值四舍五入成 0.00
 - **投资策略长期显示「暂不可用」**：5 个分析服务硬编码 `max_tokens=4096`，三档策略的完整 JSON 被截断；改为取 `LLM_MAX_TOKENS`（默认 8192），解析失败时日志记录 `finish_reason` 与 token 用量
 - 端点返回 `finish_reason=content_filter` 时自动重试一次；新闻提示词默认上限收到 10 条
 - 冒烟脚本更名 `backend/scripts/smoke_llm.py`（原 `smoke_mimo.py`），联网搜索只在 `LLM_SEARCH_ENABLED=true` 时探测
 
 ### 文档
 
+- `README.md` / `README_EN.md` 全量重写：十节量化策略（含 21 行监测表、预注册裁决与已知限制）、逐项实测的快速开始与命令、14 张 2026-10-02 从真实栈截取的截图（脚本拒绝写空图）
+- 新增漂移守卫：架构文档声明、README 监测表 vs `monitor.ROW_SPECS`、README 命令 vs 各脚本真实 `--help`（均做过变异验证）
 - README 修复复现缺口：Node 下限改为 ≥22.22.2（或 24.15+/26+）、补 Google Chrome 前置、删除并不存在的 `.\start_all.ps1`、补冷启动预期
 - 报头 / 走势 / 多空 / 机构 / 策略 / 总结截图全部重截；机构观点如实保留「暂无最新预测」空态，文档写明精确报错文案
 - README 中英双版同步到 SQLite 零配置快速开始；量化第六节换成留出期实测覆盖率与方向命中率，新增「研究台与预注册」一节，已知限制改为留出期口径
@@ -101,5 +115,6 @@
 - 内存 + JSON 文件两级缓存，支持多进程与重启后共享
 - APScheduler 定时刷新，Docker Compose 一键部署
 
+[2.0.1]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.1
 [2.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.0
 [1.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v1.0.0
