@@ -38,10 +38,12 @@ from app.services.quant import (  # noqa: E402
     engine,
     multivariate,
     preregistered,
+    regimes,
     storage,
 )
 from app.services.quant.definitions import (  # noqa: E402
     ACTIVE_HOLDOUT_START,
+    BENCHMARK_KEY,
     CATEGORY_MONETARY,
     CATEGORY_RISK,
     FACTORS,
@@ -73,6 +75,8 @@ DECISION_PERIOD = "forward"
 
 GROUP_LABELS = {
     "baseline": "基线族",
+    "regime": "Regime 三档",
+    "benchmark": "基准对照两档",
     "drift": "漂移三档",
     "composite": "合成四档",
     "interval": "分布四档",
@@ -120,6 +124,11 @@ class Candidate:
     # M 族：多因子直接建模（walk-forward Ridge），与「先合成再一元回归」对照
     model: str = "composite"
     ridge_alpha: float = 1.0
+    # 第四轮：Regime 状态切换（只在该状态成立时持仓）与基准对照（换评估目标）
+    regime: Optional[str] = None
+    benchmark: str = BENCHMARK_KEY
+    # 裁决对照组：默认与线上口径 B0 比；基准对照 G2 与同基准的控制 G1 比
+    baseline: Optional[str] = "B0"
 
     @property
     def is_ensemble(self) -> bool:
@@ -135,6 +144,8 @@ class Candidate:
             self.calibration_mode,
             self.model,
             self.ridge_alpha,
+            self.regime,
+            self.benchmark,
         )
 
 
@@ -190,6 +201,41 @@ def candidates() -> tuple[Candidate, ...]:
             model="ridge",
             ridge_alpha=10.0,
         ),
+        # 第四轮（2026-10-03）预注册：Regime 状态切换与基准对照。登记文本在
+        # docs/specs/2026-10-03-2.0.2-整改与自动化.md「第四轮预注册」；
+        # 口径（窗口、状态定义、对照基准）写在 app/services/quant/regimes.py。
+        # 只进研究台：过预注册闸门（前向窗口）之前，一律不进生产信号。
+        Candidate(
+            "R1",
+            "regime",
+            "Regime：仅在 10 年期实际利率低于其 504 个交易日滚动中位数时持仓（其余时间中性）",
+            regime="R1",
+        ),
+        Candidate(
+            "R2",
+            "regime",
+            "Regime：仅在美元指数低于其 504 个交易日滚动中位数时持仓（其余时间中性）",
+            regime="R2",
+        ),
+        Candidate(
+            "R3",
+            "regime",
+            "Regime：仅在中国官方黄金储备的 252 个交易日（约 12 个月）变化为正时持仓（其余时间中性）",
+            regime="R3",
+        ),
+        Candidate(
+            "G1",
+            "benchmark",
+            "基准对照：GC=F 期货收盘（控制，与生产同基准；含展期）",
+            benchmark=BENCHMARK_KEY,
+        ),
+        Candidate(
+            "G2",
+            "benchmark",
+            "基准对照：GLD 收盘（ETF，无展期影响；对照组是同基准的控制 G1）",
+            benchmark="gld_close",
+            baseline="G1",
+        ),
     )
 
 
@@ -201,6 +247,7 @@ assert len(CANDIDATES_BY_KEY) == len(CANDIDATES), "候选 key 必须唯一"
 ROW_FIELDS = (
     "candidate",
     "group",
+    "benchmark",
     "description",
     "horizon_days",
     "period",
@@ -267,19 +314,46 @@ def evaluate_candidate(
     horizon: int,
     holdout_start=HOLDOUT_START,
 ) -> dict:
-    """一个候选在一个尺度上的三列评估（开发期 / 留出期 / 全样本）。"""
+    """一个候选在一个尺度上的四个样本期评估（可换基准、可加 Regime 状态切换）。
+
+    基准对照候选只换**评估目标**（收益与「永远看多」基线都来自对照序列），
+    因子与信号口径一律不动 —— 要回答的问题是「同一个模型换一把尺子会不会改结论」，
+    不是再造一个模型。Regime 候选在合成得分上做状态闸门：状态不成立记 0 分
+    （中性），口径见 ``regimes.py``。
+    """
+    benchmark = close
+    if candidate.benchmark != BENCHMARK_KEY:
+        alternative = factors.get(candidate.benchmark)
+        if alternative is None or alternative.empty:
+            raise ValueError(f"基准对照序列不可用：{candidate.benchmark}")
+        benchmark = alternative
+    score = ensemble_score(factors, benchmark, candidate, horizon=horizon)
+    if candidate.regime:
+        base = score
+        if base is None:
+            signals = engine.build_signals(
+                engine.align_factors(factors, benchmark.index), benchmark.index
+            )
+            base = engine.composite_score(
+                signals,
+                horizon=horizon,
+                mode=candidate.score_modes[0],
+                include=candidate.include,
+            )
+        mask = regimes.regime_mask(candidate.regime, factors, benchmark.index)
+        score = regimes.apply_regime(base, mask)
     expected = None
     if candidate.model == "ridge":
         # M 族：μ 直接由多因子走查 Ridge 给出，不走「先合成再一元回归」
         signals = engine.build_signals(
-            engine.align_factors(factors, close.index), close.index
+            engine.align_factors(factors, benchmark.index), benchmark.index
         )
         expected = multivariate.walk_forward_ridge(
-            signals, close, horizon=horizon, alpha=candidate.ridge_alpha
+            signals, benchmark, horizon=horizon, alpha=candidate.ridge_alpha
         )
     return backtest.evaluate_periods(
         factors,
-        close,
+        benchmark,
         horizon=horizon,
         holdout_start=holdout_start,
         score_mode=candidate.score_modes[0],
@@ -287,7 +361,7 @@ def evaluate_candidate(
         regression_window=candidate.regression_window,
         interval=candidate.interval,
         calibration_mode=candidate.calibration_mode,
-        score=ensemble_score(factors, close, candidate, horizon=horizon),
+        score=score,
         expected=expected,
     )
 
@@ -300,6 +374,7 @@ def _row(candidate: Candidate, horizon: int, period: str, evaluation) -> dict:
     return {
         "candidate": candidate.key,
         "group": candidate.group,
+        "benchmark": candidate.benchmark,
         "description": candidate.description,
         "horizon_days": horizon,
         "period": period,
@@ -422,9 +497,12 @@ def decide(rows: list[dict]) -> dict[str, dict]:
         flags = {}
         sufficient: list[int] = []
         bets: list[int] = []
+        # 对照组：默认 B0（线上口径）；基准对照 G2 用同基准的控制 G1 —— 换了尺子
+        # 就不该再拿旧尺子的基线来判「有没有增量」。对照组整组缺席时退回「无基线」。
+        control = candidate.baseline if candidate.baseline != "B0" else baseline_key
         for horizon in horizons:
             key = (candidate.key, horizon, DECISION_PERIOD)
-            baseline = index.get(("B0", horizon, DECISION_PERIOD)) if baseline_key else None
+            baseline = index.get((control, horizon, DECISION_PERIOD)) if control else None
             flag = (
                 rule_flags(index[key], baseline)
                 if key in index and baseline is not None
@@ -540,6 +618,36 @@ def _coverage_band_section(index: dict, order: list[Candidate], horizons: tuple[
     return "\n".join(lines)
 
 
+def _benchmark_label(key: str) -> str:
+    """报告里的基准短名（完整口径见 regimes.BENCHMARK_CHOICES）。"""
+    choice = regimes.benchmark_by_key.get(key)
+    if choice is None:
+        return key
+    return choice.name.split("（", 1)[0]
+
+
+def _round_four_section(order: list[Candidate]) -> str:
+    """第四轮预注册的登记文本：状态定义、基准候选与「不进生产」声明。"""
+    lines = [
+        "## 第四轮预注册（Regime 与基准对照）",
+        "",
+        "登记文本：`docs/specs/2026-10-03-2.0.2-整改与自动化.md`「第四轮预注册」。",
+        "Regime 候选只在状态成立时持仓（其余时间记中性 0 分）；基准对照只换评估目标。",
+        "两者**都不进生产信号**：过预注册闸门（前向窗口）之前只作研究记录。",
+        "",
+        "| Regime 候选 | 状态定义 |",
+        "|---|---|",
+    ]
+    for item in regimes.REGIME_CANDIDATES:
+        lines.append(f"| {item.key} {item.name} | {item.description} |")
+    lines += ["", "| 基准候选 | 可用性 | 说明 |", "|---|---|---|"]
+    for item in regimes.BENCHMARK_CHOICES:
+        status = "可用" if item.available else "未落地"
+        lines.append(f"| {item.key} | {status} | {item.note} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def format_markdown(
     rows: list[dict],
     *,
@@ -552,7 +660,8 @@ def format_markdown(
     lines = [
         "# 量化研究台报告",
         "",
-        "> 候选与判定为预注册（`docs/specs/2026-10-02-量化策略提升路线图.md` 6.1），",
+        "> 候选与判定为预注册（第一至三组见 `docs/specs/2026-10-02-量化策略提升路线图.md` 6.1；",
+        "> 第四轮 Regime / 基准对照见 `docs/specs/2026-10-03-2.0.2-整改与自动化.md`「第四轮预注册」），",
         f"> 留出期起点 = {HOLDOUT_START.isoformat()}（历史留出期，已被前两轮裁决看过，",
         f"> 只作记录）；裁决只认前向留出期（{ACTIVE_HOLDOUT_START.isoformat()} 起）。",
         "> 报告呈现全部尝试，不做二次挑选。",
@@ -563,8 +672,8 @@ def format_markdown(
         "",
         "## 主表（命中率四列）",
         "",
-        "| 候选 | 组 | 尺度(日) | 开发期 | 历史留出期 | 前向留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | CRPS 技能 | 覆盖率(留出) | 正态兜底(留出) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| 候选 | 组 | 基准 | 尺度(日) | 开发期 | 历史留出期 | 前向留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | CRPS 技能 | 覆盖率(留出) | 正态兜底(留出) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for candidate in order:
         for horizon in horizons:
@@ -575,9 +684,10 @@ def format_markdown(
             diff = holdout["accuracy_diff_vs_up"]
             difference = "—" if _missing(diff) else f"{100.0 * diff:+.1f}pp"
             lines.append(
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
                     candidate.key,
                     GROUP_LABELS.get(candidate.group, candidate.group),
+                    _benchmark_label(candidate.benchmark),
                     horizon,
                     _pct(development["accuracy"]),
                     _pct(holdout["accuracy"]),
@@ -594,6 +704,8 @@ def format_markdown(
             )
 
     lines += ["", _coverage_band_section(index, order, horizons)]
+    if any(candidate.group in {"regime", "benchmark"} for candidate in order):
+        lines += ["", _round_four_section(order)]
 
     failures = [row for row in rows if _missing(row["accuracy"])]
     lines += ["", "## 失败的尝试（样本不足 / 数据缺失）", ""]

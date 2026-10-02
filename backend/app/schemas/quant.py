@@ -297,6 +297,32 @@ class ResearchDataWindow(BaseModel):
     years: float
 
 
+class ResearchBenchmarkAlternative(BaseModel):
+    key: str
+    name: str
+    note: str
+    available: bool
+    reason: str = ""
+
+
+class ResearchBenchmark(BaseModel):
+    key: str
+    name: str
+    # 「含展期」这类口径提示：读研究页的人有权知道收益里有没有换月价差
+    note: str
+    alternatives: List[ResearchBenchmarkAlternative] = []
+
+
+class ResearchRegimeCandidate(BaseModel):
+    key: str
+    name: str
+    series_key: str
+    description: str
+    # lab_only = 只进研究台；过前向窗口闸门之前不得出现别的取值
+    status: str
+    note: str
+
+
 class QuantResearchResponse(BaseModel):
     model_version: str
     status: str
@@ -309,5 +335,7 @@ class QuantResearchResponse(BaseModel):
     generated_at: datetime
     cached: bool = False
     verdict: ResearchVerdict
+    benchmark: ResearchBenchmark
+    regime_candidates: List[ResearchRegimeCandidate] = []
     horizons: List[HorizonResearch] = []
 

@@ -20,6 +20,7 @@ from app.services.quant import (
     decompose,
     engine,
     preregistered,
+    regimes,
     scenarios,
     stats,
     storage,
@@ -380,6 +381,8 @@ def _build_research_payload(db: Session) -> dict:
                 "label": "数据不可用",
                 "detail": "没有可评估的数据，研究页不给出任何技能结论。",
             },
+            "benchmark": _research_benchmark(),
+            "regime_candidates": _research_regime_candidates(),
             "horizons": [],
         }
 
@@ -430,6 +433,9 @@ def _build_research_payload(db: Session) -> dict:
         "active_holdout_start": ACTIVE_HOLDOUT_START.isoformat(),
         "generated_at": generated_at,
         "verdict": _research_verdict(passed_scales, horizons_payload),
+        # 基准与第四轮候选：页面必须能回答「这把尺子含不含展期」「Regime 候选是什么状态」
+        "benchmark": _research_benchmark(),
+        "regime_candidates": _research_regime_candidates(),
         "horizons": horizons_payload,
     }
 
@@ -493,6 +499,50 @@ def _research_period(name: str, evaluation: backtest.HorizonEvaluation) -> dict:
         "expected_cap_rate": preregistered.finite(metrics.get("expected_cap_rate")),
         "reason": metrics.get("reason"),
     }
+
+
+def _research_benchmark() -> dict:
+    """基准口径块：生产基准、含不含展期、对照候选与不可达原因。
+
+    「含展期」不是注解式的提醒 —— GC=F 是连续合约，换月价差直接进收益，
+    读研究页的人有权知道这件事（第三轮评审第 13 条）。
+    """
+    production = regimes.PRODUCTION_BENCHMARK
+    return {
+        "key": production.key,
+        "name": production.name,
+        "note": production.note,
+        "alternatives": [
+            {
+                "key": item.key,
+                "name": item.name,
+                "note": item.note,
+                "available": item.available,
+                "reason": item.reason,
+            }
+            for item in regimes.BENCHMARK_CHOICES
+            if item.key != production.key
+        ],
+    }
+
+
+def _research_regime_candidates() -> list[dict]:
+    """第四轮 Regime 候选的登记表：定义 + 「只进研究台」状态。
+
+    研究页只发布登记与状态，不在请求里现算候选成绩（那是研究台脚本的职责）；
+    过前向窗口闸门之前，这里永远不该出现「已采用」之类的字样。
+    """
+    return [
+        {
+            "key": item.key,
+            "name": item.name,
+            "series_key": item.series_key,
+            "description": item.description,
+            "status": "lab_only",
+            "note": "只进研究台：过前向窗口闸门之前不加进生产信号",
+        }
+        for item in regimes.REGIME_CANDIDATES
+    ]
 
 
 def _research_bins(bins) -> list[dict]:

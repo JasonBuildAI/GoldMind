@@ -495,7 +495,7 @@ fewer than 30).
 `scripts/quant_lab.py` **freezes the candidate list and the pass lines before running the numbers**,
 then evaluates them over three sample periods. The candidates are not arbitrary: baseline B0,
 drift D1/D3/D5, composite S1–S4, interval P1–P4, calibration C0/C1/C2, factor-set F1–F4 and
-ensemble E0 and multivariate M1/M2 — 22 in total (defined in one place,
+ensemble E0 and multivariate M1/M2 — 27 in total (round four adds five; see the end of this section; defined in one place,
 `scripts/quant_lab.py`). The M family (multivariate walk-forward Ridge) is a research-bench
 comparison against "compose first, then regress" and does not change the live `quant-v7`.
 
@@ -542,6 +542,29 @@ the bar does not move for it. The control candidate C0 equals live B0 value for 
 the machinery itself has no side effects). The record is in
 [`docs/specs/2026-10-02-量化引擎第三轮预注册.md`](docs/specs/2026-10-02-量化引擎第三轮预注册.md);
 reproduce with `python scripts/quant_lab.py --group calibration --horizons 20,60`.
+
+**Round four (2.0.2)** pre-registers two research-bench-only groups (registration text in
+[`docs/specs/2026-10-03-2.0.2-整改与自动化.md`](docs/specs/2026-10-03-2.0.2-整改与自动化.md),
+"第四轮预注册"; definitions implemented once in `backend/app/services/quant/regimes.py`):
+
+- **Three regime candidates** (state switching): R1 real-rate cycle / R2 dollar cycle (hold only
+  while the series sits below its 504-trading-day rolling median) and R3 central-bank-buying era
+  (hold only while official reserves rose over the last 252 trading days). When the state does
+  not hold the score is a neutral 0 (never flipped); the rolling window needs at least 252
+  observations and only ever looks backwards.
+- **Two benchmark candidates**: G1 = the production benchmark GC=F (control) and G2 = GLD close
+  (an ETF with no roll effect). Switching the benchmark switches only the evaluation target; the
+  factors and signals stay untouched — it answers "does the conclusion survive a different ruler".
+
+The benchmark convention itself is now stated on the page and in the docs: **the production
+benchmark is the GC=F continuous contract and it carries roll effects** (calendar spreads enter
+the return; no roll adjustment is applied; the research page exposes a dedicated field for it).
+Two "cleaner-looking" alternatives are **not landed** this round: XAUUSD spot (Yahoo chart API
+returned 404 on 2026-10-03) and a roll-adjusted continuous series (needs month-by-month contracts
+and roll spreads, with no free compliant source) — the reasons live in
+`regimes.BENCHMARK_CHOICES`, and no substitute numbers are invented.
+Reproduce with `python scripts/quant_lab.py --group regime --group benchmark`.
+Neither group enters live signals or the live benchmark before clearing the forward window.
 
 > The honest summary: 2.0.1 did not replace the model with a "looks stronger" version, because
 > the evidence does not support one. It made every future improvement clear the line first — and

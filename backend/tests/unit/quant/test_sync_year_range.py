@@ -24,6 +24,7 @@ YAHOO_COVERAGE_KEYS_EXPECTED = (
     "gvz",
     "gold_silver_ratio",
     "copper_gold_ratio",
+    "gld_close",
 )
 
 

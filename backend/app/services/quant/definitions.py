@@ -378,6 +378,9 @@ EXTRA_SERIES: tuple[ExtraSeries, ...] = (
     ExtraSeries("copper_gold_ratio", "铜金比（铜价 ÷ 金价）", "Yahoo Finance（HG=F ÷ GC=F）", "日"),
     ExtraSeries("cftc_net_oi_ratio", "CFTC 净头寸占未平仓比", "CFTC 持仓报告（净头寸 ÷ 未平仓）", "周"),
     ExtraSeries("gpr_daily", "GPR 官方日度地缘风险指数", "Iacoviello & Papaioannou GPR（官方 .xls）", "日"),
+    # 基准对照序列（第四轮）：只供研究台做「生产基准 vs ETF 基准」的敏感性对照，
+    # 不参与信号合成、不进仪表盘。口径见 regimes.BENCHMARK_CHOICES。
+    ExtraSeries("gld_close", "GLD 收盘价（基准对照）", "Yahoo Finance（GLD）", "日"),
 )
 
 extra_series_by_key = {item.key: item for item in EXTRA_SERIES}

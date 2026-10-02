@@ -65,6 +65,7 @@ RAW_KEY_SOURCES: dict[str, str] = {
     "silver_close": "yahoo",
     "copper_close": "yahoo",
     "news_geo_intensity": "news_geo",
+    "gld_close": "yahoo",
 }
 
 SOURCE_LABELS = {
@@ -100,7 +101,7 @@ INCREMENTAL_LOOKBACK_DAYS = 10
 # Yahoo 源「历史已铺满」的判据覆盖这些序列：任一序列历史不足，就按请求窗口
 # 重新拉长周期。新增序列（GVZ / 金银比 / 铜金比）上线时，老库因此能一次补齐
 # 长历史，而不是永远只积累最近 3 个月。
-YAHOO_COVERAGE_KEYS = (BENCHMARK_KEY, "gvz", "gold_silver_ratio", "copper_gold_ratio")
+YAHOO_COVERAGE_KEYS = (BENCHMARK_KEY, "gvz", "gold_silver_ratio", "copper_gold_ratio", "gld_close")
 
 # 外部行情源（Yahoo）不可用时的本地兜底。主数据管道每个交易日把腾讯行情的
 # 纽约金价与美元指数写进 gold_prices / dollar_index 表；Yahoo 被限流或宕机时

@@ -31,6 +31,8 @@ SYMBOLS = {
     "^GVZ": "gvz",
     "SI=F": "silver_close",
     "HG=F": "copper_close",
+    # 基准对照序列（第四轮）：ETF 跟踪现货、不含展期，供研究台做基准敏感性对照
+    "GLD": "gld_close",
 }
 
 ETF_SHARES_SYMBOL = "GLD"

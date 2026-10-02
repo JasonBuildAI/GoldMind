@@ -358,6 +358,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 统计 | `stats.py` | 重叠样本的显著性工具箱：Newey–West HAC 标准误、圆周分块自助区间、HAC t / Diebold–Mariano、Brier 技能分与可靠性分桶（不引入 scipy） |
 | 预注册 | `preregistered.py` | 候选清单、选择规则与通过线的**唯一实现**：先注册、后检验；看到留出期成绩后再改常量即破坏预注册 |
 | M 族（研究） | `multivariate.py` | 研究台专用：walk-forward Ridge 直接对因子矩阵建模（只用 `j + h ≤ t` 的已实现样本对，均值 / 标准差也在同一段窗口内估计），与「先合成再一元回归」对照；**不进线上 service**，候选定义见研究台清单 M1/M2 |
+| Regime 与基准口径（研究） | `regimes.py` | 第四轮预注册的状态切换候选（R1 实际利率周期 / R2 美元周期 / R3 央行购金时代，滚动窗口只回看、状态不成立记中性 0 分）与基准清单（生产 = GC=F 连续合约、**含展期**；对照 = GLD；不可达 = XAUUSD 现货 404、展期调整序列无免费来源）。**只进研究台**，读接口把基准口径与候选登记一并发布 |
 | 研究台 | `scripts/quant_lab.py` | 预注册候选 × 尺度 × **四个样本期**（开发期 / 历史留出期 / 前向留出期 / 全样本）的全档评估（`--from-db` 读库 / `--out` 落盘 / `--horizons` 选尺度 / `--group` 选候选族 / `--as-of` 按时点重建面板 / `--holdout-start` 改历史留出期起点）。**裁决只认前向留出期**（`DECISION_PERIOD = "forward"`）：历史那一段已被前两轮看过，只作记录；窗口里独立下注不够时结论是「不可判定」而不是「未过线」。结论进「研究」页与研究台报告 |
 
 三条不能破的口径：

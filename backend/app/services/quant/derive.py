@@ -130,6 +130,8 @@ def derive_factors(raw: dict[str, pd.Series]) -> dict[str, pd.Series]:
     # 下一轮候选信息源：与因子同表入库、只积累覆盖，本轮不参与信号合成。
     add("gvz", raw.get("gvz"))
     add("gpr_daily", raw.get("gpr_daily"))
+    # 基准对照序列（第四轮）：只做研究台的基准敏感性对照，不参与信号合成。
+    add("gld_close", raw.get("gld_close"))
     if gold is not None:
         silver = raw.get("silver_close")
         if silver is not None:
@@ -181,6 +183,8 @@ FACTOR_RAW_KEYS: dict[str, tuple[str, ...]] = {
     "gold_silver_ratio": ("gold_close", "silver_close"),
     "copper_gold_ratio": ("gold_close", "copper_close"),
     "cftc_net_oi_ratio": ("cftc_net", "cftc_oi"),
+    # 基准对照序列（第四轮，只进研究台）
+    "gld_close": ("gld_close",),
 }
 
 
@@ -211,4 +215,5 @@ def required_raw_keys() -> set[str]:
         "gpr_daily",
         "btc",
         "spy",
+        "gld_close",
     }

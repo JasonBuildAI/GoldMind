@@ -21,6 +21,8 @@ def _raw_bundle(periods: int = 850) -> dict:
         "ust_nominal_2y": pd.Series(3.0 + steps * 0.001, index=index),
         "effr": pd.Series(2.5 + steps * 0.0005, index=index),
         "gold_close": pd.Series(2000 + steps * 5, index=index),
+        # 基准对照序列（第四轮）：研究台用，与黄金高度相关但独立成列
+        "gld_close": pd.Series(190 + steps * 0.5, index=index),
         "dxy": pd.Series(100 + steps * 0.05, index=index),
         "vix": pd.Series(15 + np.sin(steps / 10), index=index),
         "hyg": pd.Series(80 + steps * 0.02, index=index),
@@ -77,6 +79,7 @@ def _fetchers(*, failing: tuple[str, ...] = ()) -> dict:
                         "gvz",
                         "silver_close",
                         "copper_close",
+                        "gld_close",
                     )
                 }
             if name == "news_geo":
@@ -121,6 +124,7 @@ def test_sync_derives_and_stores_every_available_factor(db_session):
         "copper_gold_ratio",
         "cftc_net_oi_ratio",
         "gpr_daily",
+        "gld_close",
     ):
         assert key in stored and not stored[key].empty, f"{key} 没有落库"
 

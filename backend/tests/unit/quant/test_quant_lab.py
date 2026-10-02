@@ -12,11 +12,14 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from app.services.quant import backtest
+from app.services.quant import backtest, engine, regimes
 from scripts import quant_lab
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SPEC_PATH = REPO_ROOT / "docs" / "specs" / "2026-10-02-量化策略提升路线图.md"
+# 第四轮（Regime 与基准对照）的登记文本在这一轮的 spec 里，与上面的路线图 6.1 平权：
+# 候选清单分成两份文档，守卫必须**两份都对齐**，否则新增一族可以绕开对齐检查。
+ROUND_FOUR_PATH = REPO_ROOT / "docs" / "specs" / "2026-10-03-2.0.2-整改与自动化.md"
 
 
 def _spec_text() -> str:
@@ -38,9 +41,29 @@ def _spec_table_rows() -> list[tuple[str, int, str]]:
     return rows
 
 
+def _round_four_table_rows() -> list[tuple[str, int, str]]:
+    """解析第四轮预注册的候选表（Regime / 基准对照）：格式与 6.1 相同。"""
+    section = ROUND_FOUR_PATH.read_text(encoding="utf-8").split("第四轮预注册", 1)[1]
+    section = section.split("### ", 1)[0]
+    rows = []
+    for line in section.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) != 3 or not cells[1].isdigit():
+            continue
+        rows.append((cells[0], int(cells[1]), cells[2]))
+    return rows
+
+
+def _all_spec_rows() -> list[tuple[str, int, str]]:
+    """两份预注册文本的候选表合并 —— 代码必须有且仅有这些组与候选。"""
+    return _spec_table_rows() + _round_four_table_rows()
+
+
 def test_candidate_groups_match_the_preregistered_table():
-    spec_counts = {label: count for label, count, _ in _spec_table_rows()}
-    assert spec_counts, "spec 6.1 必须能解析出候选表"
+    spec_counts = {label: count for label, count, _ in _all_spec_rows()}
+    assert spec_counts, "预注册文本必须能解析出候选表"
 
     code_counts = Counter(
         quant_lab.GROUP_LABELS[candidate.group] for candidate in quant_lab.CANDIDATES
@@ -49,13 +72,13 @@ def test_candidate_groups_match_the_preregistered_table():
 
 
 def test_candidate_keys_are_exactly_the_preregistered_keys():
-    groups = {label: text for label, _, text in _spec_table_rows()}
+    groups = {label: text for label, _, text in _all_spec_rows()}
     for candidate in quant_lab.CANDIDATES:
         label = quant_lab.GROUP_LABELS[candidate.group]
         assert re.search(rf"\b{re.escape(candidate.key)}\b", groups[label]), (
             f"候选 {candidate.key} 未写在 spec 的「{label}」一行"
         )
-    assert sum(count for _, count, _ in _spec_table_rows()) == len(quant_lab.CANDIDATES)
+    assert sum(count for _, count, _ in _all_spec_rows()) == len(quant_lab.CANDIDATES)
 
 
 def test_hard_rule_constants_track_the_preregistered_text():
@@ -109,6 +132,64 @@ def test_report_contains_development_and_holdout_columns(make_panel, monkeypatch
     )
     assert holdout["accuracy"] is not None
     assert holdout["samples"] >= backtest.MIN_EVALUATION_SAMPLES
+
+
+@pytest.mark.unit
+def test_regime_candidate_gates_the_composite_score(make_panel, monkeypatch):
+    """R 族 = 合成得分 × 状态闸门，走的还是同一次标准评估。
+
+    等价性检查：手工复现「合成得分 → 状态闸门 → evaluate_periods」的整条链路，
+    成绩必须与 run_lab 给出的一致。变异验证：把 evaluate_candidate 里的
+    ``if candidate.regime`` 分支删掉，本测试红。
+    """
+    _fast_bootstrap(monkeypatch)
+    calendar = _long_calendar()
+    factors, close = make_panel(calendar)
+    rows = quant_lab.run_lab(factors, close, horizons=(20,), candidates=_subset("R1"))
+    row = next(
+        item
+        for item in rows
+        if item["candidate"] == "R1" and item["period"] == "holdout" and item["horizon_days"] == 20
+    )
+
+    signals = engine.build_signals(engine.align_factors(factors, calendar), calendar)
+    score = engine.composite_score(signals, horizon=20, mode="weighted", include=None)
+    mask = regimes.regime_mask("R1", factors, calendar)
+    expected = backtest.evaluate_periods(
+        factors,
+        close,
+        horizon=20,
+        holdout_start=quant_lab.HOLDOUT_START,
+        score_mode="weighted",
+        include=None,
+        regression_window=None,
+        interval="aci",
+        calibration_mode=engine.CALIBRATION_ROW,
+        score=regimes.apply_regime(score, mask),
+    )["holdout"]
+
+    assert row["accuracy"] == pytest.approx(expected.accuracy)
+    assert row["benchmark"] == "gold_close"
+
+
+@pytest.mark.unit
+def test_benchmark_candidate_swaps_the_evaluation_target(make_panel, monkeypatch):
+    """G2 评估的是 GLD 序列本身：换一条走势相反的基准，成绩必须跟着变。
+
+    变异验证：把 evaluate_candidate 里的基准选择删掉（永远用生产基准），本测试红。
+    """
+    _fast_bootstrap(monkeypatch)
+    calendar = _long_calendar()
+    factors, close = make_panel(calendar)
+    mirrored = pd.Series(close.to_numpy()[::-1], index=calendar, name="gld_close")
+    factors["gld_close"] = mirrored
+
+    rows = quant_lab.run_lab(factors, close, horizons=(20,), candidates=_subset("G1", "G2"))
+    g1 = next(item for item in rows if item["candidate"] == "G1" and item["period"] == "holdout")
+    g2 = next(item for item in rows if item["candidate"] == "G2" and item["period"] == "holdout")
+
+    assert g1["benchmark"] == "gold_close" and g2["benchmark"] == "gld_close"
+    assert g1["accuracy"] != g2["accuracy"], "换了基准成绩却没变 ⇒ 基准对照没有生效"
 
 
 def test_control_candidates_reuse_the_baseline_run(make_panel, monkeypatch):
