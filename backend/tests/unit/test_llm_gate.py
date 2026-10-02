@@ -34,6 +34,29 @@ WINDOW = PriceWindow(
 )
 
 
+def _valid_bullish_payload() -> str:
+    """一份能通过因子校验的多头输出。
+
+    指纹门控只在「解析出真内容」后记录（见 test_gate_records_only_parsed），
+    空输出按失败处理 —— 想验证「输入没变会跳过」，夹具就必须给出真内容。
+    """
+    import json
+
+    return json.dumps(
+        {
+            "bullish_factors": [
+                {
+                    "id": "fed-policy",
+                    "title": "降息预期升温",
+                    "description": "实际利率下行支撑金价",
+                    "details": ["市场押注宽松周期"],
+                    "impact": "high",
+                }
+            ]
+        }
+    )
+
+
 # --------------------------------------------------------------------------- #
 # 指纹本身
 # --------------------------------------------------------------------------- #
@@ -153,6 +176,7 @@ def test_unchanged_input_skips_the_second_call_and_force_bypasses(
     seed_gold_prices(days=5)
 
     service = BullishFactorService(db_session)
+    fake_llm.responses.append(_valid_bullish_payload())
     service.refresh_analysis_sync()
     assert len(fake_llm.calls) == 1
 
@@ -173,6 +197,7 @@ def test_new_news_invalidates_the_fingerprint(db_session, fake_llm, seed_news, s
     seed_gold_prices(days=5)
 
     service = BullishFactorService(db_session)
+    fake_llm.responses.append(_valid_bullish_payload())
     service.refresh_analysis_sync()
     assert len(fake_llm.calls) == 1
 
@@ -213,9 +238,25 @@ def test_each_analyzer_gate_skips_before_calling_the_model(
     seed_news(count=1, hours_ago=1)
     calls = 0
 
-    for analyzer_cls in (Bearish, Institution):
+    for analyzer_cls, payload in (
+        (
+            Bearish,
+            {
+                "bearish_factors": [
+                    {
+                        "id": "profit-taking",
+                        "title": "获利了结压力",
+                        "description": "高位出现抛压",
+                        "details": ["短线资金撤离"],
+                        "impact": "medium",
+                    }
+                ]
+            },
+        ),
+        (Institution, {"institutions": [{"name": "高盛"}]}),
+    ):
         analyzer = analyzer_cls()
-        fake_llm.responses.append("{}")
+        fake_llm.responses.append(json.dumps(payload))
         analyzer._analyze_with_traditional_llm(db_session)
         calls += 1
         assert len(fake_llm.calls) == calls, f"{analyzer_cls.__name__} 第一次没有调用 LLM"
@@ -254,6 +295,8 @@ def test_each_analyzer_gate_skips_before_calling_the_model(
                 "market_consensus": [],
                 "institution_targets": [],
                 "current_price": 4200.0,
+                # 门控认「真内容」：给一条核心观点，第二次才会被跳过。
+                "core_view": "金价在 4200 附近震荡偏多",
             }
         )
     )

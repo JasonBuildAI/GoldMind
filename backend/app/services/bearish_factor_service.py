@@ -315,6 +315,7 @@ class BearishFactorAnalyzer:
             response = invoke_with_retries(self.llm, prompt)
 
             # 5. 解析JSON响应
+            parsed_ok = True
             try:
                 result = json.loads(response.content)
             except json.JSONDecodeError:
@@ -326,12 +327,14 @@ class BearishFactorAnalyzer:
                     try:
                         result = json.loads(content[start:end])
                     except:
+                        parsed_ok = False
                         logger.error(
                             "[BearishFactor] JSON 解析失败"
                             f"（{describe_completion(response)}）"
                         )
                         result = self._get_default_factors()
                 else:
+                    parsed_ok = False
                     logger.error(
                         "[BearishFactor] 输出里没有 JSON"
                         f"（{describe_completion(response)}）"
@@ -343,8 +346,11 @@ class BearishFactorAnalyzer:
             )
             if dropped:
                 logger.warning(f"[BearishFactor] 输出校验丢弃 {len(dropped)} 条: {dropped}")
-            # 只有真正调用并解析成功才记录指纹：失败路径下次仍要重试。
-            llm_gate.gate.record(GATE_KEY, fingerprint)
+            # 只有真正解析出内容才记录指纹：解析失败路径返回的是**空**默认结构，
+            # 一旦记录，它会被一直跳过到输入碰巧变化为止（2.0.2 验收实测过）。
+            # 空列表同理：提示词要求新闻存在时给出 3-5 条，空结果按失败处理、下轮重试。
+            if parsed_ok and result.get("bearish_factors"):
+                llm_gate.gate.record(GATE_KEY, fingerprint)
             return result
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")

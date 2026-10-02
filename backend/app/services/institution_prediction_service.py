@@ -540,6 +540,7 @@ class InstitutionPredictionAnalyzer:
             response = invoke_with_retries(self.llm, prompt)
 
             # 解析JSON响应
+            parsed_ok = True
             try:
                 result = json.loads(response.content)
             except json.JSONDecodeError:
@@ -551,12 +552,14 @@ class InstitutionPredictionAnalyzer:
                     try:
                         result = json.loads(content[start:end])
                     except Exception:
+                        parsed_ok = False
                         logger.error(
                             "[InstitutionPrediction] JSON 解析失败"
                             f"（{describe_completion(response)}）"
                         )
                         result = self.get_default_predictions()
                 else:
+                    parsed_ok = False
                     logger.error(
                         "[InstitutionPrediction] 输出里没有 JSON"
                         f"（{describe_completion(response)}）"
@@ -565,8 +568,10 @@ class InstitutionPredictionAnalyzer:
 
             if isinstance(result, dict):
                 result["data_source"] = "news_scan"
-            # 只有真正调用并解析成功才记录指纹：失败路径下次仍要重试。
-            llm_gate.gate.record(GATE_KEY, fingerprint)
+            # 只有真正解析出内容才记录指纹：解析失败路径返回的是**空**默认结构，
+            # 一旦记录，它会被一直跳过到输入碰巧变化为止。空列表按失败处理、下轮重试。
+            if parsed_ok and result.get("institutions"):
+                llm_gate.gate.record(GATE_KEY, fingerprint)
             return result
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")

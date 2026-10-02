@@ -58,6 +58,30 @@ def _text_of(item: Any) -> str:
     return "" if item is None else str(item)
 
 
+def has_analysis_content(result: Any) -> bool:
+    """LLM 综合总结是否真的产出了可展示内容。
+
+    `_parse_analysis_result` 解析失败时返回 `_get_default_analysis()` —— 一具
+    **空**壳。空壳若照样进指纹门控，会被缓存并跳过到输入变化为止，
+    用户侧表现就是「今日结论一直是空的」。
+    """
+    if not isinstance(result, dict):
+        return False
+    for key in (
+        "core_bullish_logic",
+        "main_risks",
+        "market_consensus",
+        "institution_targets",
+        "comprehensive_judgment",
+    ):
+        if result.get(key):
+            return True
+    for key in ("core_view", "investment_recommendation"):
+        if str(result.get(key) or "").strip():
+            return True
+    return False
+
+
 def _alias_matcher(alias: str):
     """把注册表别名编译成扫描器；两字母拉丁缩写不参与（误报多于收益）。"""
     normalized = _normalize_text(alias)
@@ -214,8 +238,10 @@ class MarketSummaryAnalyzer:
 
             # 解析分析结果；提示词之外再用确定性规则兜一道机构数据诚实性
             result = self._parse_analysis_result(analysis_text, response)
-            # 只有真正调用并解析成功才记录指纹：失败路径下次仍要重试。
-            llm_gate.gate.record(GATE_KEY, fingerprint)
+            # 只有解析出可展示内容才记录指纹：解析失败返回的是**空**默认结构，
+            # 一旦记录，它会被一直跳过到输入碰巧变化为止（2.0.2 验收实测过）。
+            if has_analysis_content(result):
+                llm_gate.gate.record(GATE_KEY, fingerprint)
             return sanitize_institution_claims(result, institution_predictions)
 
         except Exception as e:
