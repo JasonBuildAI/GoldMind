@@ -31,6 +31,32 @@ def test_predictions_endpoint_returns_every_horizon_with_numbers(client, db_sess
 
 
 @pytest.mark.integration
+def test_prediction_payload_reports_the_nominal_level_and_the_cap_flag(
+    client, db_session, seed_quant_panel
+):
+    """名义水平与 σ 来源必须对用户可见，封顶也必须可见。
+
+    区间端点取分位 ``α/2`` 与 ``1−α/2``，而 α 是**自适应**的：真实 26 年面板
+    h=250 有 1602 行贴在下界（名义水平 99.5%）、919 行贴上界（名义水平 50%）。
+    只给一个「80% 区间」而不给实际的 α，等于让用户按名义值读一个名义值已经不
+    成立的区间。``distribution_mode`` 记录这一行用的是经验分布还是正态兜底；
+    ``expected_capped`` 记录期望收益是否被护栏夹过（h=250 触发率 4.48%）。
+
+    变异验证：把这三个字段从 payload 里删掉本测试必红。
+    """
+    seed_quant_panel()
+
+    body = client.get("/api/gold/quant/predictions").json()
+
+    for item in body["predictions"]:
+        assert item["status"] == "ok"
+        assert item["distribution_mode"] in ("aci", "normal")
+        assert item["interval_alpha"] is not None
+        assert 0.0 < item["interval_alpha"] <= 0.5
+        assert isinstance(item["expected_capped"], bool)
+
+
+@pytest.mark.integration
 def test_predictions_endpoint_filters_by_horizon(client, db_session, seed_quant_panel):
     seed_quant_panel()
 

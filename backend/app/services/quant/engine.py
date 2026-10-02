@@ -711,6 +711,13 @@ class SignalSnapshot:
     scenario_high_return: Optional[float] = None
     median_return: Optional[float] = None
     distribution_mode: Optional[str] = None
+    # 这一行区间实际用的名义错失率 α：区间端点取分位 α/2 与 1−α/2，而 α 是自适应
+    # 的（真实面板 h=250 有 1602 行贴在下界 = 名义水平 99.5%、919 行贴上界 = 50%）。
+    # 不给这个数，用户就会按「80% 区间」这个名义值去读一个名义值已经不成立的区间。
+    interval_alpha: Optional[float] = None
+    # 期望收益是否被护栏夹过（``EXPECTED_CAP_SIGMAS``）：封顶改的是用户看到的数字，
+    # 回测里一直有 ``expected_cap_rate`` 这个健康度指标，线上也必须能看见。
+    expected_capped: bool = False
 
     @property
     def direction(self) -> Optional[str]:
@@ -921,6 +928,8 @@ def build_snapshot(
         scenario_high_return=_clean(row["quartile_high_return"]),
         median_return=_clean(row["median_return"]),
         distribution_mode=str(row["distribution_mode"]),
+        interval_alpha=_clean(row["interval_alpha"]),
+        expected_capped=bool(row["expected_capped"]),
     )
 
 

@@ -119,6 +119,13 @@ def _prediction_payload(snapshot: engine.SignalSnapshot, close: pd.Series) -> di
         "expected_return": snapshot.expected_return,
         "uncertainty": snapshot.uncertainty,
         "probability_up": snapshot.probability_up,
+        # 区间的实际名义水平与 σ 来源：区间是自适应的，名义 80% 只是起点
+        "distribution_mode": snapshot.distribution_mode,
+        "interval_alpha": snapshot.interval_alpha,
+        "interval_nominal": (
+            None if snapshot.interval_alpha is None else 1.0 - snapshot.interval_alpha
+        ),
+        "expected_capped": snapshot.expected_capped,
         "range_low": scenario_set.range_low,
         "range_high": scenario_set.range_high,
         "scenarios": [scenario.to_dict() for scenario in scenario_set.scenarios],
