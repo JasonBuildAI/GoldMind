@@ -66,6 +66,17 @@ def plan_migration(bind: Engine) -> list[str]:
         if table_name not in existing_tables:
             statements.append(f"CREATE TABLE {table_name}")
 
+    # 流水表将要新建或已建但空着 → 预告这次会补写多少行
+    if "factor_observation_revisions" not in existing_tables:
+        if "factor_observations" in existing_tables:
+            pending = _count(bind, "factor_observations")
+            if pending:
+                statements.append(
+                    f"INSERT INTO factor_observation_revisions SELECT ... ({pending} 行)"
+                )
+    elif ledger_backfill_rows(bind):
+        statements.append("INSERT INTO factor_observation_revisions SELECT ... (补写流水)")
+
     if "predictions" in existing_tables:
         for column_name, column_type in missing_columns(bind, "predictions"):
             statements.append(f"ALTER TABLE predictions ADD COLUMN {column_name} {column_type}")
@@ -73,10 +84,42 @@ def plan_migration(bind: Engine) -> list[str]:
     return statements
 
 
+LEDGER_INSERT = (
+    "INSERT INTO factor_observation_revisions "
+    "(factor_key, obs_date, value, source, meta, recorded_at) "
+    "SELECT factor_key, obs_date, value, source, meta, "
+    "COALESCE(created_at, updated_at) FROM factor_observations"
+)
+
+
+def _count(bind: Engine, table: str) -> int:
+    """SQLAlchemy 2.x：Engine 上没有 execute，必须开连接。"""
+    with bind.connect() as conn:
+        return int(conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0)
+
+
+def ledger_backfill_rows(bind: Engine) -> int:
+    """需要补写的流水行数：流水表空着、观测表却有数据时，按 `created_at` 逐行补。
+
+    为什么必须在迁移里做：`load_series_as_of` 只认流水表。老库升级后如果流水表是空的，
+    `--as-of` 会**静默返回空面板** —— 看着能跑、其实什么都没算，这是最坏的一种失败。
+
+    诚实的边界：补出来的 `recorded_at` 是那一行**进入本系统**的时间。历史回填是一次性
+    写进来的，所以这些行的时点都落在回填那天；问更早的日期得到空面板是**正确**的答案
+    （那时我们确实还不知道这些值），不是数据丢失。
+    """
+    tables = set(inspect(bind).get_table_names())
+    if "factor_observation_revisions" not in tables or "factor_observations" not in tables:
+        return 0
+    if _count(bind, "factor_observation_revisions"):
+        return 0
+    return _count(bind, "factor_observations")
+
+
 def apply_migration(bind: Engine, dry_run: bool = False) -> list[str]:
     """执行迁移；返回实际（或将要，dry_run 时）执行的语句列表。"""
     statements = plan_migration(bind)
-    if not statements or dry_run:
+    if dry_run:
         return statements
 
     # 新表交给 create_all —— 它只建缺的表，不会碰已有表。
@@ -86,6 +129,13 @@ def apply_migration(bind: Engine, dry_run: bool = False) -> list[str]:
     with bind.begin() as conn:
         for column_name, column_type in missing_columns(bind, "predictions"):
             conn.execute(text(f"ALTER TABLE predictions ADD COLUMN {column_name} {column_type}"))
+
+    # 老库的观测补写流水（只在流水表为空时执行，重复运行安全）。
+    pending = ledger_backfill_rows(bind)
+    if pending:
+        with bind.begin() as conn:
+            conn.execute(text(LEDGER_INSERT))
+        statements.append(f"INSERT INTO factor_observation_revisions SELECT ... ({pending} 行)")
 
     return statements
 

@@ -127,3 +127,84 @@ def test_drop_removes_only_quant_tables(migration, old_engine):
 @pytest.mark.unit
 def test_drop_requires_explicit_confirmation(migration):
     assert migration.main(["--drop"]) == 2
+
+
+@pytest.fixture
+def populated_engine(tmp_path):
+    """一个已经跑过量化 v4 的库：有 factor_observations（带数据），没有流水表。"""
+    from app.models.analysis import FactorObservation
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'v4.db'}")
+    FactorObservation.__table__.create(engine)
+    with engine.begin() as conn:
+        for index, (key, day, value) in enumerate(
+            [("real_yield_10y", "2026-01-05", 1.9), ("real_yield_10y", "2026-01-06", 2.0),
+             ("vix", "2026-01-05", 17.5)]
+        ):
+            conn.execute(
+                text(
+                    "INSERT INTO factor_observations (factor_key, obs_date, value, source, "
+                    "created_at, updated_at) VALUES (:k, :d, :v, 's', '2026-03-01 08:00:00', "
+                    "'2026-03-01 08:00:00')"
+                ),
+                {"k": key, "d": day, "v": value},
+            )
+    return engine
+
+
+@pytest.mark.unit
+def test_plan_previews_the_ledger_backfill(migration, populated_engine):
+    joined = chr(10).join(migration.plan_migration(populated_engine))
+    assert "factor_observation_revisions" in joined
+    assert "3 行" in joined, f"计划里没有预告要补写的行数：{joined}"
+
+
+@pytest.mark.unit
+def test_migration_seeds_the_ledger_from_existing_observations(migration, populated_engine):
+    """老库升级必须补写流水 —— 否则 `--as-of` 会静默返回空面板。
+
+    变异验证：删掉 apply_migration 里 `if pending:` 那段补写，本测试第一条断言必红
+    （流水表建出来了但是空的）；把 recorded_at 写成 NOW() 而不是 created_at，
+    第二条断言必红（重建历史时点就错了）。
+    """
+    migration.apply_migration(populated_engine)
+    from sqlalchemy import inspect as sa_inspect
+
+    assert "factor_observation_revisions" in sa_inspect(populated_engine).get_table_names()
+    with populated_engine.begin() as conn:
+        rows = conn.execute(
+            text("SELECT factor_key, obs_date, value, recorded_at FROM factor_observation_revisions "
+                 "ORDER BY factor_key, obs_date")
+        ).all()
+    assert len(rows) == 3
+    assert {str(row[3]) for row in rows} == {"2026-03-01 08:00:00"}, "recorded_at 必须取写入时点"
+    assert [row[0] for row in rows] == ["real_yield_10y", "real_yield_10y", "vix"]
+
+    # 重复运行不再补写（幂等）
+    migration.apply_migration(populated_engine)
+    with populated_engine.begin() as conn:
+        assert int(conn.execute(text("SELECT COUNT(*) FROM factor_observation_revisions")).scalar()) == 3
+
+
+@pytest.mark.unit
+def test_point_in_time_panel_matches_the_current_panel_after_backfill(migration, populated_engine):
+    """补写之后，「按最新时点重建」必须与「读当前值」逐值相同 —— 否则流水就是二等数据。"""
+    from datetime import date
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services.quant import storage
+
+    migration.apply_migration(populated_engine)
+    session = sessionmaker(bind=populated_engine)()
+    try:
+        rebuilt = storage.load_series_as_of(session, date(2026, 3, 1))
+        current = storage.load_all(session)
+        assert set(rebuilt) == set(current)
+        for key in rebuilt:
+            assert rebuilt[key].sort_index().tolist() == current[key].sort_index().tolist(), key
+        # 早于「我们知道这些值」的那天，诚实地给空面板
+        assert storage.load_series_as_of(session, date(2026, 2, 28)) == {}
+    finally:
+        session.close()
+

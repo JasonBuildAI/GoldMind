@@ -548,7 +548,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             flush=True,
         )
     if close is None or close.empty:
-        print("数据不可用：库里没有黄金价格序列（先同步数据，再跑研究台）", file=sys.stderr)
+        if panel_as_of is not None:
+            print(
+                f"面板时点 {panel_as_of.isoformat()} 之前库里还没有任何观测："
+                "流水表里这些值的 recorded_at 晚于该日期（历史回填是一次性写进来的），"
+                "所以那个时点确实不知道它们 —— 这不是缺数据，去掉 --as-of 即可用当前值跑。",
+                file=sys.stderr,
+            )
+        else:
+            print("数据不可用：库里没有黄金价格序列（先同步数据，再跑研究台）", file=sys.stderr)
         return 2
     if not factors:
         print("数据不可用：库里没有因子序列（先同步数据，再跑研究台）", file=sys.stderr)
