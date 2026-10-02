@@ -151,6 +151,38 @@ def test_probability_is_not_the_normal_tail_of_the_displayed_sigma(panel):
         assert abs(probability - naive) > 1e-4, f"h={horizon} 概率仍是那条正态尾"
 
 
+def test_the_band_stays_around_the_quartiles_when_alpha_saturates():
+    """α 的上界不能越过 0.5：区间端点取 α/2 与 1−α/2，情景取 0.25 / 0.75。
+
+    α/2 > 0.25 时区间下界必然**高于**情景下界（分位数单调），于是
+    「情景 ⊂ 区间」这条 `scenarios.py` 声明的不变式被破坏。真实 26 年面板
+    h=250 实测 1040 行 α>0.5、1036 行 `interval_low > scenario_low`。
+    唯一钉这条的守卫跑在合成夹具上，而那个夹具的 α 从不 >0.5 —— 真数据上必红。
+
+    构造：先给一段散布（把带撑宽），再给一段**窄但非退化**的散布（都落在带内）
+    → α 一路升到上界；窗（750）仍含前段的散布，所以分位函数不退化。
+
+    变异验证：把 ``ACI_ALPHA_CAP`` 改回 0.6 本测试必红。
+    """
+    rng = np.random.default_rng(4)
+    index = pd.date_range("2020-01-01", periods=520, freq="B")
+    values = np.concatenate([rng.normal(0.0, 3.0, 300), rng.normal(0.0, 0.1, 220)])
+    ratio = pd.Series(values, index=index)
+    flat = pd.Series(np.zeros(len(index)), index=index)
+
+    calibration = engine.calibrate_distribution(
+        ratio, flat, gamma=0.01, half_life=250, window=750, min_samples=60, issued_lag=0
+    )
+
+    saturated = calibration["alpha"] >= engine.ACI_ALPHA_CAP - 1e-9
+    assert bool(saturated.any()), "构造没有把 α 推到上界，测试是空的"
+    band = calibration[saturated]
+    assert (band["lower"] <= band["q25"] + 1e-12).all(), "区间下界越过了情景下界"
+    assert (band["q75"] <= band["upper"] + 1e-12).all(), "情景上界越过了区间上界"
+    # 上界本身也必须与分位口径一致：α/2 不得超过情景的下分位点
+    assert engine.ACI_ALPHA_CAP <= 2.0 * engine.QUARTILE_LOW
+
+
 def test_uncertainty_is_the_walk_forward_error_not_the_fit_residual(calendar, make_panel):
     """σ 回答「模型自己错了多少」：t 时刻只用 s + h ≤ t 的已实现预测误差（spec 判据）。
 
