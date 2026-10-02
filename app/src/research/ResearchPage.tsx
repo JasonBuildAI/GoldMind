@@ -402,6 +402,14 @@ function VerdictPanel({ data }: { data: QuantResearchResponse }) {
           <dd>{data.as_of ?? '—'}</dd>
         </div>
         <div>
+          <dt>数据窗口（本页数字来源）</dt>
+          <dd data-testid="research-data-window">
+            {data.data_window
+              ? `${data.data_window.start} → ${data.data_window.end} · ${data.data_window.trading_days} 个交易日 · 约 ${data.data_window.years} 年`
+              : '—'}
+          </dd>
+        </div>
+        <div>
           <dt>报告生成</dt>
           <dd>{stamp ?? '—'}</dd>
         </div>
@@ -410,6 +418,11 @@ function VerdictPanel({ data }: { data: QuantResearchResponse }) {
           <dd>{data.cached ? '来自 1 小时缓存' : '本次现算'}</dd>
         </div>
       </dl>
+      <p className="note">
+        本页所有数字都基于当前库的这个窗口现算（缓存 1 小时），各样本期的可评估窗口见下方
+        「窗口」列。README 与历史研究台报告引用的是各自时点的快照（面板长度与样本数可能
+        与这里不同）—— 两者对不上时以本页为准。
+      </p>
     </div>
   )
 }

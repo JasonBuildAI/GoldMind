@@ -339,6 +339,19 @@ def research_report(db: Session, *, use_cache: bool = True) -> dict:
     return {**payload, "cached": False}
 
 
+def _data_window(close) -> dict:
+    """本页数字实际来自的库内窗口：起止、交易日数与年数（研究页显著标注）。"""
+    start = close.index[0].date()
+    end = close.index[-1].date()
+    span_days = max((end - start).days, 0)
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "trading_days": int(len(close)),
+        "years": round(span_days / 365.25, 1),
+    }
+
+
 def _build_research_payload(db: Session) -> dict:
     factors, close = load_panel(db)
     generated_at = timeutil.now_iso()
@@ -348,6 +361,7 @@ def _build_research_payload(db: Session) -> dict:
             "status": engine.PREDICTION_UNAVAILABLE,
             "reason": "库里还没有因子面板或黄金价格序列（先同步数据，再看研究页）",
             "as_of": None,
+            "data_window": None,
             "holdout_start": HOLDOUT_START.isoformat(),
             "active_holdout_start": ACTIVE_HOLDOUT_START.isoformat(),
             "generated_at": generated_at,
@@ -398,6 +412,7 @@ def _build_research_payload(db: Session) -> dict:
         "status": engine.STATUS_OK,
         "reason": None,
         "as_of": close.index[-1].date().isoformat(),
+        "data_window": _data_window(close),
         "holdout_start": HOLDOUT_START.isoformat(),
         "active_holdout_start": ACTIVE_HOLDOUT_START.isoformat(),
         "generated_at": generated_at,

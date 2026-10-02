@@ -797,11 +797,19 @@ export interface ResearchVerdict {
   detail: string
 }
 
+export interface ResearchDataWindow {
+  start: string
+  end: string
+  trading_days: number
+  years: number
+}
+
 export interface QuantResearchResponse {
   model_version: string
   status: string
   reason: string | null
   as_of: string | null
+  data_window: ResearchDataWindow | null
   holdout_start: string
   active_holdout_start: string
   generated_at: string

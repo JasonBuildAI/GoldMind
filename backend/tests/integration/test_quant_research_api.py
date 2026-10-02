@@ -1,6 +1,8 @@
 """研究端点：结构、三个样本期、裁决与缓存；空库必须诚实降级。"""
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from app.services.quant import backtest, engine, preregistered
@@ -28,6 +30,15 @@ def test_research_endpoint_reports_periods_factors_and_verdict(
     assert body["active_holdout_start"] == ACTIVE_HOLDOUT_START.isoformat()
     assert body["as_of"]
     assert body["generated_at"]
+    # 数据窗口显著标注：起止 + 交易日数 + 年数，页面据此说明数字来自哪一段；
+    # 年数由日历跨度折算——拿交易日数除以 365 是另一种口径，会在这里红
+    window = body["data_window"]
+    assert window["start"] < window["end"] == body["as_of"]
+    assert window["trading_days"] > 0
+    span = (
+        date.fromisoformat(window["end"]) - date.fromisoformat(window["start"])
+    ).days
+    assert window["years"] == pytest.approx(span / 365.25, abs=0.05)
     assert body["reason"] is None
     assert [item["horizon_days"] for item in body["horizons"]] == list(HORIZONS)
 
@@ -69,6 +80,10 @@ def test_research_endpoint_reports_periods_factors_and_verdict(
             assert period["accuracy_diff_vs_up"] == pytest.approx(
                 period["accuracy"] - period["baseline_up_accuracy"], abs=1e-9
             )
+        # 评估窗口必须落在披露的数据窗口内（不能拿窗口外的样本说事）
+        full = item["periods"]["full"]
+        assert window["start"] <= full["window_start"]
+        assert full["window_end"] <= window["end"]
         assert item["factors"], "全样本必须给出逐因子拆解"
         weights = [row["weight"] for row in item["factors"]]
         assert weights == sorted(weights, reverse=True)
@@ -109,6 +124,7 @@ def test_research_endpoint_is_honest_on_an_empty_database(client, db_session):
 
     assert body["status"] == engine.PREDICTION_UNAVAILABLE
     assert body["reason"], "没有数据就必须说明原因"
+    assert body["data_window"] is None, "没有窗口就不许编一个"
     assert body["horizons"] == []
     assert body["verdict"]["status"] == "unavailable"
     assert "数据不可用" in body["verdict"]["label"]

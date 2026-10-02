@@ -261,7 +261,9 @@ If this project helps or inspires you, a ⭐ **Star** is the best thank-you.
 > bets in the forward holdout (from 2026-10-02). The 1-day horizon has 1/20 bets and needs about
 > 19 more trading days; the 5-day horizon needs about 99. The historical-holdout column is
 > explicitly labelled "already seen by the first two rounds — record only" and never substitutes
-> for the verdict.
+> for the verdict. The page header also surfaces the **data window** (start/end, trading days,
+> years): every number is recomputed from exactly that window (1-hour cache); where the counts
+> disagree with the snapshots cited in README / historical lab reports, the research page wins.
 
 ### Summary
 <p align="center">

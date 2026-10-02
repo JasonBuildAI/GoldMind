@@ -47,6 +47,7 @@ function response(): QuantResearchResponse {
     status: 'ok',
     reason: null,
     as_of: '2026-10-01',
+    data_window: { start: '2025-07-18', end: '2026-10-01', trading_days: 311, years: 1.2 },
     holdout_start: '2023-10-02',
     active_holdout_start: '2026-10-02',
     generated_at: '2026-10-02T10:00:00+08:00',
@@ -143,6 +144,11 @@ describe('ResearchPage', () => {
     // CRPS：分布级评分与它对零漂移基准的技能分一起展示
     expect(screen.getAllByText('0.021').length).toBeGreaterThan(0)
     expect(screen.getAllByText('0.031').length).toBeGreaterThan(0)
+    // 数据窗口显著标注：起止 + 交易日数 + 年数，README 快照对不上时以本页为准
+    expect(screen.getByTestId('research-data-window')).toHaveTextContent(
+      '2025-07-18 → 2026-10-01 · 311 个交易日 · 约 1.2 年',
+    )
+    expect(screen.getByText(/对不上时以本页为准/)).toBeInTheDocument()
   })
 
   it('shows the honest unavailable state without fabricating numbers', async () => {
@@ -151,6 +157,7 @@ describe('ResearchPage', () => {
       status: 'unavailable',
       reason: '库里还没有因子面板或黄金价格序列（先同步数据，再看研究页）',
       as_of: null,
+      data_window: null,
       horizons: [],
       verdict: {
         status: 'unavailable',

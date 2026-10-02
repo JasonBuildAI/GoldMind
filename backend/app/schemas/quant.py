@@ -283,11 +283,22 @@ class ResearchVerdict(BaseModel):
     detail: str
 
 
+class ResearchDataWindow(BaseModel):
+    """研究页数字实际来自的库内窗口（页面显著标注；与 README 快照口径冲突时以它为准）。"""
+
+    start: date
+    end: date
+    trading_days: int
+    years: float
+
+
 class QuantResearchResponse(BaseModel):
     model_version: str
     status: str
     reason: Optional[str] = None
     as_of: Optional[date] = None
+    # 本页数字实际基于哪一段数据：起止 + 交易日数 + 年数（研究页显著标注）
+    data_window: Optional[ResearchDataWindow] = None
     holdout_start: date
     active_holdout_start: date
     generated_at: datetime
