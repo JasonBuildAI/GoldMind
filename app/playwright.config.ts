@@ -11,10 +11,16 @@ const API_PORT = Number(process.env.E2E_API_PORT || 8000)
 const WEB_PORT = Number(process.env.E2E_WEB_PORT || 4173)
 const MOCK_PORT = Number(process.env.E2E_MOCK_PORT || 8099)
 
-// 本地默认复用已安装的 Chrome（不下载 Playwright 自带浏览器）。
-// CI 的 runner 没有 Chrome，把 E2E_BROWSER 设为 chromium 即用 `playwright install`
-// 装好的 Chromium；留空时仍是 chrome。
+// 本地默认复用已安装的 Chrome（不下载 Playwright 自带浏览器）；Windows 自带 Edge，
+// 没有 Chrome 时把 E2E_BROWSER 设为 msedge 也能跑。CI 的 runner 两者都没有，
+// 设为 chromium 即用 `playwright install` 装好的 Chromium；留空时仍是 chrome。
+// 只认识 chrome / msedge / chromium 三个值，其它值按 chromium（Playwright 默认）处理。
 const BROWSER_CHANNEL = process.env.E2E_BROWSER || 'chrome'
+const BROWSER_CHANNELS: Record<string, string | undefined> = {
+  chrome: 'chrome',
+  msedge: 'msedge',
+  chromium: undefined,
+}
 
 export default defineConfig({
   testDir: './e2e',
@@ -26,11 +32,11 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   use: {
     baseURL: `http://127.0.0.1:${WEB_PORT}`,
-    // 本机已安装 Chrome，直接复用；CI 用 E2E_BROWSER=chromium 覆盖
-    channel: BROWSER_CHANNEL === 'chrome' ? 'chrome' : undefined,
+    // 本机已安装的 Chrome / Edge 直接复用；CI 用 E2E_BROWSER=chromium 覆盖为自带 Chromium
+    channel: BROWSER_CHANNELS[BROWSER_CHANNEL],
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chrome', use: { ...devices['Desktop Chrome'] } }],
+  projects: [{ name: BROWSER_CHANNEL, use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
       command: `${PYTHON} scripts/dev_mock_llm.py --port ${MOCK_PORT}`,
