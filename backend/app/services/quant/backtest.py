@@ -169,7 +169,7 @@ def evaluate_horizon(
     """对一段区间做走查式回测。``start`` / ``end`` 为闭区间（按日期）。
 
     其余关键字参数是研究台的候选变体（口径见 ``prepare_evaluation``）；
-    缺省值即线上 ``quant-v5`` 口径。
+    缺省值即线上 ``quant-v6`` 口径。
     """
     if close is None or close.empty:
         return _empty(horizon, "缺少黄金价格序列")

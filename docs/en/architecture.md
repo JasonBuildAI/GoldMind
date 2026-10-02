@@ -358,7 +358,8 @@ it — documentation does not copy a second version.
 | Exit | `service.py` | the scheduled task and `POST /api/gold/quant/refresh` share the same chain |
 | Statistics | `stats.py` | significance toolbox for overlapping samples: Newey–West HAC standard errors, circular block-bootstrap intervals, HAC t / Diebold–Mariano, Brier skill score and reliability bins (no scipy) |
 | Pre-registration | `preregistered.py` | **the only implementation** of the candidate list, selection rules and pass lines: register first, test second; changing a constant after seeing holdout results breaks pre-registration |
-| Research bench | `scripts/quant_lab.py` | full holdout evaluation of pre-registered candidates × horizons (reads the cache by default, `--refresh` recomputes), feeding the "Research" page and the bench report |
+| Screening | `screen.py` | three pre-registered gates a new series must clear before it may enter the factor set: HAC significance with a Bonferroni correction **plus** an effect-size floor, the same sign across at least two horizons, and an unchanged sign on the forward window. It has **no adoption power**: `Verdict.adopted` is always `False` and nothing under `app/` imports it, so it can only reject or park a candidate |
+| Research bench | `scripts/quant_lab.py` | pre-registered candidates × horizons × four sample periods (development / spent historical holdout / **forward** holdout / full), reading the project database directly and adjudicating on the forward window only, feeding the "Research" page and the bench report |
 
 Three conventions that must not be broken:
 
@@ -432,7 +433,9 @@ direction hit rates are 56.3% / 62.2% / 68.2% / 83.3% / 100%, matching "always l
 bias, and more coverage does not buy better direction. The pre-registered verdict of 2026-10-02:
 17 candidates × 5 horizons, none passed, so the live version is **kept and labelled "no
 statistical edge"** (that was `quant-v4`; the second round fixed the ACI mismatch and moved it to
-`quant-v5`, and the third-round C2 candidate was likewise retired by its pre-registered bar —
+`quant-v5`, the same day's engine hardening moved it to `quant-v6` (alignment no longer drops
+observations dated on a non-trading day and the alpha cap came down to 0.5 — the table above is
+the v6 recomputation), and the third-round C2 candidate was likewise retired by its pre-registered bar —
 details in `docs/specs/2026-10-02-研究台报告.md` and
 `docs/specs/2026-10-02-量化引擎第三轮预注册.md`, rules in `preregistered.py`).
 The page honestly shows coverage side by side with the "always long / momentum" benchmarks

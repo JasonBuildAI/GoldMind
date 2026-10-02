@@ -90,7 +90,8 @@ shows "temporarily unavailable"), and constructed uniformly through
    over the same holdout the direction hit rates are 56.3% / 62.2% / 68.2% / 83.3% / 100%, matching "always long" day by day (+0.0pp), with a negative Brier skill score.
    The 1-year horizon is the number-one problem: the systematic bias in μ cannot be repaired, and widening the interval does not buy better direction.
    The pre-registered verdict of 2026-10-02: 17 candidates × 5 horizons, none passed, so the live version is kept and labelled "no statistical edge" (that was `quant-v4`; the second round fixed the ACI
-   mismatch on 2026-10-02 and moved it to `quant-v5`, which changed the interval values, and the third-round C2 candidate was likewise retired by its pre-registered bar); the page honestly shows the coverage
+   mismatch on 2026-10-02 and moved it to `quant-v5`, which changed the interval values, and the third-round C2 candidate was likewise retired by its pre-registered bar; the same day's engine hardening moved it
+   to `quant-v6` — alignment no longer drops observations dated on a non-trading day and the ACI alpha cap came down to 0.5, so hit rates and coverage changed again and the old `quant-v5` records are no longer comparable); the page honestly shows the coverage
    side by side with the two benchmarks, always-long / momentum (see Section 11 of docs/ARCHITECTURE.md).
 
 ---
