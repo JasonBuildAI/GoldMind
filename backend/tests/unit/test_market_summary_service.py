@@ -215,6 +215,33 @@ def test_cached_summary_is_sanitized_with_current_institution_data(monkeypatch):
 
 
 @pytest.mark.unit
+def test_forced_path_passes_the_force_flag_to_the_gate(monkeypatch):
+    """`use_cache=False` 不得把 force 写死：启动引导要能按指纹跳过。
+
+    2026-10-03 冷启动验收实测：这条路径曾内置 force=True，第二次启动照样
+    调 LLM（5 -> 7 次），把「重启不重复计费」的幂等验收打红。
+    """
+    from app.services.market_summary_service import MarketSummaryService
+
+    service = MarketSummaryService(db=None)
+    monkeypatch.setattr(service, "_get_realtime_price", lambda: 4200.0)
+    monkeypatch.setattr(service.cache, "set", lambda result: None)
+    seen = {}
+
+    def fake_analyze(db, *args, force=False, **kwargs):
+        seen["force"] = force
+        return {"core_bullish_logic": ["x"], "current_price": 1}
+
+    monkeypatch.setattr(service.analyzer, "analyze", fake_analyze)
+
+    service.get_market_summary(use_cache=False, force=False)
+    assert seen["force"] is False, "引导传 force=False 必须原样到达门控"
+
+    service.get_market_summary(use_cache=False)
+    assert seen["force"] is True, "手动刷新路径默认保持强制"
+
+
+@pytest.mark.unit
 def test_cached_summary_keeps_targets_with_real_predictions(monkeypatch):
     from app.services.market_summary_service import MarketSummaryService
 

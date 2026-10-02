@@ -289,6 +289,7 @@ PHASE_ORDER: tuple[str, ...] = (
     "news",
     "quant_history",
     "revisions",
+    "align_stores_final",
     "analyses",
 )
 
@@ -299,6 +300,7 @@ PHASE_LABELS: dict[str, str] = {
     "news": "抓取新闻与高权威消息",
     "quant_history": "回填量化因子历史",
     "revisions": "补齐因子修订流水",
+    "align_stores_final": "回填后再次对齐本地研究长库",
     "analyses": "触发首轮 AI 分析",
 }
 
@@ -504,7 +506,14 @@ def _phase_coverage(ctx: _Context, db) -> dict:
 
 
 def _phase_align_stores(ctx: _Context, db) -> dict:
-    """把本地研究长库对齐到服务库口径（存在才做；不存在即跳过）。"""
+    """把本地研究长库对齐到服务库口径（存在才做；不存在即跳过）。
+
+    这一步在引导里跑两次：第一次（`align_stores`）把长库已有的历史**导入**
+    服务库，避免回填阶段重复联网抓取；第二次（`align_stores_final`）在
+    回填之后把服务库新写入的行**同步回**长库，让一次启动就收敛。
+    2026-10-03 冷启动验收实测：只有第一次对齐时，长库要等下一次重启才拿到
+    本轮回填的 7428 行量化历史。
+    """
     from app.services import store_alignment
 
     if not store_alignment.DEFAULT_LONG_DB.exists():
@@ -724,6 +733,7 @@ def _phase_analyses(ctx: _Context, db, *, force: bool = False) -> dict:
             institution_predictions=institutions,
             recent_news=load_analysis_news(db),
             use_cache=False,
+            force=force,
         )
         notes.append("总结✓")
     except Exception as exc:
@@ -739,6 +749,7 @@ STEPS: tuple[tuple[str, str, Callable], ...] = (
     ("news", PHASE_LABELS["news"], _phase_news),
     ("quant_history", PHASE_LABELS["quant_history"], _phase_quant_history),
     ("revisions", PHASE_LABELS["revisions"], _phase_revisions),
+    ("align_stores_final", PHASE_LABELS["align_stores_final"], _phase_align_stores),
     ("analyses", PHASE_LABELS["analyses"], _phase_analyses),
 )
 

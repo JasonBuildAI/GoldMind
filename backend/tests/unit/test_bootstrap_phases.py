@@ -308,6 +308,88 @@ def test_analyses_phase_degrades_honestly_without_llm(db_session, monkeypatch):
     assert "LLM 未配置" in result["note"]
 
 
+@pytest.mark.unit
+def test_analyses_phase_forwards_boot_force(db_session, monkeypatch):
+    """引导的分析阶段必须把 force 原样透传。
+
+    重启（force=False）时输入没变就不该再花一次调用；配置热更新后的补算
+    才用 force=True 绕过指纹。两个方向都要传对，否则要么重复计费、
+    要么新配置永远不生效。
+    """
+    from app import bootstrap as bs
+
+    calls: dict = {}
+
+    class _FakeFactors:
+        def __init__(self, db):
+            pass
+
+        def refresh_analysis_sync(self, *, force=False):
+            calls.setdefault("factors", []).append(force)
+
+        def get_bullish_factors(self, use_cache=True):
+            return {"bullish_factors": []}
+
+        def get_bearish_factors(self, use_cache=True):
+            return {"bearish_factors": []}
+
+    class _FakeInstitution:
+        def __init__(self, db):
+            pass
+
+        def refresh_analysis_sync(self, *, force=False):
+            calls.setdefault("institution", []).append(force)
+
+        def get_institution_predictions(self, use_cache=True):
+            return {"institutions": []}
+
+    class _FakeAdvice:
+        def __init__(self, db):
+            pass
+
+        def refresh_analysis_sync(self, *args, **kwargs):
+            calls["advice"] = kwargs.get("force")
+
+    class _FakeSummary:
+        def __init__(self, db):
+            pass
+
+        def get_market_summary(self, **kwargs):
+            calls["summary"] = kwargs.get("force")
+
+    monkeypatch.setattr("app.services.llm_provider.is_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.bullish_factor_service.BullishFactorService", _FakeFactors
+    )
+    monkeypatch.setattr(
+        "app.services.bearish_factor_service.BearishFactorService", _FakeFactors
+    )
+    monkeypatch.setattr(
+        "app.services.institution_prediction_service.InstitutionPredictionService",
+        _FakeInstitution,
+    )
+    monkeypatch.setattr(
+        "app.services.investment_advice_service.InvestmentAdviceService", _FakeAdvice
+    )
+    monkeypatch.setattr(
+        "app.services.market_summary_service.MarketSummaryService", _FakeSummary
+    )
+    monkeypatch.setattr(
+        "app.services.gold_service.GoldService.get_statistics", lambda self: {}
+    )
+    monkeypatch.setattr("app.services.analysis_input.load_analysis_news", lambda db: [])
+
+    bs._phase_analyses(_ctx(), db_session)
+    assert calls["summary"] is False, "引导在重启时不得强制刷新总结"
+    assert calls["advice"] is False
+    assert calls["factors"] == [False, False]
+
+    bs._phase_analyses(_ctx(), db_session, force=True)
+    assert calls["summary"] is True, "热更新后的补算必须强制刷新"
+    assert calls["advice"] is True
+    assert calls["factors"] == [False, False, True, True]
+
+
 # --------------------------------------------------------------------------- #
 # 编排
 # --------------------------------------------------------------------------- #
@@ -339,7 +421,7 @@ def test_run_bootstrap_injects_steps_and_survives_single_failure():
     assert phases["analyses"]["status"] == "done", "单阶段失败不得中断后续阶段"
     assert snapshot["ready"] is False
     assert "news" in snapshot["error"], "失败的阶段必须在总快照里点名"
-    assert snapshot["step"] == {"index": 6, "total": 7}
+    assert snapshot["step"] == {"index": 7, "total": len(bootstrap.STEPS)}
     assert snapshot["started_at"] and snapshot["finished_at"]
 
 

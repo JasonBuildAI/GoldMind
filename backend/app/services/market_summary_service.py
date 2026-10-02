@@ -414,7 +414,8 @@ class MarketSummaryService:
         bearish_factors: List[Dict] = None,
         institution_predictions: List[Dict] = None,
         recent_news: List[Dict] = None,
-        use_cache: bool = True
+        use_cache: bool = True,
+        force: bool = True
     ) -> Dict[str, Any]:
         """
         获取市场综合分析 - 快速响应版本（<50ms）
@@ -433,9 +434,11 @@ class MarketSummaryService:
         # 获取实时金价（用于覆盖结果中的价格）
         realtime_price = self._get_realtime_price()
 
-        # 如果强制刷新，直接执行实时 LLM 分析
+        # 不走缓存时执行实时 LLM 分析；`force` 决定是否无视输入指纹门控。
+        # 启动引导必须传 force=False：重启时输入没变就不该再花一次调用
+        # （2026-10-03 冷启动验收实测到该路径把每次重启都变成一次重复计费）。
         if not use_cache:
-            logger.info("[MarketSummary] 强制刷新，执行实时 LLM 分析...")
+            logger.info("[MarketSummary] 跳过缓存，执行 LLM 分析（force=%s）...", force)
             try:
                 result = self.analyzer.analyze(
                     self.db,
@@ -444,7 +447,7 @@ class MarketSummaryService:
                     bearish_factors or [],
                     institution_predictions or [],
                     recent_news or [],
-                    force=True,
+                    force=force,
                 )
                 # 用实时价格覆盖AI生成的价格
                 result["current_price"] = realtime_price

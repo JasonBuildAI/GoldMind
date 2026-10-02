@@ -131,7 +131,7 @@ def test_cold_start_reaches_a_usable_state_without_manual_commands(
     assert snapshot["ready"] is True
     assert [phase["key"] for phase in snapshot["phases"]] == list(bootstrap.PHASE_ORDER)
     assert all(phase["status"] in {"done", "skipped"} for phase in snapshot["phases"])
-    assert snapshot["step"] == {"index": 7, "total": 7}
+    assert snapshot["step"] == {"index": len(bootstrap.STEPS), "total": len(bootstrap.STEPS)}
 
     assert db_session.query(GoldPrice).count() == bootstrap.MIN_GOLD_PRICE_ROWS + 5
     assert db_session.query(DollarIndex).count() == 10
