@@ -26,6 +26,21 @@ def _configure(monkeypatch, token: str) -> None:
     monkeypatch.setattr(settings, "REFRESH_TOKEN", SecretStr(token))
 
 
+def _lift_paid_tier(monkeypatch) -> None:
+    """把付费档限流抬到能覆盖全部刷新路由。
+
+    本用例要连打 7 条刷新路由，而默认付费档是 6 次/分钟：第 7 条会先收到
+    429，测不到令牌门。本地 `backend/.env` 抬高过上限时看不出来，CI 没有
+    `.env`（用默认值）必现 —— 抬的是测试进程内的限流器，生产默认值不动。
+    """
+    import app.main as main
+    from app.utils.rate_limit import SlidingWindowRateLimiter
+
+    monkeypatch.setattr(
+        main, "_ai_limiter", SlidingWindowRateLimiter(len(REFRESH_ROUTES) + 1)
+    )
+
+
 @pytest.mark.unit
 def test_dependency_semantics(monkeypatch):
     from fastapi import HTTPException
@@ -50,6 +65,7 @@ def test_dependency_semantics(monkeypatch):
 def test_every_refresh_route_is_behind_the_gate(client, monkeypatch):
     """漏接一条 = 留下一个可被外人刷的付费入口。"""
     _configure(monkeypatch, "s3cret-token")
+    _lift_paid_tier(monkeypatch)
 
     for route in REFRESH_ROUTES:
         resp = client.post(route)
