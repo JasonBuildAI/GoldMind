@@ -80,9 +80,14 @@ ACI_GAMMA = 0.01
 ACI_HALF_LIFE = 250
 # 校准样本最长回看：半衰期之外再老的数据权重过低，只增加计算量
 CALIBRATION_WINDOW = 750
-# α 的安全范围：太小的 α 会让区间退化成「永远覆盖」，太大则失去意义
+# α 的安全范围：太小的 α 会让区间退化成「永远覆盖」，太大则失去意义。
+# 上界**不得大于 0.5**：区间端点取分位 ``α/2`` 与 ``1−α/2``，而情景固定取
+# ``QUARTILE_LOW`` / ``QUARTILE_HIGH``（0.25 / 0.75）。α/2 > 0.25 时区间下界会越过
+# 情景下界 —— `scenarios.py` 声明的「情景 ⊂ 区间」就按构造被破坏（真实 26 年面板
+# h=250 实测 1040 行 α>0.5、1036 行区间下界越过情景下界）。取 0.5 时两者恰好相切，
+# 即「自适应最多把名义水平收紧到 50%」——这也是它作为护栏的合理极限。
 ACI_ALPHA_FLOOR = 0.005
-ACI_ALPHA_CAP = 0.6
+ACI_ALPHA_CAP = 0.5
 # 合成得分的变体（研究台用；默认仍是 weighted，即线上口径）
 SCORE_MODES = ("weighted", "equal", "winsor", "trimmed")
 WINSOR_LIMIT = 2.0
@@ -193,12 +198,21 @@ def align_series(
        「陈旧」必须同时意味着「不参与合成」：历史上 ``max_age_days`` 只进了
        ``factor_states`` 的展示分支，于是月频因子断更两个月后，页面写着「陈旧」、
        得分却继续按它最高档的权重贡献 —— 显示层与计算层说的是两件事。
+    3. **日期不在价格日历里的观测不许丢**。周频 CFTC 按「报告日 +4 BDay」推可用日、
+       月度储备按「月末 +8 天」推、BTC 有周末报价 —— 这些日期常常不是 COMEX 交易日。
+       先在「日历 ∪ 观测日」的并集上向前填充、再切回日历（等价于
+       ``merge_asof(direction="backward")``），否则 ``reindex(calendar)`` 会因为
+       label 不匹配把整条观测丢掉，引擎只好继续用更老的一条，而 ``factor_states``
+       读的是原始序列 —— 页面显示的那条与实际吃进去的那条不是同一个数。
     """
-    reindexed = series.reindex(calendar)
-    aligned = reindexed.ffill()
+    # 并集上落位 → 向前填充 → 切回日历；``union`` 已排序去重。
+    union = series.index.union(calendar)
+    raw = series.reindex(union)
+    aligned = raw.ffill().reindex(calendar)
     if max_age_days is None:
         return aligned
-    last_real = pd.Series(calendar, index=calendar).where(reindexed.notna()).ffill()
+    # 新鲜度看的是**真实观测**（未填充的那份），所以用并集上的 notna 定位最近一条
+    last_real = pd.Series(union, index=union).where(raw.notna()).ffill().reindex(calendar)
     age_days = (pd.Series(calendar, index=calendar) - last_real).dt.days
     return aligned.mask(age_days > max_age_days)
 
@@ -697,6 +711,13 @@ class SignalSnapshot:
     scenario_high_return: Optional[float] = None
     median_return: Optional[float] = None
     distribution_mode: Optional[str] = None
+    # 这一行区间实际用的名义错失率 α：区间端点取分位 α/2 与 1−α/2，而 α 是自适应
+    # 的（真实面板 h=250 有 1602 行贴在下界 = 名义水平 99.5%、919 行贴上界 = 50%）。
+    # 不给这个数，用户就会按「80% 区间」这个名义值去读一个名义值已经不成立的区间。
+    interval_alpha: Optional[float] = None
+    # 期望收益是否被护栏夹过（``EXPECTED_CAP_SIGMAS``）：封顶改的是用户看到的数字，
+    # 回测里一直有 ``expected_cap_rate`` 这个健康度指标，线上也必须能看见。
+    expected_capped: bool = False
 
     @property
     def direction(self) -> Optional[str]:
@@ -739,10 +760,16 @@ def _asof_position(calendar: pd.DatetimeIndex, as_of: Optional[date]) -> int:
 
 
 def _clean(value) -> Optional[float]:
+    """NaN 与 ±Inf 都当「没有这个数字」。
+
+    Inf 不是「一个很大的数」：它的来源通常是除零或尺度估计退化，那是「算不出来」。
+    放它过去，响应会序列化出非法 JSON（`Infinity`）、页面会印出 `Infinity`；
+    落库那条路有 `stats.json_safe` 兜着，响应这条没有。
+    """
     if value is None:
         return None
     number = float(value)
-    return None if np.isnan(number) else number
+    return number if np.isfinite(number) else None
 
 
 def factor_states(
@@ -907,6 +934,8 @@ def build_snapshot(
         scenario_high_return=_clean(row["quartile_high_return"]),
         median_return=_clean(row["median_return"]),
         distribution_mode=str(row["distribution_mode"]),
+        interval_alpha=_clean(row["interval_alpha"]),
+        expected_capped=bool(row["expected_capped"]),
     )
 
 

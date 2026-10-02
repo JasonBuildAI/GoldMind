@@ -94,6 +94,12 @@ def upsert_series(
                     value=value,
                     source=source,
                     meta=meta,
+                    # 显式写项目时区：列的 server_default 是 `func.now()`，SQLite 下
+                    # 那是 UTC，与 recorded_at 的项目时区差一个偏移（红线五：时间只在
+                    # 一个时区里流动）。迁移要把 created_at 抄进流水，两个时钟混在一起
+                    # 会让凌晨写入的值渗进前一天的 --as-of 面板。
+                    created_at=stamp,
+                    updated_at=stamp,
                 )
             )
             inserted += 1
@@ -101,6 +107,7 @@ def upsert_series(
             row.value = value
             row.source = source
             row.meta = meta
+            row.updated_at = stamp
             updated += 1
         else:
             continue  # 值与来源都没变：幂等重跑不产生流水行

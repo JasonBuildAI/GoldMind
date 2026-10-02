@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
+from app.utils import timeutil
 from app.models.analysis import FactorObservation, FactorObservationRevision
 from app.services.quant import storage
 
@@ -42,6 +43,28 @@ def _series(pairs: list[tuple[str, float]]) -> pd.Series:
         {pd.Timestamp(day).date(): value for day, value in pairs},
         name="real_yield_10y",
     )
+
+
+def test_created_at_is_written_in_the_project_timezone(db):
+    """``created_at`` / ``updated_at`` 必须与 ``recorded_at`` 共用一个时钟。
+
+    列定义是 ``server_default=func.now()``，而 SQLite 下那是 **UTC**；应用写
+    ``recorded_at`` 用的是项目时区。同一张表两个时钟，迁移把它们抄进流水时
+    `--as-of` 就会在凌晨那几小时把「今天才知道的值」算进昨天的面板 ——
+    正是流水表要防的前视（红线五：时间只在一个时区里流动）。
+
+    变异验证：把 ``created_at`` / ``updated_at`` 的显式赋值去掉、退回 server
+    default，本测试必红（差一个时区偏移，Asia/Shanghai 是 8 小时）。
+    """
+    before = timeutil.now_naive()
+    storage.upsert_series(db, "real_yield_10y", _series([("2026-01-05", 1.9)]), source="t1")
+    after = timeutil.now_naive()
+
+    row = db.query(FactorObservation).one()
+    assert before - timedelta(seconds=5) <= row.created_at <= after + timedelta(seconds=5), (
+        f"created_at 不是项目时区：{row.created_at} 与 {before} 差得太远"
+    )
+    assert row.updated_at == row.created_at
 
 
 def test_first_write_and_revision_each_leave_one_row(db):

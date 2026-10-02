@@ -50,7 +50,8 @@
 ## 🆕 What 2.0.1 delivers
 
 2.0.1 does not swap the model. It does three things: **fix the conventions, make the evaluation
-honest, and take back claims that cannot be proven.** The live model is still `quant-v5` —
+honest, and take back claims that cannot be proven.** The live model is `quant-v6` (this round's
+engine hardening; the old `quant-v5` records are no longer comparable) —
 the third pre-registered candidate C2 needed 60-day development coverage in [0.78, 0.82];
 it landed at 0.7679, 1.2pp short, and was eliminated. The bar does not move for it.
 
@@ -321,7 +322,7 @@ carries different weights at different horizons:
 This is why each of the 14 factors carries five weights instead of one global weight: explaining
 tomorrow's gold price with central-bank buying, or next year's with VIX, gets the horizon wrong.
 
-### 3. One calibrated distribution feeds every output (`quant-v5`)
+### 3. One calibrated distribution feeds every output (`quant-v6`)
 
 The composite `score` is an **uncalibrated** input — it appears only in the factor table and the
 "factor tilt (uncalibrated)" row. Everything on the page comes out of the same
@@ -343,7 +344,7 @@ target     = base price × (1 + μ)               base = COMEX front-month daily
 direction  = sign(μ)                            exactly 0 is reported as "flat"
 ```
 
-Model version **`quant-v5`**. Six hard conventions:
+Model version **`quant-v6`**. Six hard conventions:
 
 1. **No look-ahead.** Rolling statistics and regression samples are all shifted before t;
    sources published after the gold close (Treasury yield curve, NY Fed EFFR, CFTC) are moved
@@ -433,20 +434,23 @@ few samples are labelled "undecidable". Hit rates always sit next to three basel
 | Momentum | extrapolate the recent trend |
 | Coin flip | 50% |
 
-Measured 2026-10-02 (`quant-v5`, exported from the research API; nominal coverage 80%):
+Measured 2026-10-02 (`quant-v6` plus this round's engine hardening, recomputed on the 26-year panel; nominal coverage 80%):
 
 | Horizon | Development hit | Historical-holdout hit | Always-long (holdout) | Diff | Development coverage | Historical-holdout coverage | Full-sample coverage |
 |---|---|---|---|---|---|---|---|
-| 1d | 52.2% | 56.4% | 56.4% | +0.0pp | 80.2% | 78.5% | 79.9% |
-| 1w | 54.0% | 62.1% | 62.1% | +0.0pp | 80.1% | 78.2% | 79.8% |
-| 1m | 53.5% | 68.1% | 68.1% | +0.0pp | 79.3% | 77.2% | 78.9% |
-| 1q | 57.5% | 83.4% | 83.4% | +0.0pp | 73.6% | 65.1% | 72.4% |
-| 1y | 63.1% | 100.0% | 100.0% | +0.0pp | 55.9% | 28.8% | 52.8% |
+| 1d | 52.5% | 54.6% | 56.4% | −1.7pp | 79.9% | 78.4% | 79.7% |
+| 1w | 53.4% | 60.9% | 62.1% | −1.2pp | 80.0% | 77.9% | 79.7% |
+| 1m | 54.6% | 68.1% | 68.1% | +0.0pp | 79.0% | 76.9% | 78.8% |
+| 1q | 60.8% | 83.4% | 83.4% | +0.0pp | 74.5% | 65.3% | 73.5% |
+| 1y | 71.8% | 100.0% | 100.0% | +0.0pp | 61.2% | 28.4% | 58.4% |
 
 Read this carefully: the historical holdout is a three-year one-way gold rally, so "always long"
-alone scores 56–100%; the model matches it day by day (+0.0pp) and its Brier skill score is
-negative (−0.005 / −0.029 / −0.091 / −0.392 / −1.000). **That record proves neither an edge nor
-its absence — it only proves the historical holdout has been seen.** Hence 2.0.1 moves the
+alone scores 56–100%. At 20 days and beyond the model matches it day by day (+0.0pp); **at 1 day
+and 1 week it does worse** (−1.7pp / −1.2pp) — on short horizons it does call down moves, and in
+this rally a down call is simply wrong. Its Brier skill score is negative
+(−0.006 / −0.029 / −0.096 / −0.388); at 1 year the base rate is 100%, so the constant forecast has
+zero loss and the skill score is **undefined** — no number is printed there. **That record proves
+neither an edge nor its absence — it only proves the historical holdout has been seen.** Hence 2.0.1 moves the
 judging window forward, and coverage gaps are audited by volatility bucket (thresholds from the
 expanding past distribution only, independent bets inside each bucket, counts reported when
 fewer than 30).

@@ -429,3 +429,29 @@ def test_per_factor_alignment_uses_hac_not_the_naive_standard_error(make_panel):
         assert row["hac_lags"] == horizon - 1, name
         if row["alignment"] is None:
             assert row["alignment_t"] is None and row["alignment_naive_t"] is None, name
+
+
+def test_long_horizon_reports_the_normal_fallback_share(make_panel):
+    """必须报告「这一行用的是经验分布还是正态兜底」的占比。
+
+    `bet` 校准档在 250 日尺度上永远凑不满 60 注（20 年面板最多 21 注），于是
+    **每一行**都退回解析正态 —— 候选标签写着「每注经验校准」，成绩其实来自纯正态。
+    报告里不写这个占比，候选之间的比较就没有意义（这正是第三轮 C1/C2 裁决的盲区）。
+
+    变异验证：把这两个指标从 metrics 里删掉，本测试第一条断言必红。
+    """
+    calendar = pd.date_range("2006-01-02", "2026-09-30", freq="B")
+    factors, close = make_panel(calendar)
+
+    # 线上口径（逐行取样）：绝大多数行用经验分布
+    row_mode = backtest.evaluate_horizon(factors, close, horizon=20)
+    assert row_mode.metrics["distribution_normal_share"] is not None
+    assert row_mode.metrics["distribution_empirical_share"] is not None
+    assert row_mode.metrics["distribution_normal_share"] < 0.5
+
+    # bet 档 + 250 日：注数凑不够 60 → 全部退回正态
+    bet_mode = backtest.evaluate_horizon(
+        factors, close, horizon=250, calibration_mode=engine.CALIBRATION_BET
+    )
+    assert bet_mode.metrics["distribution_normal_share"] == pytest.approx(1.0)
+    assert bet_mode.metrics["distribution_empirical_share"] == pytest.approx(0.0)

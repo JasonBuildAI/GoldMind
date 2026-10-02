@@ -494,6 +494,13 @@ export interface QuantPredictionItem {
   expected_return: number | null
   uncertainty: number | null
   probability_up: number | null
+  // 区间是自适应的：名义 80% 只是起点，实际水平 = 1 − interval_alpha。
+  // 'aci' = 经验分布 + 自适应 α，'normal' = 样本不足时退回的解析正态。
+  distribution_mode: string | null
+  interval_alpha: number | null
+  interval_nominal: number | null
+  // 期望收益是否被护栏夹过（封顶改的是用户看到的数字，必须能看见）
+  expected_capped: boolean
   range_low: number | null
   range_high: number | null
   scenarios: QuantScenario[]

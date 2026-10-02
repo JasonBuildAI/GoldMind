@@ -169,7 +169,7 @@ def evaluate_horizon(
     """对一段区间做走查式回测。``start`` / ``end`` 为闭区间（按日期）。
 
     其余关键字参数是研究台的候选变体（口径见 ``prepare_evaluation``）；
-    缺省值即线上 ``quant-v5`` 口径。
+    缺省值即线上 ``quant-v6`` 口径。
     """
     if close is None or close.empty:
         return _empty(horizon, "缺少黄金价格序列")
@@ -343,6 +343,16 @@ def _evaluate(
     width = frame["upper_return"][mask] - frame["lower_return"][mask]
     sharpness_80 = float(width.mean()) if int(width.notna().sum()) >= MIN_EVALUATION_SAMPLES else None
 
+    # 分布口径的构成：区间与概率是不是真的来自经验分布（还是样本不足退回正态）
+    modes = frame["distribution_mode"][mask]
+    usable_modes = int(modes.notna().sum())
+    if usable_modes >= MIN_EVALUATION_SAMPLES:
+        normal_share = float((modes == "normal").mean())
+        empirical_share = 1.0 - normal_share
+    else:
+        normal_share = None
+        empirical_share = None
+
     metrics = {
         "coin_flip_accuracy": 0.5,
         "horizon_days": horizon,
@@ -365,6 +375,11 @@ def _evaluate(
         # 关回市场真的动过的那个量级里，比例本身是要给用户看的健康度指标。
         "expected_cap_rate": float(frame["expected_capped"][mask].mean()),
         "expected_cap_sigmas": engine.EXPECTED_CAP_SIGMAS,
+        # 「这一行用的是经验分布还是正态兜底」的占比。没有它，候选之间的比较会失真：
+        # `bet` 档在 250 日尺度上永远凑不满 60 注（20 年面板最多 21 注），每一行都
+        # 退回正态，而候选标签写着「每注经验校准」—— 成绩其实来自纯正态。
+        "distribution_normal_share": normal_share,
+        "distribution_empirical_share": empirical_share,
         "nonoverlapping_stride": horizon,
         "nonoverlapping_samples": int(len(nonoverlap_correct)),
         "accuracy_nonoverlapping": accuracy_nonoverlapping,

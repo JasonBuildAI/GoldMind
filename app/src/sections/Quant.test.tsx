@@ -181,6 +181,10 @@ function prediction(overrides: Partial<QuantPredictionItem>): QuantPredictionIte
     expected_return: 0.0143,
     uncertainty: 0.02,
     probability_up: 0.62,
+    distribution_mode: 'aci',
+    interval_alpha: 0.2,
+    interval_nominal: 0.8,
+    expected_capped: false,
     range_low: 4100,
     range_high: 4330,
     scenarios: SCENARIOS,
@@ -252,6 +256,9 @@ const PREDICTION_RESPONSE: QuantPredictionsResponse = {
       expected_return: null,
       uncertainty: null,
       probability_up: null,
+      distribution_mode: null,
+      interval_alpha: null,
+      interval_nominal: null,
       range_low: null,
       range_high: null,
       scenarios: [],
@@ -457,6 +464,34 @@ describe('Quant', () => {
     expect(screen.getByText('$4,150.00')).toBeInTheDocument()
     expect(screen.getByText('38%')).toBeInTheDocument()
     expect(screen.getByText('−1.19%')).toBeInTheDocument()
+  })
+
+  it('显示区间的实际名义水平与封顶标记', async () => {
+    mockApi()
+    // α 贴在下界（0.005）时，名义 80% 的区间实际是 99.5% 的水平；期望收益被封顶
+    mocked.getPredictions.mockResolvedValue({
+      ...PREDICTION_RESPONSE,
+      predictions: [
+        prediction({
+          horizon_days: 1,
+          interval_alpha: 0.005,
+          interval_nominal: 0.995,
+          distribution_mode: 'aci',
+          expected_capped: true,
+        }),
+        ...PREDICTION_RESPONSE.predictions.filter((item) => item.horizon_days !== 1),
+      ],
+    })
+    const user = userEvent.setup()
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    await user.click(screen.getAllByRole('tab', { name: '1 日' })[0])
+
+    const panel = await screen.findByTestId('quant-prediction-1')
+    expect(panel).toHaveTextContent('名义 99.5%')
+    expect(panel).toHaveTextContent('已封顶')
   })
 
   it('切换周期看得到该周期的结论', async () => {

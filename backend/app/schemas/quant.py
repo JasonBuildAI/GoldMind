@@ -108,6 +108,12 @@ class QuantPredictionItem(BaseModel):
     expected_return: Optional[float] = None
     uncertainty: Optional[float] = None
     probability_up: Optional[float] = None
+    # 区间是自适应的：名义 80% 只是起点，实际水平 = 1 − interval_alpha。
+    # distribution_mode 记录这一行用的是经验分布（aci）还是正态兜底（normal）。
+    distribution_mode: Optional[str] = None
+    interval_alpha: Optional[float] = None
+    interval_nominal: Optional[float] = None
+    expected_capped: bool = False
     range_low: Optional[float] = None
     range_high: Optional[float] = None
     scenarios: List[Scenario] = []

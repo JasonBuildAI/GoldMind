@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -17,6 +18,63 @@ import pytest
 from app.services.quant import screen
 
 CALENDAR = pd.date_range("2000-01-03", periods=6000, freq="B")
+
+# 预注册文本：`docs/specs/2026-10-02-量化引擎第二轮预注册.md`
+#   §五.2  「`|t| ≥ 3`（`MIN_T_TO_PASS`）」
+#   §五.2  「一条 iid 噪声序列在 60 日拿到 …恰好低于 Bonferroni 阈值…」
+#   §五.2  「双侧 p 下限用名义 0.05」
+#   §闸门③「需要的独立下注」逐尺度表：1 日 300、5 日 60、20/60/250 日 20
+SPEC_PATH = (
+    Path(__file__).resolve().parents[4]
+    / "docs"
+    / "specs"
+    / "2026-10-02-量化引擎第二轮预注册.md"
+)
+
+
+def _spec_text() -> str:
+    return SPEC_PATH.read_text(encoding="utf-8")
+
+
+def test_the_screen_thresholds_match_the_preregistered_text():
+    """筛查层的阈值必须与预注册文本逐值对齐 —— 第一轮常量有守卫，这一层此前没有。
+
+    本轮实测：把 ``MIN_T_TO_PASS`` 从 3.0 调到 2.8（正好放过那条 t=2.772 的噪声）、
+    ``MIN_FORWARD_BETS`` 从 20 调到 5、``MIN_SCREEN_SAMPLES`` 从 300 调到 200，
+    14 条筛查测试**全绿** —— 等于这一层的阈值可以随便改而没人知道。
+    这里把它们钉在 spec 的文字与表格上。
+
+    变异验证：三个常量任意改一个，本测试必红。
+    """
+    text = _spec_text()
+
+    # ① 效应量下限：文本里写的是 |t| ≥ 3
+    assert "`|t| ≥ 3`" in text
+    assert screen.MIN_T_TO_PASS == pytest.approx(3.0)
+    # ② 反向登记的 p 下限：文本里写的是名义 0.05
+    assert "双侧 p 下限用名义 0.05" in text
+    assert screen.REVERSED_ALPHA == pytest.approx(0.05)
+    # ③ 跨尺度同号：文本里写的是「≥2 个尺度同号」，一个尺度算「有表现」的门槛是 |t| ≥ 1
+    assert "≥2 个尺度同号" in text
+    assert screen.MIN_T_FOR_DIRECTION == pytest.approx(1.0)
+
+    # ④ 闸门③的「需要的独立下注」逐尺度表 —— 同时钉住 MIN_FORWARD_BETS 与
+    #    MIN_SCREEN_SAMPLES（required = max(MIN_FORWARD_BETS, ceil(MIN_SCREEN_SAMPLES / h))）
+    required_from_text = {}
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) == 4 and cells[0].endswith("日") and cells[1].isdigit():
+            required_from_text[int(cells[0].removesuffix(" 日"))] = int(cells[1])
+    assert required_from_text == {1: 300, 5: 60, 20: 20, 60: 20, 250: 20}, (
+        f"没能从 spec 的闸门③表里解析出逐尺度门槛：{required_from_text}"
+    )
+    for horizon, required in required_from_text.items():
+        readiness = screen.forward_window_readiness(_benchmark(), horizon)
+        assert readiness["required_bets"] == required, (
+            f"{horizon} 日需要的独立下注与预注册文本不一致"
+        )
 
 
 def _benchmark() -> pd.Series:

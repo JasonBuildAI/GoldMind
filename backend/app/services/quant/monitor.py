@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from statistics import fmean, pstdev
 from typing import Optional
@@ -54,6 +54,9 @@ class RowSpec:
     source: str
     unit: str
     note: str
+    # 展示缩放：序列存的原值与行定义的单位不同量纲时用（目前只有 `cftc_net_oi_ratio`：
+    # 存的是比值 0.40，单位写的是 %）。只影响展示，不碰阈值规则 —— 规则读的是原始序列。
+    display_scale: float = 1.0
 
 
 ROW_SPECS: tuple[RowSpec, ...] = (
@@ -142,6 +145,8 @@ ROW_SPECS: tuple[RowSpec, ...] = (
     RowSpec(
         "cftc_net_oi_ratio", "CFTC 净多头占未平仓比", "周", "CFTC 持仓报告（净头寸 ÷ 未平仓）", "%",
         "信息行：拥挤度的占比口径，26 年实测 250 日 t=+0.73，未过闸门",
+        # 库里存的是比值（0.40），单位是 % → 展示时 ×100
+        display_scale=100.0,
     ),
     RowSpec(
         "gpr_daily", "地缘风险指数（GPR 官方日度）", "日", "Iacoviello & Papaioannou GPR", "点",
@@ -465,9 +470,22 @@ def build_monitor(db) -> dict:
     """读出库里所有序列，按 ROW_SPECS 生成仪表盘。"""
     series = storage.load_all(db)
     close = series.get(BENCHMARK_KEY)
-    rows = [_build_row(spec, series.get(spec.key), close) for spec in ROW_SPECS]
+    rows = [
+        _scaled(spec, _build_row(spec, series.get(spec.key), close)) for spec in ROW_SPECS
+    ]
     as_of = max((row.obs_date for row in rows if row.obs_date), default=None)
     return {"as_of": as_of, "rows": [row.to_dict() for row in rows]}
+
+
+def _scaled(spec: RowSpec, row: MonitorRow) -> MonitorRow:
+    """按 `RowSpec.display_scale` 换算展示值（不改序列、不影响信号规则）。"""
+    if spec.display_scale == 1.0:
+        return row
+    return replace(
+        row,
+        value=None if row.value is None else row.value * spec.display_scale,
+        change=None if row.change is None else row.change * spec.display_scale,
+    )
 
 
 __all__ = [

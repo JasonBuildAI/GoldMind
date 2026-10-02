@@ -41,7 +41,12 @@ def test_research_endpoint_reports_periods_factors_and_verdict(
         readiness = item["forward_readiness"]
         assert readiness["window_start"] == ACTIVE_HOLDOUT_START.isoformat()
         assert readiness["required_bets"] == preregistered.MIN_EFFECTIVE_SAMPLES
-        assert readiness["independent_bets"] == readiness["observations"] // item["horizon_days"]
+        # 下注次数以回测实际数出来的为准：日历折算会把还没实现收益的最后 h 行也算上，
+        # 于是同一页面上 readiness 报「可判」而样本量闸门报「不足」——差一注就翻脸。
+        assert (
+            readiness["independent_bets"]
+            == (item["periods"]["forward"]["independent_bets"] or 0)
+        )
         assert readiness["shortfall_bets"] >= 0
         assert readiness["decidable"] == (readiness["shortfall_bets"] == 0)
         for period in item["periods"].values():

@@ -9,10 +9,14 @@
 from __future__ import annotations
 
 import importlib.util
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, select, text
+
+from app.models.analysis import FactorObservationRevision
+from app.utils import timeutil
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -171,19 +175,72 @@ def test_migration_seeds_the_ledger_from_existing_observations(migration, popula
     from sqlalchemy import inspect as sa_inspect
 
     assert "factor_observation_revisions" in sa_inspect(populated_engine).get_table_names()
-    with populated_engine.begin() as conn:
+    revision = FactorObservationRevision.__table__
+    with populated_engine.connect() as conn:
         rows = conn.execute(
-            text("SELECT factor_key, obs_date, value, recorded_at FROM factor_observation_revisions "
-                 "ORDER BY factor_key, obs_date")
+            select(
+                revision.c.factor_key,
+                revision.c.obs_date,
+                revision.c.value,
+                revision.c.recorded_at,
+            ).order_by(revision.c.factor_key, revision.c.obs_date)
         ).all()
     assert len(rows) == 3
-    assert {str(row[3]) for row in rows} == {"2026-03-01 08:00:00"}, "recorded_at 必须取写入时点"
+    # created_at 是 server_default（SQLite = UTC）：抄进流水前必须换算成项目时区，
+    # 否则同一列里混两个时钟，凌晨 0–8 点写入的值会被算进前一天的面板
+    expected = timeutil.from_utc_naive(datetime(2026, 3, 1, 8, 0, 0))
+    assert {row[3] for row in rows} == {expected}, "recorded_at 必须是项目时区的写入时点"
     assert [row[0] for row in rows] == ["real_yield_10y", "real_yield_10y", "vix"]
 
     # 重复运行不再补写（幂等）
     migration.apply_migration(populated_engine)
     with populated_engine.begin() as conn:
         assert int(conn.execute(text("SELECT COUNT(*) FROM factor_observation_revisions")).scalar()) == 3
+
+
+@pytest.mark.unit
+def test_ledger_backfill_fills_only_the_missing_observations(migration, populated_engine):
+    """流水表非空、但观测缺流水时，必须**只补缺的那些**。
+
+    「流水表全空才补」这条守卫在最常见的升级路径上会失效：启动时 `create_all`
+    先建出空表，随后任一次同步都会追加几行流水 —— 于是 68k 历史观测永远进不了
+    流水，`--as-of` 静默给出只剩近期窗口的残缺面板，而且不会报错。
+
+    变异验证：把 `ledger_backfill_rows` 改回「流水表非空即返回 0」，第一条断言必红
+    （应补 2 行却报 0 行）。
+    """
+    revision = FactorObservationRevision.__table__
+    migration.Base.metadata.create_all(bind=populated_engine)  # 建出（空的）流水表
+    with populated_engine.begin() as conn:
+        conn.execute(
+            revision.insert(),
+            [
+                {
+                    "factor_key": "real_yield_10y",
+                    "obs_date": date(2026, 1, 5),
+                    "value": 1.9,
+                    "source": "s",
+                    "meta": None,
+                    "recorded_at": datetime(2026, 3, 1, 16, 0, 0),
+                }
+            ],
+        )
+
+    # 3 条观测里有 1 条已经有流水 → 还缺 2 条
+    assert migration.ledger_backfill_rows(populated_engine) == 2
+
+    migration.apply_migration(populated_engine)
+    with populated_engine.connect() as conn:
+        rows = conn.execute(
+            select(revision.c.factor_key, revision.c.obs_date, revision.c.recorded_at)
+        ).all()
+    assert len(rows) == 3
+    # 既有那条流水原样保留，不被重写
+    kept = [
+        row for row in rows if (row[0], row[1]) == ("real_yield_10y", date(2026, 1, 5))
+    ]
+    assert len(kept) == 1
+    assert kept[0][2] == datetime(2026, 3, 1, 16, 0, 0)
 
 
 @pytest.mark.unit

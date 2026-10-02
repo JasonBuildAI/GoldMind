@@ -42,6 +42,22 @@ def _snapshot(*, score: float, expected_return: float,
     )
 
 
+def test_non_finite_values_are_treated_as_missing():
+    """NaN 与 ±Inf 都是「没有这个数字」，不是「一个很大的数」。
+
+    Inf 的来源通常是除零或尺度估计退化 —— 那是「算不出来」。放它过去，
+    API 会序列化出非法 JSON（`Infinity`），页面会印出 `Infinity`；
+    落库那条路已经有 `stats.json_safe` 兜着，响应这条没有。
+
+    变异验证：把 `np.isfinite` 改回 `np.isnan`，后两条断言必红。
+    """
+    assert engine._clean(None) is None
+    assert engine._clean(float("nan")) is None
+    assert engine._clean(float("inf")) is None
+    assert engine._clean(float("-inf")) is None
+    assert engine._clean(0.5) == 0.5
+
+
 def test_direction_follows_the_calibrated_mean_and_reports_the_median():
     """方向 = sign(μ)；分布中位数作为另一个统计量一并给出。
 
@@ -149,6 +165,38 @@ def test_probability_is_not_the_normal_tail_of_the_displayed_sigma(panel):
             ).iloc[0]
         )
         assert abs(probability - naive) > 1e-4, f"h={horizon} 概率仍是那条正态尾"
+
+
+def test_the_band_stays_around_the_quartiles_when_alpha_saturates():
+    """α 的上界不能越过 0.5：区间端点取 α/2 与 1−α/2，情景取 0.25 / 0.75。
+
+    α/2 > 0.25 时区间下界必然**高于**情景下界（分位数单调），于是
+    「情景 ⊂ 区间」这条 `scenarios.py` 声明的不变式被破坏。真实 26 年面板
+    h=250 实测 1040 行 α>0.5、1036 行 `interval_low > scenario_low`。
+    唯一钉这条的守卫跑在合成夹具上，而那个夹具的 α 从不 >0.5 —— 真数据上必红。
+
+    构造：先给一段散布（把带撑宽），再给一段**窄但非退化**的散布（都落在带内）
+    → α 一路升到上界；窗（750）仍含前段的散布，所以分位函数不退化。
+
+    变异验证：把 ``ACI_ALPHA_CAP`` 改回 0.6 本测试必红。
+    """
+    rng = np.random.default_rng(4)
+    index = pd.date_range("2020-01-01", periods=520, freq="B")
+    values = np.concatenate([rng.normal(0.0, 3.0, 300), rng.normal(0.0, 0.1, 220)])
+    ratio = pd.Series(values, index=index)
+    flat = pd.Series(np.zeros(len(index)), index=index)
+
+    calibration = engine.calibrate_distribution(
+        ratio, flat, gamma=0.01, half_life=250, window=750, min_samples=60, issued_lag=0
+    )
+
+    saturated = calibration["alpha"] >= engine.ACI_ALPHA_CAP - 1e-9
+    assert bool(saturated.any()), "构造没有把 α 推到上界，测试是空的"
+    band = calibration[saturated]
+    assert (band["lower"] <= band["q25"] + 1e-12).all(), "区间下界越过了情景下界"
+    assert (band["q75"] <= band["upper"] + 1e-12).all(), "情景上界越过了区间上界"
+    # 上界本身也必须与分位口径一致：α/2 不得超过情景的下分位点
+    assert engine.ACI_ALPHA_CAP <= 2.0 * engine.QUARTILE_LOW
 
 
 def test_uncertainty_is_the_walk_forward_error_not_the_fit_residual(calendar, make_panel):
@@ -290,6 +338,35 @@ def test_alignment_only_fills_forward_but_not_past_freshness(calendar):
     # VIX 的新鲜度上限是 7 天：第 20 个交易日（≈26 天后）必须已经不算数了
     assert np.isnan(aligned.iloc[20]), "陈旧值被无界前向填充继续当成了今天的观测"
     assert unrestricted.iloc[200] == 1.0
+
+
+def test_observation_on_a_non_trading_day_is_not_dropped(calendar):
+    """日期不在金价日历里的观测必须落到**下一个**交易日，不能被静默丢掉。
+
+    真实 26 年面板上有 2414 条观测的日期不在 COMEX 日历内（周频 CFTC 按报告日
+    +4 BDay 推、月度储备按「月末 +8 天」推、BTC 有周末报价）。旧实现用
+    ``series.reindex(calendar)``：label 不匹配就整条消失，引擎只好继续用更老的一条，
+    而 ``factor_states`` 读的是**原始序列** —— 页面显示 2.43（09-07），引擎吃进去
+    2.42（更早那条），「展示 ≠ 计算」正是上一轮刚修好的那类分裂。
+
+    变异验证：把 ``align_series`` 改回 ``series.reindex(calendar)`` 本测试必红。
+    """
+    saturday = next(
+        day
+        for day in pd.date_range(calendar[0], calendar[-1], freq="D")
+        if day.dayofweek == 5
+    )
+    assert saturday not in calendar
+    series = pd.Series([9.0], index=[saturday])
+
+    aligned = engine.align_factors({"gold_close": series}, calendar)["gold_close"]
+
+    after = calendar[calendar > saturday][0]
+    assert aligned.loc[after] == 9.0, "非交易日观测被丢掉了，引擎用了更老的值"
+    # 只向前填充：观测之前的日子仍是空的，不许把它回填到过去
+    before = calendar[calendar < saturday]
+    assert before.size > 0
+    assert aligned.loc[before].isna().all()
 
 
 def test_stale_data_is_marked_and_excluded(panel, calendar):

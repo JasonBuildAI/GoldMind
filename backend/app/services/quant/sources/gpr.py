@@ -4,6 +4,11 @@
 其中的 GPRD 是日度主序列；它与因子的关系是**只入库、先不入模型** ——
 是否进因子集由下一轮预注册决定（见 docs/specs/2026-10-02-量化策略提升路线图.md）。
 
+**发布滞后**：官方文件是周期性刷新的工作簿，不是逐日接口 —— D 日的指数值在 D 日
+黄金收盘（13:30 ET）时根本不在手上，所以与财政部收益率曲线 / EFFR / TGA 同口径，
+整体右移一个工作日（``shift_to_next_trading_day``）。诚实的边界：真实的刷新周期
+可能是周或月，右移一天只是**保守下限**，不等于「D+1 就一定能拿到」。
+
 测试通过注入 get 与假 sheet 对象完成，不出网、不依赖真实文件。
 """
 from __future__ import annotations
@@ -12,7 +17,12 @@ from typing import Callable, Optional
 
 import pandas as pd
 
-from app.services.quant.sources.base import SourceError, clean_series, default_get
+from app.services.quant.sources.base import (
+    SourceError,
+    clean_series,
+    default_get,
+    shift_to_next_trading_day,
+)
 
 GPR_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls"
 GPR_VALUE_COLUMN = "GPRD"
@@ -94,5 +104,6 @@ def fetch(
     response = http_get(GPR_URL, timeout=timeout)
     if getattr(response, "status_code", 200) != 200:
         raise SourceError(f"GPR 官方文件抓取失败：HTTP {response.status_code}")
-    return {"gpr_daily": parse_workbook(response.content)}
+    # D 日的指数值到 D+1 个工作日才算可用（见模块文档的「发布滞后」）
+    return {"gpr_daily": shift_to_next_trading_day(parse_workbook(response.content))}
 

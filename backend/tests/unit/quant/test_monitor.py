@@ -119,6 +119,29 @@ def test_ma200_without_enough_history_is_unavailable(db_session):
     assert "历史样本不足" in row["reason"]
 
 
+def test_the_cftc_ratio_row_is_shown_as_a_percentage(db_session):
+    """`cftc_net_oi_ratio` 存的是**比值**（0.40），行定义的单位是 `%`。
+
+    不换算就会把「净多头占未平仓 40%」印成「0.40 %」—— 差 100 倍，而这一行是给
+    用户看的水位，错了不会被任何东西发现（它是信息行，没有阈值规则兜底）。
+
+    变异验证：去掉 `RowSpec.display_scale` 的换算（或把它改成 1.0），本测试必红。
+    """
+    calendar = pd.date_range(end="2026-09-30", periods=30, freq="B")
+    gold = pd.Series(np.linspace(2000.0, 2400.0, len(calendar)), index=calendar)
+    storage.upsert_series(db_session, "gold_close", gold, source="测试夹具")
+    ratio = pd.Series([0.38, 0.40], index=calendar[-2:])
+    storage.upsert_series(db_session, "cftc_net_oi_ratio", ratio, source="测试夹具")
+
+    rows = {row["key"]: row for row in monitor.build_monitor(db_session)["rows"]}
+
+    row = rows["cftc_net_oi_ratio"]
+    assert row["unit"] == "%"
+    assert row["value"] == pytest.approx(40.0), f"比值没有换算成百分比：{row['value']}"
+    # 变化量同样要按同一个比例换算（+2pp，而不是 +0.02）
+    assert row["change"] == pytest.approx(2.0)
+
+
 def test_stale_rows_keep_the_number_but_lose_the_signal(db_session):
     """仪表盘按声明的更新节奏判陈旧：数值与观测日照示，但不再给多空方向。
 

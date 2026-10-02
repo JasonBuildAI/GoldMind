@@ -374,11 +374,32 @@ function PredictionPanel({ prediction }: { prediction: QuantPredictionItem }) {
         </div>
         <div>
           <dt>期望收益</dt>
-          <dd>{prediction.expected_return === null ? '—' : formatPercent(prediction.expected_return * 100)}</dd>
+          <dd>
+            {prediction.expected_return === null ? '—' : formatPercent(prediction.expected_return * 100)}
+            {prediction.expected_capped ? (
+              <span
+                className="metrics__note"
+                data-testid={`quant-prediction-capped-${prediction.horizon_days}`}
+              >
+                （已封顶：模型原本想报更夸张的幅度，被护栏夹回市场真动过的量级）
+              </span>
+            ) : null}
+          </dd>
         </div>
         <div>
           <dt>不确定度</dt>
-          <dd>{prediction.uncertainty === null ? '—' : `±${formatShare(prediction.uncertainty * 100, 2)}`}</dd>
+          <dd>
+            {prediction.uncertainty === null ? '—' : `±${formatShare(prediction.uncertainty * 100, 2)}`}
+            {prediction.interval_nominal === null ? null : (
+              <span
+                className="metrics__note"
+                data-testid={`quant-prediction-nominal-${prediction.horizon_days}`}
+              >
+                （名义 {formatShare(prediction.interval_nominal * 100, 1)}
+                {prediction.distribution_mode === 'normal' ? ' · 正态兜底' : ' · 经验分布'}）
+              </span>
+            )}
+          </dd>
         </div>
         <div>
           <dt>可用因子</dt>

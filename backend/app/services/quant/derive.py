@@ -148,6 +148,42 @@ def derive_factors(raw: dict[str, pd.Series]) -> dict[str, pd.Series]:
     return derived
 
 
+# 每个因子/额外序列依赖哪些原始序列 —— 与上面的 `add(...)` 一一对应。
+# 为什么要单独列一张表：同步层要把「这个因子为什么没数据」归因到**真正喂它的源**，
+# 而 `required_raw_keys()` 是一个扁平集合，说不出「谁喂谁」。旧实现因此罗列所有
+# 出问题的源，把无关源写进原因（张冠李戴）。
+# 守卫：`tests/unit/test_quant_sync.py` 断言它与 FACTORS + EXTRA_SERIES 完全对齐、
+# 且每个原始序列都在 `required_raw_keys()` 里。
+FACTOR_RAW_KEYS: dict[str, tuple[str, ...]] = {
+    "real_yield_10y": ("ust_real_10y",),
+    "policy_expectation": ("ust_nominal_2y", "effr"),
+    "inflation_expectation": ("ust_nominal_10y", "ust_real_10y"),
+    "dollar_index": ("dxy",),
+    "vix": ("vix",),
+    "credit_appetite": ("hyg", "ief"),
+    "geopolitical": ("news_geo_intensity",),
+    "central_bank": ("cb_gold_reserves",),
+    "cftc_positioning": ("cftc_net",),
+    "etf_shares": ("gld_shares",),
+    "momentum": ("gold_close",),
+    "seasonality": ("gold_close",),
+    "bitcoin": ("btc",),
+    "risk_appetite": ("spy",),
+    # 监控专用序列（同表存储、不参与信号合成）
+    "usdcny": ("usdcny",),
+    "cny_gold": ("gold_close", "usdcny"),
+    "tga": ("tga",),
+    "rrp": ("rrp",),
+    "cftc_oi": ("cftc_oi",),
+    # 下一轮候选信息源
+    "gvz": ("gvz",),
+    "gpr_daily": ("gpr_daily",),
+    "gold_silver_ratio": ("gold_close", "silver_close"),
+    "copper_gold_ratio": ("gold_close", "copper_close"),
+    "cftc_net_oi_ratio": ("cftc_net", "cftc_oi"),
+}
+
+
 def required_raw_keys() -> set[str]:
     """列出定义里每个因子依赖的原始序列，供同步层做可用性报告。"""
     _ = FACTORS  # 定义来自 definitions，这里只是提醒调用方：因子集合以它为准
