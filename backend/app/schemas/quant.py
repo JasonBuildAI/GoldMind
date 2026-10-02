@@ -109,6 +109,9 @@ class QuantPredictionItem(BaseModel):
     direction_reason: Optional[str] = None
     as_of: Optional[date] = None
     base_price: Optional[float] = None
+    # 基准价口径：量化基准（gold_close 日收盘序列的最后一点）。
+    base_basis: str = "quant_basis"
+    base_basis_label: str = "量化基准"
     target_price: Optional[float] = None
     expected_return: Optional[float] = None
     uncertainty: Optional[float] = None
@@ -148,6 +151,9 @@ class Decomposition(BaseModel):
     status: str
     reason: Optional[str] = None
     as_of: Optional[date] = None
+    # market_price 就是量化基准价（gold_close 最后一点）。
+    basis: str = "quant_basis"
+    basis_label: str = "量化基准"
     market_price: Optional[float] = None
     fair_value: Optional[float] = None
     deviation_pct: Optional[float] = None
@@ -156,9 +162,20 @@ class Decomposition(BaseModel):
     blocks: List[DecompositionBlock] = []
 
 
+class PriceBasis(BaseModel):
+    """一处价格的口径：basis 机器用、label 给人看，source / as_of 说明来处。"""
+
+    basis: str
+    label: str
+    source: Optional[str] = None
+    as_of: Optional[str] = None
+
+
 class QuantPredictionsResponse(BaseModel):
     model_version: str
     as_of: Optional[date] = None
+    # 基准价口径：量化引擎的目标价与区间全部由 gold_close 日收盘派生。
+    price_basis: Optional[PriceBasis] = None
     fair_value: Decomposition
     predictions: List[QuantPredictionItem]
 

@@ -310,6 +310,8 @@ class GoldService:
             "data_source": realtime_info.get("source_name")
             or realtime_info.get("source", "未知"),
             "is_realtime": realtime_info.get("source") != "database",
+            # 报价自身的时间戳（实时源给日期，库兜底给 updated_at）。
+            "price_as_of": realtime_info.get("date") or realtime_info.get("updated_at"),
         }
     
     def _calculate_market_status(

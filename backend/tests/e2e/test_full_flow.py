@@ -232,7 +232,13 @@ def test_full_user_journey(client, seed_gold_prices, seed_news, smart_llm):
 
     correlation = client.get("/api/gold/prices/correlation").json()
     assert len(correlation) >= 10
-    assert set(correlation[0]) == {"date", "gold_price", "dollar_index"}
+    assert {"date", "gold_price", "dollar_index"} <= set(correlation[0])
+    # 2.0.2 起每个点都带口径与 as-of：测试网络闸门挡住实时源，
+    # 因此这里的点全部是日收盘口径（字段契约见 tests/integration/test_price_basis_api.py）。
+    assert correlation[0]["gold_basis"] == "close"
+    assert correlation[0]["gold_basis_label"] == "日收盘"
+    assert correlation[0]["dollar_basis"] == "close"
+    assert correlation[0]["as_of"] == correlation[0]["date"]
 
     # --- 3. 新闻 ---
     news = client.get("/api/gold/news").json()

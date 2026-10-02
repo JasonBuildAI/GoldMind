@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.models.analysis import ModelEvaluation, Prediction
 from app.services.cache_manager import CacheManager
+from app.services import price_basis
 from app.services.quant import (
     backtest,
     decompose,
@@ -93,9 +94,17 @@ def live_predictions(
         engine.build_snapshot(factors, close, horizon=horizon) for horizon in horizons
     ]
     decomposition = decompose.decompose_latest(factors, close)
+    as_of = snapshots[0].as_of if snapshots else None
     return {
         "model_version": MODEL_VERSION,
-        "as_of": snapshots[0].as_of if snapshots else None,
+        "as_of": as_of,
+        # 量化基准价 = gold_close 日收盘序列的最后一点；页面据此逐处标注口径。
+        "price_basis": {
+            "basis": price_basis.QUANT,
+            "label": price_basis.label(price_basis.QUANT),
+            "source": "gold_close 日收盘序列",
+            "as_of": as_of.isoformat() if as_of else None,
+        },
         "fair_value": decomposition.to_dict(),
         "predictions": [
             _prediction_payload(snapshot, close) for snapshot in snapshots
@@ -125,6 +134,8 @@ def _prediction_payload(snapshot: engine.SignalSnapshot, close: pd.Series) -> di
         "direction_reason": direction_reason,
         "as_of": snapshot.as_of,
         "base_price": snapshot.base_price,
+        "base_basis": price_basis.QUANT,
+        "base_basis_label": price_basis.label(price_basis.QUANT),
         "target_price": snapshot.target_price,
         "expected_return": snapshot.expected_return,
         "uncertainty": snapshot.uncertainty,

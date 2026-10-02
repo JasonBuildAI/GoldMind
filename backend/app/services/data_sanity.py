@@ -249,3 +249,64 @@ def compare_stores(
     report["keys"].sort(key=lambda item: item["mismatched"], reverse=True)
     report["keys"] = report["keys"][:max_examples]
     return report
+
+
+# 实时报价 vs 最新收盘：同日偏差阈值（超过就点名，只报告不改数）。
+QUOTE_DIVERGENCE_THRESHOLD = 0.03
+
+
+def audit_quote_divergence(
+    close_point: Optional[tuple[str, float]],
+    quote: Optional[dict],
+    *,
+    threshold: float = QUOTE_DIVERGENCE_THRESHOLD,
+) -> list[Finding]:
+    """把「最新日收盘」与「实时报价」对账：同一天、偏差越过阈值就点名。
+
+    为什么只查同一天：跨天的价差是真实行情，不是数据问题。同一天里出现
+    3% 以上的缺口，通常意味着两路数据有一路错位（口径 / 时区 / 单位），
+    展示之前必须先核对。只报告、不改数：谁对由人定。
+    """
+    if not close_point or not quote:
+        return []
+    close_date, close_value = close_point
+    quote_date = str(quote.get("date") or "")[:10]
+    if not close_date or not quote_date or close_date != quote_date:
+        return []
+    if close_value is None:
+        return []
+    try:
+        price = float(quote.get("price"))
+    except (TypeError, ValueError):
+        return []
+    denominator = max(1.0, abs(float(close_value)), abs(price))
+    relative = abs(price - float(close_value)) / denominator
+    if relative <= threshold:
+        return []
+    return [
+        Finding(
+            "quote_divergence",
+            "gold_close",
+            close_date,
+            f"gold_close 在 {close_date} 的收盘 {close_value} 与实时报价 {price}"
+            f"（{quote.get('source_name') or quote.get('source') or '未知来源'}）"
+            f"偏差 {relative * 100:.2f}%，同一天超过阈值 {threshold * 100:.0f}%，两路口径需要人工核对",
+        )
+    ]
+
+
+def latest_close_point(session: Session) -> Optional[tuple[str, float]]:
+    """最新一条 gold_close（日收盘）观测：``(YYYY-MM-DD, 值)``；没有就返回 None。
+
+    同日对账只需要这一点：拿它和实时报价比。取不到（空库 / 值缺失）时
+    返回 None —— 对账函数会跳过，不编一个「0」出来。
+    """
+    row = session.execute(
+        select(FactorObservation.obs_date, FactorObservation.value)
+        .where(FactorObservation.factor_key == "gold_close")
+        .order_by(FactorObservation.obs_date.desc())
+        .limit(1)
+    ).first()
+    if row is None or row[0] is None or row[1] is None:
+        return None
+    return row[0].isoformat(), float(row[1])

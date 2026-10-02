@@ -7,6 +7,7 @@
     python scripts/check_data_sanity.py --strict         # 跨库偏差也算失败
     python scripts/check_data_sanity.py --fix            # 删除未来日期观测（先备份！）
     python scripts/check_data_sanity.py --long-db path/to/long.db
+    python scripts/check_data_sanity.py --offline          # 不出网：跳过实时报价对账
 
 退出码：0 = 干净；1 = 有发现（或 --strict 下有跨库偏差）；2 = 库打不开。
 `--fix` 只删「观测日期晚于今天」的行，且会打印删除行数与回滚提示；
@@ -41,6 +42,7 @@ KIND_LABELS = {
     "nonfinite": "非法数值（NaN/inf）",
     "bounds": "越过合理性区间",
     "duplicate": "重复键",
+    "quote_divergence": "报价背离（实时 vs 收盘，同日）",
 }
 
 
@@ -67,9 +69,22 @@ def run(
     strict: bool = False,
     tolerance: float = 1e-6,
     today: Optional[date] = None,
+    realtime_quote: Optional[dict] = None,
 ) -> tuple[int, list[str]]:
     """体检（可选修复）。返回 (退出码, 报告行)；测试直接调用这个入口。"""
     lines: list[str] = []
+    if realtime_quote:
+        lines.append(
+            "[实时报价] {source} @ {date}：{price}（用于同日收盘对账）".format(
+                source=realtime_quote.get("source_name")
+                or realtime_quote.get("source")
+                or "未知",
+                date=realtime_quote.get("date")
+                or realtime_quote.get("updated_at")
+                or "未知",
+                price=realtime_quote.get("price"),
+            )
+        )
     today = today or timeutil.today()
     url = database_url or settings.DATABASE_URL
     # settings.DATABASE_URL 是 SecretStr（防日志泄露）；这里必须显式解包。
@@ -85,6 +100,12 @@ def run(
 
     with Session(engine) as session:
         findings = data_sanity.audit_service_store(session, today=today)
+        if realtime_quote is not None:
+            findings.extend(
+                data_sanity.audit_quote_divergence(
+                    data_sanity.latest_close_point(session), realtime_quote
+                )
+            )
         if fix and any(finding.kind == "future" for finding in findings):
             deleted = data_sanity.purge_future_observations(session, today=today)
             lines.append(f"[服务库] 已删除 {deleted} 行未来日期观测；回滚：用备份库覆盖本库")
@@ -144,11 +165,30 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--long-db", type=Path, default=None, help=f"长库路径（默认 {DEFAULT_LONG_DB.name}）")
     parser.add_argument("--fix", action="store_true", help="删除未来日期观测（不可逆，先备份）")
     parser.add_argument("--strict", action="store_true", help="跨库不一致也算失败")
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="跳过实时报价（不做同日收盘对账），只查库内数据",
+    )
     parser.add_argument("--tolerance", type=float, default=1e-6, help="跨库重叠值的相对容差（默认 1e-6）")
     args = parser.parse_args(argv)
 
     long_db = args.long_db or (DEFAULT_LONG_DB if DEFAULT_LONG_DB.exists() else None)
-    code, lines = run(long_db=long_db, fix=args.fix, strict=args.strict, tolerance=args.tolerance)
+    realtime_quote = None
+    if not args.offline:
+        try:
+            from app.services.realtime_price import get_realtime_gold_price
+
+            realtime_quote = get_realtime_gold_price()
+        except Exception as exc:  # 上游不可达时如实说明，不拦整体体检
+            print(f"[实时报价] 取不到，跳过同日对账：{type(exc).__name__}: {exc}")
+    code, lines = run(
+        long_db=long_db,
+        fix=args.fix,
+        strict=args.strict,
+        tolerance=args.tolerance,
+        realtime_quote=realtime_quote,
+    )
     for line in lines:
         print(line)
     return code

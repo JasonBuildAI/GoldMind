@@ -178,3 +178,89 @@ def test_run_unwraps_secretstr_database_url(tmp_path, monkeypatch):
     code, lines = check_data_sanity.run(long_db=None, today=TODAY)
 
     assert code == 0, lines
+
+
+def test_same_day_quote_divergence_over_threshold_is_flagged(tmp_path):
+    """同一天、实时报价与收盘差 4% → 必须点名（A9 第 2 条）。"""
+    url = _service_url(tmp_path)
+    _add(url, "gold_close", "2026-10-02", 4200.0)
+
+    engine = create_engine(url)
+    try:
+        with Session(engine) as session:
+            point = data_sanity.latest_close_point(session)
+            assert point == ("2026-10-02", 4200.0)
+            findings = data_sanity.audit_quote_divergence(
+                point, {"date": "2026-10-02", "price": 4368.0, "source": "sina"}
+            )
+    finally:
+        engine.dispose()
+
+    assert [finding.kind for finding in findings] == ["quote_divergence"]
+    assert findings[0].factor_key == "gold_close"
+    assert findings[0].obs_date == "2026-10-02"
+    assert "3.85%" in findings[0].detail
+
+
+def test_same_day_quote_within_threshold_is_not_flagged(tmp_path):
+    url = _service_url(tmp_path)
+    _add(url, "gold_close", "2026-10-02", 4200.0)
+
+    engine = create_engine(url)
+    try:
+        with Session(engine) as session:
+            point = data_sanity.latest_close_point(session)
+            findings = data_sanity.audit_quote_divergence(
+                point, {"date": "2026-10-02", "price": 4230.0, "source": "sina"}
+            )
+    finally:
+        engine.dispose()
+
+    assert findings == []
+
+
+def test_quote_divergence_ignores_other_days(tmp_path):
+    """跨天的价差是真实行情，不是数据问题 —— 不许拿来报警。"""
+    url = _service_url(tmp_path)
+    _add(url, "gold_close", "2026-10-01", 4200.0)
+
+    engine = create_engine(url)
+    try:
+        with Session(engine) as session:
+            point = data_sanity.latest_close_point(session)
+            findings = data_sanity.audit_quote_divergence(
+                point, {"date": "2026-10-02", "price": 4368.0, "source": "sina"}
+            )
+    finally:
+        engine.dispose()
+
+    assert findings == []
+
+
+def test_quote_divergence_needs_both_sides_instead_of_inventing_a_value(tmp_path):
+    """缺收盘或缺报价时跳过，不许用 0 代替缺失值。"""
+    assert data_sanity.audit_quote_divergence(None, {"date": "2026-10-02", "price": 1.0}) == []
+    assert data_sanity.audit_quote_divergence(("2026-10-02", 4200.0), None) == []
+    assert (
+        data_sanity.audit_quote_divergence(
+            ("2026-10-02", 4200.0), {"date": "2026-10-02", "price": None}
+        )
+        == []
+    )
+
+
+def test_sanity_script_reports_quote_divergence_as_a_finding(tmp_path):
+    """脚本层：同一路对账要真的接进 run()，而不是只在单元函数里自转。"""
+    url = _service_url(tmp_path)
+    _add(url, "gold_close", "2026-10-02", 4200.0)
+
+    code, lines = check_data_sanity.run(
+        url,
+        long_db=None,
+        today=TODAY,
+        realtime_quote={"date": "2026-10-02", "price": 4368.0, "source": "sina"},
+    )
+
+    assert code == 1
+    assert any("报价背离" in line for line in lines)
+    assert any("[实时报价]" in line for line in lines)

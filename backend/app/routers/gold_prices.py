@@ -10,9 +10,25 @@ from app.schemas.gold_price import (
     CorrelationDataResponse,
     GoldStatsResponse
 )
+from app.services import price_basis
 from app.services.gold_service import GoldService
 
 router = APIRouter()
+
+def _basis_fields(prefix: str, meta: dict, fallback_source: str) -> dict:
+    """把 `price_basis.realtime_basis` 的元数据映射成响应字段（gold_* / dollar_*）。
+
+    没有元数据时按日收盘兜底：调用点可能没拿到实时源（例如美元指数
+    只沿用了上一行的历史值），此时它确实是收盘口径。
+    """
+    return {
+        f"{prefix}_basis": meta.get("basis", price_basis.CLOSE),
+        f"{prefix}_basis_label": meta.get(
+            "basis_label", price_basis.label(price_basis.CLOSE)
+        ),
+        f"{prefix}_source": meta.get("source") or fallback_source,
+    }
+
 
 def _parse_date(value: str, field: str) -> datetime:
     """把 YYYY-MM-DD 解析成 datetime；格式不对返回 422 而不是 500。
@@ -61,11 +77,16 @@ async def get_daily_prices(
     
     prices_data = await to_thread.run_sync(fetch_data)
     
+    # 历史行一律日收盘口径；下面若补实时点，只改被替换 / 追加的那一点。
     result = [
         DailyPriceResponse(
             date=p["date"],
             price=p["price"],
-            volume=p["volume"]
+            volume=p["volume"],
+            basis=price_basis.CLOSE,
+            basis_label=price_basis.label(price_basis.CLOSE),
+            source="gold_prices 日线",
+            as_of=p["date"],
         )
         for p in prices_data
     ]
@@ -81,6 +102,9 @@ async def get_daily_prices(
         if realtime_info:
             today = timeutil.today_str()
             current_price = realtime_info.get("price", 0)
+            # 口径由 realtime_price 的 source 决定：真实时源 → 实时报价；
+            # 实时源全挂退回库里的收盘 → 日收盘（不许把兜底价说成实时）。
+            realtime_meta = price_basis.realtime_basis(realtime_info)
             
             # 检查最后一天是否是今天
             last_date = result[-1].date
@@ -89,14 +113,16 @@ async def get_daily_prices(
                 result[-1] = DailyPriceResponse(
                     date=today,
                     price=current_price,
-                    volume=0
+                    volume=0,
+                    **realtime_meta,
                 )
             else:
                 # 添加今天的实时价格
                 result.append(DailyPriceResponse(
                     date=today,
                     price=current_price,
-                    volume=0
+                    volume=0,
+                    **realtime_meta,
                 ))
 
     # limit 此前只是被声明和校验，从未真正生效 —— 传 limit=3 照样返回全部数据。
@@ -138,7 +164,14 @@ async def get_correlation_data(
         CorrelationDataResponse(
             date=item["date"],
             gold_price=item["gold_price"],
-            dollar_index=item["dollar_index"]
+            dollar_index=item["dollar_index"],
+            gold_basis=price_basis.CLOSE,
+            gold_basis_label=price_basis.label(price_basis.CLOSE),
+            gold_source="gold_prices 日线",
+            dollar_basis=price_basis.CLOSE,
+            dollar_basis_label=price_basis.label(price_basis.CLOSE),
+            dollar_source="dollar_index 日线",
+            as_of=item["date"],
         )
         for item in correlation_data
     ]
@@ -161,12 +194,16 @@ async def get_correlation_data(
         if realtime_info:
             today = timeutil.today_str()
             current_gold_price = realtime_info.get("price", 0)
+            gold_meta = price_basis.realtime_basis(realtime_info)
 
             if dollar_realtime:
                 current_dollar_index = dollar_realtime.get("price", 0)
+                # 这个接口只在真取到上游数据时才返回，所以显式按实时报价标注。
+                dollar_meta = price_basis.realtime_basis(dollar_realtime, force_realtime=True)
             else:
                 # 拿不到实时美元指数时沿用历史序列的最后一个值
                 current_dollar_index = result[-1].dollar_index
+                dollar_meta = {}
 
             # 检查最后一天是否是今天
             last_date = result[-1].date
@@ -176,14 +213,20 @@ async def get_correlation_data(
                 result[-1] = CorrelationDataResponse(
                     date=today,
                     gold_price=current_gold_price,
-                    dollar_index=current_dollar_index
+                    dollar_index=current_dollar_index,
+                    **_basis_fields("gold", gold_meta, "gold_prices 日线"),
+                    **_basis_fields("dollar", dollar_meta, "dollar_index 日线"),
+                    as_of=today,
                 )
             else:
                 # 添加今天的实时价格
                 result.append(CorrelationDataResponse(
                     date=today,
                     gold_price=current_gold_price,
-                    dollar_index=current_dollar_index
+                    dollar_index=current_dollar_index,
+                    **_basis_fields("gold", gold_meta, "gold_prices 日线"),
+                    **_basis_fields("dollar", dollar_meta, "dollar_index 日线"),
+                    as_of=today,
                 ))
 
     # 先按**时间窗**裁（days 此前完全没被声明，前端传了也没用）。
@@ -228,7 +271,13 @@ async def get_gold_stats():
     if not stats:
         raise HTTPException(status_code=404, detail="暂无数据")
 
-    return GoldStatsResponse(**stats)
+    # 口径不靠 is_realtime 反推：service 已经知道这一价是实时还是收盘。
+    basis = price_basis.REALTIME if stats.get("is_realtime") else price_basis.CLOSE
+    return GoldStatsResponse(
+        **stats,
+        price_basis=basis,
+        price_basis_label=price_basis.label(basis),
+    )
 
 @router.get("/latest")
 async def get_latest_price():
@@ -247,6 +296,11 @@ async def get_latest_price():
                 "date": latest.date.strftime("%Y-%m-%d"),
                 "price": latest.close_price,
                 "change": latest.change_percent,
+                # 这里读的就是库里的日收盘，口径固定是 close。
+                "basis": price_basis.CLOSE,
+                "basis_label": price_basis.label(price_basis.CLOSE),
+                "source": "gold_prices 日线",
+                "as_of": latest.date.strftime("%Y-%m-%d"),
             }
 
     latest = await to_thread.run_sync(fetch_latest)
