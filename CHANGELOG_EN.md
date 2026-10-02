@@ -12,16 +12,34 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ## [Unreleased]
 
+### Added
+
+- The 13 high-authority digest sources now feed all four LLM analyses: factors / institutions / advice / market summary share one "analysis input packet"; news goes from titles-only to "title + summary (truncated, HTML stripped)", and source, time and link travel into the prompt
+- Deterministic structure validation of LLM output (`services/factor_validation.py`): id and title dedupe, empty-item filtering, at most 5 items, best-effort numeric citation checks; a failing response degrades to an empty structure instead of passing through
+- Predictions are stored as an **append-only daily snapshot**: one row per `(model version, horizon, as-of date)`, updated in place within a day and kept across days, so "what was said then" can be replayed
+- Backtests report **CRPS** (a distribution-level score) and its skill against the zero-drift benchmark next to the Brier skill, in both the API and the research page
+- The research page states the data window (start / end, trading days, years): every number is recomputed on the current database window, and the page wins when its sample counts disagree with snapshots cited elsewhere
+- Backup entry point `scripts/backup_db.py`: full copy plus per-table row-count check for SQLite; MySQL gets explicit `mysqldump` guidance and is not dumped on the user's behalf
+- New M-family candidates in the quant lab: walk-forward Ridge directly on the factor matrix (realized pairs only, means/stds estimated inside the same window), compared with "compose first, then univariate regression"; definitions stay in `scripts/quant_lab.py` and never enter the live service
+- LLM endpoint compliance guard: a `tp-` key combined with a token-plan endpoint triggers a one-time constructor warning (no key material) with switch guidance; `/health` exposes `token_plan_backend`
+
+### Changed
+
+- The four LLM services consume one shared "analysis input packet" (same window, same price context, same skill note), removing per-service drift
+- The quant page moved the uncalibrated factor tilt and the sync report's "not due" noise off its main tables: the tilt sits in a details block, per-source status sits in a folded "data source status" block, and the main surface keeps conclusions and actionable items only
+- Dashboard polling drops from 10 s to 30 s, pauses while the tab is hidden and catches up immediately on return (idle request rate ~30/min -> ~8/min)
+
 ### Fixed
 
+- The investment-advice window now rolls with the calendar (the hard-coded `datetime(2025,1,1)` is gone); "volatility range" is renamed to "high-low amplitude" with its definition written down, prompt synced
+- `etf_shares` refuses observation dates later than today (storage guard + source fix); future dates no longer appear on the page
+- The news-scan institution summary is assembled deterministically from the structured rows, so the LLM text can no longer contradict the structured data
+- The market summary never states institutional views when institution data is missing (deterministic sanitising + prompt hardening)
+- Investment advice no longer calls the LLM with no factors / no institutions / no news: it returns price statistics plus a "not enough data" note, flagged `insufficient_data` in the UI
 - Test-database guard: the database name in `GOLDMIND_TEST_DATABASE_URL` must contain `test`, or the suite refuses to start at import time (2026-10-02 incident: it pointed at the dev database and `drop_all` wiped 9 business tables)
 - Missing database/tables now answer **503 + `python init_db.py` guidance** (was a bare 500); startup runs a schema self-check and logs an ERROR when tables are missing; other SQL errors still return 500
 - When the external quote source (Yahoo) is rate-limited or down, the quant engine falls back to the locally synced `gold_prices` / `dollar_index` tables for the benchmark and the dollar factor, labelled as such; no more whole-page "missing gold price series"
 - The frontend retries **429 / 5xx / network errors** with exponential backoff (429 honours `Retry-After`, at most 3 attempts); in-flight GETs for the same URL are merged into one request; `POST` and `?refresh=true` are never retried
-
-### Changed
-
-- Dashboard polling drops from 10 s to 30 s, pauses while the tab is hidden and catches up immediately on return (idle request rate ~30/min -> ~8/min)
 
 ---
 
