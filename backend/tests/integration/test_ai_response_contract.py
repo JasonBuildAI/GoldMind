@@ -197,3 +197,31 @@ def test_cache_hit_without_last_updated_is_backfilled(client, path, cache_key, p
     assert isinstance(body.get("last_updated"), str) and body["last_updated"], (
         f"{path} 没有把 last_updated 兜底成非空字符串：{body.get('last_updated')!r}"
     )
+
+@pytest.mark.integration
+def test_cached_advice_without_contract_keys_is_backfilled(client, seed_news):
+    """回归（2026-10-03 真实栈实测 500）：模型漏吐 `disclaimer` → 缓存命中 → 接口崩。
+
+    模型在截断重试后的输出没带全契约键，缓存里就一直缺；服务出口必须把缺键
+    兜底成空值（不编造内容），响应保持 200。与 `last_updated` 的兜底同类：
+    模型漏键不能变成接口崩溃。
+    """
+    from app.services.cache_manager import CacheManager
+
+    seed_news(count=1, hours_ago=1)
+    CacheManager("investment_advice").set(
+        {
+            "market_assessment": {"risk_level": "high"},
+            "strategies": [{"type": "conservative", "title": "保守配置"}],
+            "risk_warning": "注意波动风险",
+            # 故意缺 core_principles 与 disclaimer —— 2026-10-03 实测的坏缓存形状
+        }
+    )
+
+    response = client.get("/api/gold/investment-advice-ai?refresh=false")
+
+    assert response.status_code == 200, "缺契约键的缓存把接口打崩了（响应模型 500）"
+    body = response.json()
+    assert body["disclaimer"] == ""
+    assert body["core_principles"] == []
+    assert body["strategies"], "归一化不能把已有内容清掉"

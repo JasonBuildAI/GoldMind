@@ -208,3 +208,85 @@ def test_market_summary_parsed_content_is_recorded(fake_llm):
     analyzer.cache.set(first)
     analyzer.analyze(None, "震荡", [], [], [], [])
     assert len(fake_llm.calls) == 1, "真内容记录后第二轮仍然重复调用了 LLM"
+
+def _valid_advice_payload() -> str:
+    return json.dumps(
+        {
+            "market_assessment": {"risk_level": "high"},
+            "strategies": [{"type": "conservative", "title": "保守配置"}],
+            "core_principles": [{"title": "风控优先"}],
+            "risk_warning": "注意波动风险",
+            "disclaimer": "仅供参考",
+        }
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 投资建议：同一约定 + 缺契约键不许打崩接口（2026-10-03 真实栈 500 的回归）
+# --------------------------------------------------------------------------- #
+@pytest.mark.integration
+def test_advice_empty_output_is_retried(db_session, fake_llm, seed_news, seed_gold_prices):
+    from app.services.investment_advice_service import InvestmentAdviceAnalyzer
+
+    seed_news(count=1, hours_ago=1)
+    seed_gold_prices(days=5)
+
+    analyzer = InvestmentAdviceAnalyzer()
+    fake_llm.responses.append("{}")
+    first = analyzer.analyze(db_session, "震荡", [], [], [])
+    assert first["strategies"] == []
+    analyzer.cache.set(first)
+
+    analyzer.analyze(db_session, "震荡", [], [], [])
+    assert len(fake_llm.calls) == 2, (
+        "空投资建议被当成成功记了指纹：输入不变时第二轮会永远跳过重试"
+    )
+
+
+@pytest.mark.integration
+def test_advice_parsed_content_is_recorded(db_session, fake_llm, seed_news, seed_gold_prices):
+    from app.services.investment_advice_service import InvestmentAdviceAnalyzer
+
+    seed_news(count=1, hours_ago=1)
+    seed_gold_prices(days=5)
+
+    analyzer = InvestmentAdviceAnalyzer()
+    fake_llm.responses.append(_valid_advice_payload())
+    first = analyzer.analyze(db_session, "震荡", [], [], [])
+    assert first["strategies"], "夹具输出没有策略内容，用例前提不成立"
+
+    analyzer.cache.set(first)
+    analyzer.analyze(db_session, "震荡", [], [], [])
+    assert len(fake_llm.calls) == 1, "真内容记录后第二轮仍然重复调用了 LLM"
+
+
+@pytest.mark.integration
+def test_advice_missing_contract_keys_is_normalized(db_session, fake_llm, seed_news, seed_gold_prices):
+    """模型漏吐 `disclaimer` / `core_principles` 时补齐空值 —— 不编内容、不崩接口。"""
+    from app.services.investment_advice_service import (
+        ADVICE_CONTRACT_DEFAULTS,
+        InvestmentAdviceAnalyzer,
+    )
+
+    seed_news(count=1, hours_ago=1)
+    seed_gold_prices(days=5)
+
+    analyzer = InvestmentAdviceAnalyzer()
+    fake_llm.responses.append(
+        json.dumps(
+            {
+                "market_assessment": {"risk_level": "high"},
+                "strategies": [{"type": "conservative", "title": "保守配置"}],
+                "risk_warning": "注意波动风险",
+                # 故意缺 core_principles 与 disclaimer
+            }
+        )
+    )
+    result = analyzer.analyze(db_session, "震荡", [], [], [])
+
+    for key in ADVICE_CONTRACT_DEFAULTS:
+        assert key in result, f"归一化后仍缺契约键 {key}"
+    assert result["core_principles"] == [], "缺失的 core_principles 应补空列表，不能编造"
+    assert result["disclaimer"] == "", "缺失的 disclaimer 应补空字符串，不能编造"
+    assert result["market_assessment"] == {"risk_level": "high"}
+    assert result["strategies"], "归一化不能清掉已有内容"

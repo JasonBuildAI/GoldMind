@@ -33,6 +33,47 @@ _executor = ThreadPoolExecutor(max_workers=2)
 GATE_KEY = "investment_advice"
 
 
+# 响应契约要求的顶层键与缺省值（schemas/analysis_ai.InvestmentAdviceAIResponse）。
+ADVICE_CONTRACT_DEFAULTS: Dict[str, Any] = {
+    "market_assessment": {},
+    "strategies": [],
+    "core_principles": [],
+    "risk_warning": "",
+    "disclaimer": "",
+}
+
+
+def normalize_advice_result(result: Any) -> Dict[str, Any]:
+    """把模型（或缓存）结果补齐到响应契约的形状；缺字段给空值，不编内容。
+
+    2026-10-03 真实栈验收实测：模型这份输出漏吐 `disclaimer`（截断重试后的
+    输出没带全键），缓存里就一直缺这个键；响应模型校验失败，接口整个 500。
+    与 `last_updated` 的兜底同属一类问题：**模型漏键不能变成接口崩溃**。
+    这里只做形状归一（dict / list / str），不填充任何具体数字或文案。
+    """
+    if not isinstance(result, dict):
+        return dict(ADVICE_CONTRACT_DEFAULTS)
+    normalized = dict(result)
+    for key, default in ADVICE_CONTRACT_DEFAULTS.items():
+        value = normalized.get(key)
+        if isinstance(default, dict) and not isinstance(value, dict):
+            normalized[key] = {}
+        elif isinstance(default, list) and not isinstance(value, list):
+            normalized[key] = []
+        elif isinstance(default, str) and not isinstance(value, str):
+            normalized[key] = "" if value is None else str(value)
+    return normalized
+
+
+def advice_has_content(result: Dict[str, Any]) -> bool:
+    """是否真的产出了可展示的策略内容（空结构按失败处理，下轮重试）。"""
+    return bool(
+        result.get("market_assessment")
+        or result.get("strategies")
+        or result.get("risk_warning")
+    )
+
+
 class InvestmentAdviceAnalyzer:
     """使用LangChain Agent分析市场数据，生成个性化投资建议"""
 
@@ -365,9 +406,11 @@ class InvestmentAdviceAnalyzer:
                 else:
                     json_str = content.strip()
                 
-                result = json.loads(json_str)
-                # 只有真正调用并解析成功才记录指纹：失败路径下次仍要重试。
-                llm_gate.gate.record(GATE_KEY, fingerprint)
+                result = normalize_advice_result(json.loads(json_str))
+                # 只有解析出真内容才记录指纹（与多空 / 机构同一约定）：
+                # 空结构按失败处理、下轮重试；形状已归一，缺键不会再打崩接口。
+                if advice_has_content(result):
+                    llm_gate.gate.record(GATE_KEY, fingerprint)
                 return result
                 
             except json.JSONDecodeError as e:
@@ -473,13 +516,15 @@ class InvestmentAdviceService:
         if not use_cache:
             logger.info("[InvestmentAdvice] 强制刷新，执行实时 LLM 分析...")
             try:
-                result = self.analyzer.analyze(
-                    self.db,
-                    market_status,
-                    bullish_factors or [],
-                    bearish_factors or [],
-                    institution_predictions or [],
-                    force=True,
+                result = normalize_advice_result(
+                    self.analyzer.analyze(
+                        self.db,
+                        market_status,
+                        bullish_factors or [],
+                        bearish_factors or [],
+                        institution_predictions or [],
+                        force=True,
+                    )
                 )
                 self.cache.set(result)
                 result["metadata"] = self._build_metadata(
@@ -494,6 +539,9 @@ class InvestmentAdviceService:
         # 1. 首先尝试文件缓存（最快，支持多进程共享）
         cached_data = self.cache.get()
         if cached_data:
+            # 老缓存可能缺契约键（见 normalize_advice_result 的注释）——
+            # 读出口再兜一层，缺键不许把整个接口带崩。
+            cached_data = normalize_advice_result(cached_data)
             cached_data["metadata"] = self._build_metadata(
                 cached_data, cached=True, cache_source="file"
             )
