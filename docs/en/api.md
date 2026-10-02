@@ -47,6 +47,8 @@ The running service also serves interactive documentation at `http://localhost:8
 | `GET` | `/api/gold/market-summary-ai` | AI-generated gold market summary. |
 | `POST` | `/api/gold/market-summary-ai/refresh` | Refresh the market summary. (**calls the LLM**, stricter rate limit) |
 | `GET` | `/api/gold/news` | News list, filterable by source and sentiment (no pagination; first `limit` rows only). |
+| `GET` | `/api/gold/news/digest` | Message board: high-authority gold headlines ranked by importance and confidence, with a Top-10 list per window (24h / 7d / 30d). Windows overlap by design; an empty database returns `has_data=false` plus a reason, never fabricated items. |
+| `POST` | `/api/gold/news/digest/refresh` | Crawl every configured source now and store new items, returning the fetch report (sources ok/failed, new items, skipped entries). No LLM calls. (**heavy operation**, stricter rate limit) |
 | `GET` | `/api/gold/news/sentiment/summary` | News sentiment distribution. Note: rows are always stored as NEUTRAL — this project does no sentiment analysis, so this is always all-neutral; the field exists only to keep the response shape stable. |
 | `GET` | `/api/gold/news/{news_id}` | Single news item. |
 | `GET` | `/api/gold/predictions` | Stored price predictions. The table holds real rows: the quant engine (services/quant) writes one per refresh. |

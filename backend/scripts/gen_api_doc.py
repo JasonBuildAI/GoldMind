@@ -101,6 +101,15 @@ SUMMARY_EN: dict[str, str] = {
     "GET /api/gold/news": (
         "News list, filterable by source and sentiment (no pagination; first `limit` rows only)."
     ),
+    "GET /api/gold/news/digest": (
+        "Message board: high-authority gold headlines ranked by importance and confidence, "
+        "with a Top-10 list per window (24h / 7d / 30d). Windows overlap by design; "
+        "an empty database returns `has_data=false` plus a reason, never fabricated items."
+    ),
+    "POST /api/gold/news/digest/refresh": (
+        "Crawl every configured source now and store new items, returning the fetch report "
+        "(sources ok/failed, new items, skipped entries). No LLM calls."
+    ),
     "GET /api/gold/news/sentiment/summary": (
         "News sentiment distribution. Note: rows are always stored as NEUTRAL — this project "
         "does no sentiment analysis, so this is always all-neutral; the field exists only to "

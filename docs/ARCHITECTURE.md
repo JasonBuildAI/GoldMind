@@ -160,6 +160,7 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | `gold_prices` | 金价 OHLC，`date` 唯一 |
 | `dollar_index` | 美元指数，`date` 唯一 |
 | `gold_news` | 新闻；`published_at` 有索引 |
+| `news_digest_items` | 消息板块的高权威条目（与 `gold_news` 完全隔离）；`url` 去重（MySQL 前缀索引 191）、`published_at` 有索引 |
 | `market_factors` | 多空因子（`type` 区分） |
 | `institution_views` | 机构观点；`as_of_date` / `source` 记录每条预测最近一次被核实的日期与线索来源（`web_search` / `news_scan` / `legacy`），老库升级走 `scripts/migrate_institution_views.py`（只加列/补数据，不删行） |
 | `predictions` | 量化引擎（`services/quant/service.py`）每次刷新写入：方向、周期、基准价、目标价、得分、期望收益、不确定度与模型版本 |
@@ -195,6 +196,7 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | `LLM_TRUST_ENV` | `false` | 是否读取宿主代理环境变量 |
 | `CACHE_DIR` | `backend/cache` | 文件缓存目录 |
 | `NEWS_RSS_SOURCES` | 内置四个源 | 格式 `名称\|URL,名称\|URL` |
+| `NEWS_DIGEST_SOURCES` | 内置 13 个高权威源 | 消息板块来源池，格式 `名称\|URL\|tier\|relevance`；留空用内置默认池 |
 | `CORS_ALLOW_ORIGINS` | 本地开发地址 | 不要填 `*` |
 | `RATE_LIMIT_PER_MINUTE` | `60` | 普通接口每 IP 上限 |
 | `RATE_LIMIT_AI_PER_MINUTE` | `6` | 会调用 LLM 的接口上限 |
@@ -271,6 +273,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 更新金价 | `30 6 * * *` | 每日 06:30，周末跳过 |
 | 更新美元指数 | 同金价 | |
 | 更新新闻 | 偶数整点 | RSS 抓取 |
+| 更新消息精选 | `25 * * * *` | 消息板块全源抓取（高权威来源，不调用 LLM） |
 | 更新 AI 分析 | 偶数整点 | 依次跑 4 个分析服务 |
 | 同步量化因子 | `15 */2 * * *` | 各源按自身节奏跳过未到期的抓取（`QUANT_ENABLED=false` 可整体关闭） |
 | 重算量化预测 | `45 */2 * * *` | 重算 1 / 5 / 20 / 60 / 250 个交易日预测；回测按 24 小时节流 |
@@ -430,7 +433,34 @@ cftc_net_oi_ratio / gpr_daily 是监控专用序列，与因子同表（`factor_
 
 ---
 
-## 十二、明确不存在的能力
+## 十二、消息板块（高权威消息精选）
+
+页面上的「消息」板块与 LLM 分析流水线**完全隔离**：独立表、独立抓取节奏，
+不进入任何 prompt 窗口（实现见 `services/news_digest.py`）。
+
+- **来源池**：默认 13 个实测可用来源，覆盖央行 / 通讯社 / 行业机构 / 专业财经四类：
+  美联储与欧洲央行官方 RSS；路透社 / 美联社 / 世界黄金协会 / 金融时报 / 华尔街日报 /
+  CNBC / MarketWatch / Kitco 走 Google News `site:` 限定（这些机构的官方 RSS 已下线，
+  放失效地址等于编造能力）；彭博社 / MINING.COM / 英为财情直连。
+  `NEWS_DIGEST_SOURCES` 可整体覆盖；格式 `名称|URL|tier|relevance`。
+- **入库门槛**：必须有链接与发布时间 —— 缺失即跳过并计入抓取报告，绝不回填抓取时刻；
+  `gold` 类来源必须命中金融语境的黄金词（排除 `gold medal` 这类体育金），
+  `monetary` 类额外接受 FOMC / 利率 / 通胀 / 央行等货币词。
+- **确定性评分**（不调用 LLM）：`重要性 = 100×(0.40·权威 + 0.25·相关 + 0.20·覆盖 + 0.15·时效)`，
+  `置信度 = 100×(0.45·权威 + 0.30·覆盖 + 0.25·相关)`；时效按 7 天尺度指数衰减
+  （`exp(-age_hours/168)`）。同题报道按标题聚类（Jaccard ≥ 0.6 且共享 ≥ 2 词），
+  覆盖数按不同来源计，代表条取簇内重要性最高者。
+- **窗口**：先对最近 30 天全集评分，再输出 24 小时 / 7 天 / 30 天三个过滤视图，
+  各取前 10 条 —— 同一事件在三个窗口里分数一致，**重叠是设计行为**。
+- **空库是如实状态**：`has_data=false` + 原因（从未抓取 / 全部来源失败 /
+  30 天内没有合格消息），页面显示「不可用」，不编造任何条目。
+- **接口与定时**：`GET /api/gold/news/digest` 与 `POST /api/gold/news/digest/refresh`
+  （抓取报告写入 cache_manager，key `news_digest_fetch_status`）；
+  调度任务 `update_news_digest` 默认每小时第 25 分钟抓取。
+
+---
+
+## 十三、明确不存在的能力
 
 以下内容在早期文档中出现过，但代码里没有：
 

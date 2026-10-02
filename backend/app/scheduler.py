@@ -78,6 +78,16 @@ def init_scheduler():
             replace_existing=True
         )
         logger.info(f"[调度器] 已添加任务: update_news ({settings.UPDATE_NEWS_CRON})")
+
+        # 消息板块：高权威黄金消息，与新闻任务错峰（默认每小时第 25 分钟）
+        scheduler.add_job(
+            update_news_digest_job,
+            CronTrigger.from_crontab(settings.UPDATE_NEWS_DIGEST_CRON),
+            id='update_news_digest',
+            name='抓取高权威黄金消息',
+            replace_existing=True
+        )
+        logger.info(f"[调度器] 已添加任务: update_news_digest ({settings.UPDATE_NEWS_DIGEST_CRON})")
         
         # 添加AI分析后台更新任务（偶数整点执行）
         # 包含：看涨因子、看跌因子、机构预测、投资建议
@@ -352,6 +362,28 @@ async def update_news_job():
             db.close()
     except Exception as e:
         logger.error(f"新闻数据更新失败: {e}")
+
+
+async def update_news_digest_job():
+    """抓取消息板块的高权威来源（网络 IO 放线程池，不阻塞调度器）。"""
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, _run_news_digest_sync)
+    except Exception as e:
+        logger.error(f"[消息板块] 定时抓取失败: {e}")
+
+
+def _run_news_digest_sync():
+    from app.database import SessionLocal
+    from app.services.news_digest import NewsDigestService
+
+    db = SessionLocal()
+    try:
+        NewsDigestService(db).fetch_all_sources()
+    finally:
+        db.close()
 
 
 async def update_ai_analysis_job():

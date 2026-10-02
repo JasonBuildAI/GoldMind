@@ -170,6 +170,7 @@ are **not committed** (`.gitignore` ignores them).
 | `gold_prices` | gold price OHLC, `date` unique |
 | `dollar_index` | dollar index, `date` unique |
 | `gold_news` | news; `published_at` is indexed |
+| `news_digest_items` | high-authority message-board items (fully isolated from `gold_news`); `url` is deduplicated (MySQL prefix index 191), `published_at` is indexed |
 | `market_factors` | bullish/bearish factors (separated by `type`) |
 | `institution_views` | institutional views; `as_of_date` / `source` record the date each prediction was last verified and where the lead came from (`web_search` / `news_scan` / `legacy`); upgrading an old database goes through `scripts/migrate_institution_views.py` (adds columns / backfills data only, never deletes rows) |
 | `predictions` | written on every refresh by the quant engine (`services/quant/service.py`): direction, horizon, base price, target price, score, expected return, uncertainty and model version |
@@ -209,6 +210,7 @@ variables. Commonly used items:
 | `LLM_TRUST_ENV` | `false` | whether to read the host's proxy environment variables |
 | `CACHE_DIR` | `backend/cache` | file cache directory |
 | `NEWS_RSS_SOURCES` | four built-in sources | format `name\|URL,name\|URL` |
+| `NEWS_DIGEST_SOURCES` | 13 built-in high-authority sources | message-board source pool, format `name\|URL\|tier\|relevance`; empty means the built-in defaults |
 | `CORS_ALLOW_ORIGINS` | local development addresses | do not put `*` in it |
 | `RATE_LIMIT_PER_MINUTE` | `60` | per-IP cap for regular endpoints |
 | `RATE_LIMIT_AI_PER_MINUTE` | `6` | cap for endpoints that call the LLM |
@@ -291,6 +293,7 @@ of each endpoint's own behaviour tests (such as `test_correlation_days_actually_
 | Update gold prices | `30 6 * * *` | daily at 06:30, skipped on weekends |
 | Update the dollar index | same as gold prices | |
 | Update news | even hours | RSS fetch |
+| Update the message digest | `25 * * * *` | full crawl of the message board's high-authority sources (no LLM calls) |
 | Update AI analysis | even hours | runs the 4 analysis services in sequence |
 | Sync quant factors | `15 */2 * * *` | each source skips fetches that are not due yet, at its own cadence (`QUANT_ENABLED=false` turns it all off) |
 | Recompute quant predictions | `45 */2 * * *` | recomputes the 1 / 5 / 20 / 60 / 250 trading-day predictions; backtests are throttled to 24 hours |
@@ -467,7 +470,42 @@ Guard: `backend/tests/unit/quant/test_monitor.py`.
 
 ---
 
-## 12. Capabilities that explicitly do not exist
+## 12. Message board (high-authority news digest)
+
+The "Messages" section of the dashboard is **fully isolated** from the LLM pipeline: its own
+table, its own fetch cadence, and it never enters a prompt (implementation:
+`services/news_digest.py`).
+
+- **Source pool**: 13 built-in, verified-working sources across four categories — central
+  banks (Federal Reserve / ECB official RSS), wire services and industry bodies (Reuters / AP /
+  World Gold Council via Google News `site:` filters, because their own RSS feeds are gone),
+  and professional financial media (Bloomberg / FT / WSJ / CNBC / MarketWatch / Kitco /
+  MINING.COM / Investing.com). `NEWS_DIGEST_SOURCES` overrides the whole pool; format
+  `name|URL|tier|relevance`.
+- **Admission rules**: an item must have both a link and a published time — anything missing
+  either is skipped and counted in the fetch report, never backfilled with the fetch time.
+  `gold` sources must match financial-context gold terms (`gold medal` and other sports uses
+  are excluded); `monetary` sources additionally accept FOMC / rates / inflation / central-bank
+  terms.
+- **Deterministic scoring** (no LLM):
+  `importance = 100×(0.40·authority + 0.25·relevance + 0.20·coverage + 0.15·recency)`,
+  `confidence = 100×(0.45·authority + 0.30·coverage + 0.25·relevance)`; recency decays
+  exponentially on a 7-day scale (`exp(-age_hours/168)`). Same-story items are clustered by
+  title (Jaccard ≥ 0.6 and at least 2 shared terms); coverage counts distinct sources and the
+  cluster representative is its highest-importance member.
+- **Windows**: the last 30 days are scored once, then exposed as three filtered views —
+  24 hours / 7 days / 30 days, each capped at the top 10. The same event scores identically in
+  every window; **overlap is by design**.
+- **An empty database is reported honestly**: `has_data=false` plus a reason (never crawled /
+  every source failed / no qualifying item in 30 days); the page shows "unavailable" and never
+  fabricates items.
+- **API and schedule**: `GET /api/gold/news/digest` and `POST /api/gold/news/digest/refresh`
+  (fetch report stored in cache_manager under `news_digest_fetch_status`); the
+  `update_news_digest` job crawls every hour at minute 25.
+
+---
+
+## 13. Capabilities that explicitly do not exist
 
 The following appeared in earlier documents but is not in the code:
 

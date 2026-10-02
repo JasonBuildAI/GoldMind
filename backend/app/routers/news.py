@@ -1,10 +1,13 @@
 """新闻 API 路由"""
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.news_service import NewsService
+from app.services.news_digest import NewsDigestService, build_digest_payload
 from app.schemas.news import NewsResponse, SentimentEnum
+from app.schemas.news_digest import DigestRefreshResponse, DigestResponse
 
 router = APIRouter()
 
@@ -36,6 +39,33 @@ async def get_news(
         )
         for n in news
     ]
+
+
+# --------------------------------------------------------------------------- #
+# 消息板块（高权威消息精选）
+# --------------------------------------------------------------------------- #
+# 注意路由顺序：`/news/digest` 必须声明在 `/news/{news_id}` **之前**。
+# Starlette 的路径参数是普通字符串匹配，`/news/{news_id}` 先注册就会吞掉
+# `digest`，用户拿到的是 422（news_id 不是整数）而不是榜单。
+@router.get("/news/digest", response_model=DigestResponse)
+async def get_news_digest(db: Session = Depends(get_db)):
+    """消息精选：24 小时 / 7 天 / 30 天三个窗口各取前 10 条。
+
+    评分完全确定性（来源权威 + 黄金相关度 + 同题覆盖 + 时效），不调用 LLM。
+    空库返回 `has_data=false` 与明确原因，不返回任何编造内容。
+    """
+    return build_digest_payload(db)
+
+
+@router.post("/news/digest/refresh", response_model=DigestRefreshResponse)
+async def refresh_news_digest(db: Session = Depends(get_db)):
+    """立即抓取一轮全部来源并落库，返回本次抓取报告。
+
+    网络 IO 在线程池执行，不阻塞事件循环；路径以 `/refresh` 结尾，
+    自动落到更严的重操作限流档（本接口不调用 LLM，不产生付费调用）。
+    """
+    report = await run_in_threadpool(NewsDigestService(db).fetch_all_sources)
+    return DigestRefreshResponse(success=report["ok_sources"] > 0, **report)
 
 
 @router.get("/news/{news_id}")

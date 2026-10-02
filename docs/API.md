@@ -47,6 +47,8 @@
 | `GET` | `/api/gold/market-summary-ai` | 获取AI生成的黄金市场综合分析 |
 | `POST` | `/api/gold/market-summary-ai/refresh` | 手动刷新黄金市场综合分析 （**会调用 LLM**，限流更严） |
 | `GET` | `/api/gold/news` | 获取新闻列表，可按来源与情感过滤（无分页，只取前 limit 条）。 |
+| `GET` | `/api/gold/news/digest` | 消息精选：24 小时 / 7 天 / 30 天三个窗口各取前 10 条。 |
+| `POST` | `/api/gold/news/digest/refresh` | 立即抓取一轮全部来源并落库，返回本次抓取报告。 （**重操作**，限流更严） |
 | `GET` | `/api/gold/news/sentiment/summary` | 新闻情感分布统计。注：入库时 sentiment 一律为 NEUTRAL，本项目没有做情感分析，这里恒为全中性，保留字段只为接口形状稳定。 |
 | `GET` | `/api/gold/news/{news_id}` | 获取单条新闻详情。 |
 | `GET` | `/api/gold/predictions` | 价格预测列表。表里现在有真实数据：量化引擎（services/quant）每次刷新写入。 |
