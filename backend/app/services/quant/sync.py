@@ -20,7 +20,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.services.cache_manager import CacheManager
-from app.services.quant import storage
+from app.services.quant import derive, storage
 from app.services.quant.definitions import BENCHMARK_KEY, EXTRA_SERIES, FACTORS
 from app.services.quant.derive import derive_factors
 from app.services.quant.sources import (
@@ -37,6 +37,35 @@ from app.services.quant.sources.base import SourceError
 from app.utils import timeutil
 
 SOURCE_ORDER = ("treasury", "treasury_fiscal", "nyfed", "cftc", "gpr", "sina_macro", "yahoo", "news_geo")
+
+# 每个原始序列由哪个源抓 —— 与 `_fetch_source` 的分支、`yahoo.SYMBOLS` 一一对应。
+# 用途只有一个：把「因子缺失」归因到真正喂它的源（见 `_missing_reason`）。
+# 守卫：`tests/unit/test_quant_sync.py` 断言它与 `derive.required_raw_keys()` 完全对齐。
+RAW_KEY_SOURCES: dict[str, str] = {
+    "ust_real_10y": "treasury",
+    "ust_nominal_2y": "treasury",
+    "ust_nominal_10y": "treasury",
+    "tga": "treasury_fiscal",
+    "effr": "nyfed",
+    "rrp": "nyfed",
+    "cftc_net": "cftc",
+    "cftc_oi": "cftc",
+    "gpr_daily": "gpr",
+    "cb_gold_reserves": "sina_macro",
+    "gold_close": "yahoo",
+    "dxy": "yahoo",
+    "vix": "yahoo",
+    "hyg": "yahoo",
+    "ief": "yahoo",
+    "btc": "yahoo",
+    "spy": "yahoo",
+    "usdcny": "yahoo",
+    "gld_shares": "yahoo",
+    "gvz": "yahoo",
+    "silver_close": "yahoo",
+    "copper_close": "yahoo",
+    "news_geo_intensity": "news_geo",
+}
 
 SOURCE_LABELS = {
     "treasury": "美国财政部收益率曲线",
@@ -318,14 +347,35 @@ def run_sync(
 
 
 def _missing_reason(factor_key: str, report: SyncReport) -> str:
-    """把「因子缺失」映射回「哪个源挂了」。"""
-    failed = [
-        f"{item.get('label', name)}（{item.get('error', '')}）"
-        for name, item in report.source_status.items()
-        if item.get("status") == "error"
-    ]
-    if failed:
-        return "；".join(failed)
+    """把「因子缺失」归因到**真正喂它的源**，并把「报错」与「未到期」分开说。
+
+    `derive.FACTOR_RAW_KEYS` 给出这个因子依赖哪些原始序列，`RAW_KEY_SOURCES` 再把
+    原始序列映射回源；只有这些源里状态不是 ``ok`` 的才写进原因。
+
+    旧实现罗列**所有**报错源、且完全不用 ``factor_key``：某因子因自身原因缺失、
+    另一个源恰好报错时，原因就写成了那个源。而「本轮未到期（跳过）」的源根本不进
+    原因，页面只能说「该因子本期没有取到可用数据」—— 用户无从判断该等下一轮还是
+    该去查源。两件事的处置完全不同，必须分开写。
+    """
+    sources: list[str] = []
+    for raw_key in derive.FACTOR_RAW_KEYS.get(factor_key, ()):
+        name = RAW_KEY_SOURCES.get(raw_key)
+        if name and name not in sources:
+            sources.append(name)
+
+    problems = []
+    for name in sources:
+        item = report.source_status.get(name) or {}
+        status = item.get("status")
+        label = item.get("label") or source_label(name)
+        if status == "error":
+            problems.append(f"{label} 报错（{item.get('error') or '原因未知'}）")
+        elif status == "skipped":
+            problems.append(
+                f"{label} 本轮未到期（{item.get('reason') or '距上次抓取未超过该源的最小间隔'}）"
+            )
+    if problems:
+        return "；".join(problems)
     return "该因子本期没有取到可用数据"
 
 

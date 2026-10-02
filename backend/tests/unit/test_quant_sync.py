@@ -212,3 +212,75 @@ def test_report_is_cached_for_the_api(db_session):
     cached = quant_sync.load_report()
     assert cached is not None
     assert "sources" in cached and "factors" in cached
+
+
+@pytest.mark.unit
+def test_a_missing_factor_names_the_sources_that_actually_feed_it():
+    """因子缺失的原因必须指向**真正喂它的源**，并把「未到期」与「报错」分开说。
+
+    旧实现罗列**所有**报错源、且完全不用 ``factor_key``：某因子因自身原因缺失、
+    另一个源恰好报错时，原因就写成了那个源（张冠李戴）。而因未到期被跳过的源
+    根本不进原因，页面只能说「该因子本期没有取到可用数据」—— 用户无从判断
+    该等下一轮还是该去查源。
+
+    变异验证：把 ``_missing_reason`` 改回「罗列所有 error 源、忽略 factor_key」，
+    本测试第一、二条断言必红。
+    """
+    report = quant_sync.SyncReport()
+    report.source_status["treasury"] = {
+        "status": "error",
+        "label": "美国财政部",
+        "error": "HTTP 503",
+    }
+    report.source_status["yahoo"] = {
+        "status": "skipped",
+        "label": "Yahoo Finance 行情",
+        "reason": "距上次抓取未超过该源的最小间隔",
+    }
+
+    # real_yield_10y 只依赖财政部：yahoo 的状态与它无关，不许写进它的原因
+    reason = quant_sync._missing_reason("real_yield_10y", report)
+    assert "美国财政部" in reason and "HTTP 503" in reason
+    assert "Yahoo" not in reason, f"把无关源写进了原因：{reason}"
+
+    # momentum 依赖 yahoo：应说「未到期（跳过）」，而不是「没有取到可用数据」
+    reason = quant_sync._missing_reason("momentum", report)
+    assert "Yahoo" in reason
+    assert "最小间隔" in reason
+    assert "没有取到可用数据" not in reason
+
+    # 相关源都没有问题时，才退回那句通用说明
+    quiet = quant_sync._missing_reason("central_bank", quant_sync.SyncReport())
+    assert "没有取到可用数据" in quiet
+
+
+@pytest.mark.unit
+def test_the_factor_to_source_map_covers_every_factor_and_raw_key():
+    """归因表的完整性：新增因子/序列时不许悄悄失去归因能力。
+
+    两张表是「谁喂谁」的唯一真源：`derive.FACTOR_RAW_KEYS`（因子 → 原始序列）与
+    `sync.RAW_KEY_SOURCES`（原始序列 → 源）。任何一边漏一条，缺失原因就会退回
+    那句无用的「该因子本期没有取到可用数据」。
+
+    变异验证：删掉 `FACTOR_RAW_KEYS` 里的任意一条、或 `RAW_KEY_SOURCES` 里的任意一条，
+    本测试必红。
+    """
+    from app.services.quant.definitions import EXTRA_SERIES, FACTORS
+    from app.services.quant.derive import FACTOR_RAW_KEYS, required_raw_keys
+
+    expected_keys = {factor.key for factor in FACTORS} | {extra.key for extra in EXTRA_SERIES}
+    assert set(FACTOR_RAW_KEYS) == expected_keys, (
+        f"归因表与因子集不一致：缺 {sorted(expected_keys - set(FACTOR_RAW_KEYS))}，"
+        f"多 {sorted(set(FACTOR_RAW_KEYS) - expected_keys)}"
+    )
+
+    referenced = {raw for keys in FACTOR_RAW_KEYS.values() for raw in keys}
+    assert referenced == required_raw_keys(), (
+        f"归因表引用的原始序列与 required_raw_keys() 不一致："
+        f"缺 {sorted(required_raw_keys() - referenced)}，多 {sorted(referenced - required_raw_keys())}"
+    )
+    assert set(quant_sync.RAW_KEY_SOURCES) == required_raw_keys(), (
+        f"原始序列到源的映射不完整：缺 {sorted(required_raw_keys() - set(quant_sync.RAW_KEY_SOURCES))}"
+    )
+    unknown = set(quant_sync.RAW_KEY_SOURCES.values()) - set(quant_sync.SOURCE_ORDER)
+    assert not unknown, f"映射到了不存在的源：{sorted(unknown)}"
