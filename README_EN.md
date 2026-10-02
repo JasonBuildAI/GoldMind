@@ -465,7 +465,27 @@ this rally a down call is simply wrong. Its Brier skill score is negative
 zero loss and the skill score is **undefined** — no number is printed there. A
 distribution-level CRPS is reported alongside with its own skill score against the zero-drift
 benchmark (Brier scores up/down, CRPS scores how well the whole distribution matches). **That record proves
-neither an edge nor its absence — it only proves the historical holdout has been seen.** Hence 2.0.1 moves the
+neither an edge nor its absence — it only proves the historical holdout has been seen.**
+
+From 2.0.2 the research page puts two **first-class KPIs** next to the hit rate:
+
+- **Edge vs always-long with a 95% confidence interval** (`direction_edge_vs_up_ci95`):
+  the point estimate is almost always negative in a one-way market; whether the interval
+  crosses zero decides whether the edge can be called a result. The interval uses a
+  block bootstrap with block length = the horizon, so overlapping samples do not
+  artificially narrow it.
+- **Dare-to-call-down quality** (`down_call_edge_vs_up`): the number of down calls, their
+  hit rate, and the difference against "always long" **on the same down-call days** —
+  calling down is easy in a bear market; the difference shows whether the model dares to
+  bet against a benchmark that is making money from rallies. With fewer than 30 down
+  calls the hit rate is `None`, never "100% of zero calls".
+
+The forward verdict now also prints a **Beta posterior** (fixed uniform Beta(1,1) prior
+plus independent-bet counts: mean, 95% credible interval, P(better than always-long))
+and the **CRPS** skill score side by side. The selection rules are unchanged — the
+posterior only makes "how much independent evidence backs this hit rate" visible.
+
+Hence 2.0.1 moves the
 judging window forward, and coverage gaps are audited by volatility bucket (thresholds from the
 expanding past distribution only, independent bets inside each bucket, counts reported when
 fewer than 30).

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional, Sequence
 
+from app.services.quant import stats
 from app.services.quant.definitions import ACTIVE_HOLDOUT_START
 
 # 预注册常量（与 spec 6.1 一字不差地对应）
@@ -81,6 +82,7 @@ class RuleInput:
     """一次（候选，尺度，留出期）判定的全部输入；缺任何一项按「不成立」处理。"""
 
     accuracy_ci_low: Optional[float] = None
+    accuracy: Optional[float] = None
     baseline_up: Optional[float] = None
     accuracy_diff_vs_up: Optional[float] = None
     brier_skill_score: Optional[float] = None
@@ -88,6 +90,10 @@ class RuleInput:
     coverage_80: Optional[float] = None
     baseline_coverage_80: Optional[float] = None
     effective_sample_size: Optional[float] = None
+    # CRPS 与 Beta 后验「并排」：分布级评分和命中率后验一起进结论，
+    # 不只看二分类命中率。
+    mean_crps: Optional[float] = None
+    crps_skill_vs_flat: Optional[float] = None
 
 
 def rule_flags(data: RuleInput) -> dict:
@@ -144,6 +150,7 @@ def rule_input(evaluation, baseline) -> RuleInput:
     accuracy_ci = candidate_metrics.get("accuracy_ci95") or (None, None)
     return RuleInput(
         accuracy_ci_low=accuracy_ci[0],
+        accuracy=getattr(evaluation, "accuracy", None),
         baseline_up=getattr(evaluation, "baseline_up_accuracy", None),
         accuracy_diff_vs_up=candidate_metrics.get("accuracy_diff_vs_up"),
         brier_skill_score=candidate_metrics.get("brier_skill_score"),
@@ -151,7 +158,28 @@ def rule_input(evaluation, baseline) -> RuleInput:
         coverage_80=candidate_metrics.get("interval_coverage_80"),
         baseline_coverage_80=baseline_metrics.get("interval_coverage_80"),
         effective_sample_size=candidate_metrics.get("effective_sample_size"),
+        mean_crps=candidate_metrics.get("mean_crps"),
+        crps_skill_vs_flat=candidate_metrics.get("crps_skill_vs_flat"),
     )
+
+
+def forward_posterior(data: RuleInput) -> Optional[dict]:
+    """前向裁决的 Beta 后验，与 CRPS 并排展示（入选规则不变，只多给一层证据）。
+
+    只用**独立下注**口径：重叠样本不是独立证据，n 取 effective_sample_size，
+    命中数 = 命中率 × n 四舍五入。n 不够 MIN_EFFECTIVE_SAMPLES 时返回 None ——
+    样本不足就直说，不许给一个看起来像结论的后验。
+    """
+    count = finite(data.effective_sample_size)
+    accuracy = finite(data.accuracy)
+    if count is None or accuracy is None or count < MIN_EFFECTIVE_SAMPLES:
+        return None
+    bets = int(round(count))
+    successes = int(accuracy * bets + 0.5)  # 惯例四舍五入：.5 一律向上
+    payload = stats.beta_posterior(successes, bets, threshold=finite(data.baseline_up))
+    payload["mean_crps"] = finite(data.mean_crps)
+    payload["crps_skill_vs_flat"] = finite(data.crps_skill_vs_flat)
+    return payload
 
 
 def selected(

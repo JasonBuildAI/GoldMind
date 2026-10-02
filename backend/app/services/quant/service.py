@@ -394,9 +394,11 @@ def _build_research_payload(db: Session) -> dict:
         # （`_empty`：样本不足 30）那个指标是缺失的 —— 一次可用下注都没有，记 0。
         forward_metrics = periods["forward"].metrics or {}
         forward_bets = forward_metrics.get("nonoverlapping_samples")
-        flags[horizon] = preregistered.rule_flags(
-            preregistered.rule_input(periods["forward"], periods["forward"])
-        )
+        forward_rule_input = preregistered.rule_input(periods["forward"], periods["forward"])
+        flags[horizon] = preregistered.rule_flags(forward_rule_input)
+        # 前向裁决的 Beta 后验（先验写死 Beta(1,1)）与 CRPS 并排：入选规则不变，
+        # 但结论旁边必须能看见「这个命中率有多少独立证据、整张分布评分如何」。
+        forward_posterior = preregistered.forward_posterior(forward_rule_input)
         horizons_payload.append(
             {
                 "horizon_days": horizon,
@@ -407,6 +409,7 @@ def _build_research_payload(db: Session) -> dict:
                     horizon,
                     realized_bets=0 if forward_bets is None else forward_bets,
                 ),
+                "forward_posterior": forward_posterior,
                 "periods": {
                     name: _research_period(name, evaluation)
                     for name, evaluation in periods.items()
@@ -461,6 +464,13 @@ def _research_period(name: str, evaluation: backtest.HorizonEvaluation) -> dict:
         "mean_crps": preregistered.finite(metrics.get("mean_crps")),
         "crps_skill_vs_flat": preregistered.finite(metrics.get("crps_skill_vs_flat")),
         "accuracy_diff_vs_up": preregistered.finite(metrics.get("accuracy_diff_vs_up")),
+        # 一级 KPI：相对「永远看多」的增量 + 置信区间；点估计在牛市里几乎总是负的，
+        # 区间跨不跨 0 才决定它能不能当结论。
+        "direction_edge_vs_up_ci95": _finite_pair(metrics.get("direction_edge_vs_up_ci95")),
+        # 「敢喊跌质量」：喊跌日上模型命中率 − 同一天「永远看多」的命中率。
+        "down_calls": metrics.get("down_calls"),
+        "down_call_accuracy": preregistered.finite(metrics.get("down_call_accuracy")),
+        "down_call_edge_vs_up": preregistered.finite(metrics.get("down_call_edge_vs_up")),
         "accuracy_ci95": _finite_pair(metrics.get("accuracy_ci95")),
         "p_value_vs_up": preregistered.finite(metrics.get("p_value_vs_up")),
         "interval_coverage_80": preregistered.finite(metrics.get("interval_coverage_80")),
@@ -590,6 +600,34 @@ def _research_verdict(passed_scales: list[int], horizons_payload: list[dict]) ->
         )
         if coverage is not None:
             piece += f"，区间覆盖 {coverage * 100:.1f}%（名义 80%）"
+        edge_ci = holdout.get("direction_edge_vs_up_ci95")
+        if edge_ci:
+            piece += (
+                f"，相对基准增量 95% CI [{edge_ci[0] * 100:+.1f}, {edge_ci[1] * 100:+.1f}]pp"
+            )
+        down_calls = holdout.get("down_calls")
+        if down_calls is not None:
+            down_hits = holdout.get("down_call_accuracy")
+            down_edge = holdout.get("down_call_edge_vs_up")
+            if down_hits is not None:
+                piece += f"，喊跌 {down_calls} 次命中 {down_hits * 100:.1f}%"
+                if down_edge is not None:
+                    piece += f"（比同日基准 {down_edge * 100:+.1f}pp）"
+            else:
+                piece += f"，喊跌 {down_calls} 次（不足 30 次，不评命中率）"
+        posterior = item.get("forward_posterior")
+        if posterior:
+            posterior_ci = posterior["ci95"]
+            piece += (
+                f"，Beta 后验均值 {posterior['mean'] * 100:.1f}%"
+                f"（95% CI {posterior_ci[0] * 100:.1f}–{posterior_ci[1] * 100:.1f}%）"
+            )
+            above = posterior.get("probability_above_threshold")
+            if above is not None:
+                piece += f"，P(优于永远看多) {above * 100:.0f}%"
+            crps = posterior.get("crps_skill_vs_flat")
+            if crps is not None:
+                piece += f"，CRPS 技能 {crps:+.3f}"
         # 独立下注次数不足时，这个尺度「没被判定」，不是「被判了不及格」
         if count is not None and count < preregistered.MIN_EFFECTIVE_SAMPLES:
             piece += f"，仅约 {count:g} 次独立下注 → 不可判定"

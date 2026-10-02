@@ -296,8 +296,105 @@ def effective_sample_size(count: int, horizon: int) -> float:
     return float(count) / float(horizon)
 
 
+# Beta 后验的先验写死在这里：Beta(1, 1)（均匀先验）。
+# 不提供按调用点覆盖的入口 —— 同一份裁决在任何时候都必须用同一个先验，
+# 换先验是一次需要写进预注册文档的口径变更，不是调用参数。
+BETA_PRIOR_ALPHA = 1.0
+BETA_PRIOR_BETA = 1.0
+
+
+def _beta_cdf_integer(x: float, alpha: int, beta: int) -> float:
+    """正则化不完全 Beta 函数 I_x(alpha, beta)，只支持整数形状参数。
+
+    没有 scipy，也不想为一个 CDF 引进新依赖：整数形状下
+    ``I_x(a, b) = Σ_{k=a}^{a+b-1} C(a+b-1, k) x^k (1-x)^(a+b-1-k)``，
+    逐项递推求和的项数 = b；取 ``b ≤ a`` 的那一侧算（否则用对称式
+    ``I_x(a,b) = 1 − I_{1-x}(b,a)``），两边都不会溢出。
+    """
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    if beta < alpha:
+        return 1.0 - _beta_cdf_integer(1.0 - x, beta, alpha)
+    total_steps = alpha + beta - 1
+    log_first = (
+        math.lgamma(total_steps + 1)
+        - math.lgamma(alpha + 1)
+        - math.lgamma(total_steps - alpha + 1)
+        + alpha * math.log(x)
+        + (total_steps - alpha) * math.log1p(-x)
+    )
+    term = math.exp(log_first)
+    total = term
+    ratio = x / (1.0 - x)
+    for k in range(alpha, total_steps):
+        term *= ratio * (total_steps - k) / (k + 1)
+        total += term
+    return min(1.0, max(0.0, total))
+
+
+def beta_quantile(p: float, alpha: float, beta: float) -> float:
+    """Beta(alpha, beta) 的 p 分位（整数形状；二分求逆）。"""
+    if p <= 0.0:
+        return 0.0
+    if p >= 1.0:
+        return 1.0
+    low, high = 0.0, 1.0
+    for _ in range(80):
+        mid = 0.5 * (low + high)
+        if _beta_cdf_integer(mid, int(alpha), int(beta)) < p:
+            low = mid
+        else:
+            high = mid
+    return 0.5 * (low + high)
+
+
+def beta_posterior(
+    successes: int,
+    total: int,
+    *,
+    threshold: Optional[float] = None,
+) -> dict:
+    """命中率的 Beta 后验：先验 Beta(1,1)（写死），后验 = 先验 + 计数。
+
+    ``successes`` / ``total`` 必须是**独立下注**口径的整数计数（重叠样本不是
+    独立证据，调用方负责先折算）。``threshold`` 给定时附
+    ``probability_above_threshold`` = P(p > threshold)，用于回答
+    「模型优于永远看多的概率有多大」，而不是只给一个点估计。
+    """
+    hits = max(0, int(successes))
+    count = max(hits, int(total))
+    misses = count - hits
+    alpha = BETA_PRIOR_ALPHA + hits
+    beta = BETA_PRIOR_BETA + misses
+    payload = {
+        "prior": [BETA_PRIOR_ALPHA, BETA_PRIOR_BETA],
+        "alpha": alpha,
+        "beta": beta,
+        "successes": hits,
+        "independent_bets": count,
+        "mean": alpha / (alpha + beta),
+        "ci95": [
+            beta_quantile(0.025, alpha, beta),
+            beta_quantile(0.975, alpha, beta),
+        ],
+    }
+    if threshold is not None and math.isfinite(threshold):
+        clipped = min(1.0, max(0.0, float(threshold)))
+        payload["threshold"] = clipped
+        payload["probability_above_threshold"] = 1.0 - _beta_cdf_integer(
+            clipped, int(alpha), int(beta)
+        )
+    return payload
+
+
 __all__ = [
+    "BETA_PRIOR_ALPHA",
+    "BETA_PRIOR_BETA",
     "DEFAULT_BOOTSTRAP_SEED",
+    "beta_posterior",
+    "beta_quantile",
     "block_bootstrap_ci",
     "brier_skill_score",
     "diebold_mariano",

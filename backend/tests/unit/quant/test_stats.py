@@ -193,6 +193,33 @@ def test_json_safe_replaces_non_finite_floats_recursively():
     json.dumps(cleaned, allow_nan=False)
 
 
+
+
+def test_beta_cdf_matches_the_closed_forms_for_integer_shapes():
+    """Beta(1,1) 是均匀分布、Beta(2,1) 的 CDF 是 x² —— 有解析解的锚点。
+
+    变异验证：把 alpha / beta 写反（I_x(a,b) 算成 I_x(b,a)），Beta(2,1) 在
+    x=0.3 处会给出 0.09 而不是 0.51，本用例必红。
+    """
+    assert stats.beta_quantile(0.3, 1, 1) == pytest.approx(0.3, abs=1e-9)
+    assert stats.beta_quantile(0.75, 2, 1) == pytest.approx(0.75 ** 0.5, abs=1e-9)
+    uniform = stats.beta_posterior(0, 0)
+    assert uniform["mean"] == pytest.approx(0.5)
+    assert uniform["ci95"] == [pytest.approx(0.025), pytest.approx(0.975)]
+
+
+def test_beta_posterior_moves_with_the_counts_and_answers_the_threshold_question():
+    """后验 = 先验 + 计数：命中率高则均值和 P(优于基准) 一起上。"""
+    strong = stats.beta_posterior(40, 50, threshold=0.5)
+    weak = stats.beta_posterior(25, 50, threshold=0.5)
+
+    assert strong["alpha"] == 41 and strong["beta"] == 11
+    assert strong["mean"] > 0.75
+    assert weak["mean"] == pytest.approx(0.5, abs=1e-12)
+    assert strong["probability_above_threshold"] > 0.99
+    assert weak["probability_above_threshold"] == pytest.approx(0.5, abs=1e-9)
+    assert strong["ci95"][0] < strong["mean"] < strong["ci95"][1]
+
 def test_json_safe_passes_through_what_json_already_accepts():
     assert stats.json_safe("文本") == "文本"
     assert stats.json_safe(7) == 7

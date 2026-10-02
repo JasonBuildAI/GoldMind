@@ -295,6 +295,12 @@ def _evaluate(
     accuracy_ci = stats.block_bootstrap_ci(
         correct.astype("float64"), block=max(1, horizon), n=BOOTSTRAP_DRAWS
     )
+    # 「相对永远看多的增量」的置信区间：点估计在牛市里几乎总是负的，
+    # 有没有可能为正、区间跨不跨 0，才决定这个增量能不能当结论用。
+    edge_vs_up = correct.astype("float64") - up_correct.astype("float64")
+    direction_edge_ci = stats.block_bootstrap_ci(
+        edge_vs_up, block=max(1, horizon), n=BOOTSTRAP_DRAWS
+    )
     vs_up = stats.hac_t_statistic(
         correct.astype("float64") - up_correct.astype("float64"),
         lags=lags,
@@ -337,11 +343,10 @@ def _evaluate(
     # 「相对永远看多的增量」：单边牛市里绝对方向被基准压死（路线图 §四.3 点到的目标定义问题）。
     # 唯一还能证伪的说法是「模型敢在看空的时候看空」，所以单列看空喊话的次数与命中率：
     # 次数为 0 就是「没有可评估的下注」，必须给 None，不许把「从没喊过跌」算成「喊跌全对」。
-    down_mask = direction < 0
-    down_calls = int(down_mask.sum())
-    down_call_accuracy = (
-        float((realized[down_mask] < 0).mean()) if down_calls >= MIN_EVALUATION_SAMPLES else None
-    )
+    down_stats = down_call_stats(direction, realized)
+    down_calls = down_stats["down_calls"]
+    down_call_accuracy = down_stats["down_call_accuracy"]
+    down_call_edge_vs_up = down_stats["down_call_edge_vs_up"]
     # 幅度技能：把「目标价偏离基准价多少」与「实际偏离多少」放在一起看 ——
     # 基准是「永远回答基准价」（预测不动）。它在方向上完全无从证伪，但在幅度上是有账可算的。
     model_mape = float((expected_return[mask] - forward[mask]).abs().mean())
@@ -387,11 +392,13 @@ def _evaluate(
         "score_direction_accuracy": score_direction_accuracy,
         "accuracy_ci95": [accuracy_ci[0], accuracy_ci[1]],
         "accuracy_diff_vs_up": float(correct.mean() - up_correct.mean()),
+        "direction_edge_vs_up_ci95": [direction_edge_ci[0], direction_edge_ci[1]],
         "p_value_vs_up": vs_up["p_value"],
         "p_value_vs_momentum": p_value_vs_momentum,
         "effective_sample_size": stats.effective_sample_size(samples, horizon),
         "down_calls": down_calls,
         "down_call_accuracy": down_call_accuracy,
+        "down_call_edge_vs_up": down_call_edge_vs_up,
         "magnitude_mape": magnitude_mape,
         "magnitude_skill_vs_flat": magnitude_skill_vs_flat,
         "interval_sharpness_80": sharpness_80,
@@ -446,6 +453,25 @@ def _evaluate(
         brier_score=brier,
         metrics=metrics,
     )
+
+
+def down_call_stats(direction: pd.Series, realized: pd.Series, *, min_calls: int = MIN_EVALUATION_SAMPLES) -> dict:
+    """「敢喊跌质量」：喊跌次数、命中率，以及同一批喊跌日上相对「永远看多」的增量。
+
+    只看命中率不行：熊市里喊跌当然容易对。和「永远看多」在**同一批喊跌日**上比
+    —— 那些天基准全靠上涨赚钱、模型靠下跌赚钱，差额才是本领。喊跌次数少于
+    ``min_calls`` 时不评命中率（给 None），不许把「从没喊过跌」算成「喊跌全对」。
+    """
+    mask = direction < 0
+    calls = int(mask.sum())
+    if calls < min_calls:
+        return {"down_calls": calls, "down_call_accuracy": None, "down_call_edge_vs_up": None}
+    hits = float((realized[mask] < 0).mean())
+    return {
+        "down_calls": calls,
+        "down_call_accuracy": hits,
+        "down_call_edge_vs_up": hits - float((realized[mask] > 0).mean()),
+    }
 
 
 def _per_factor_metrics(

@@ -170,6 +170,35 @@ def test_a_scale_with_too_few_independent_bets_is_undecidable_not_failed():
     assert preregistered.rule_flags(passing)["sufficient"] is True
 
 
+
+
+def test_forward_posterior_uses_only_independent_bets_and_a_fixed_prior():
+    """前向裁决的 Beta 后验：先验写死 Beta(1,1)，样本不足给 None 而不是数字。
+
+    变异验证：把 effective_sample_size 换成 sample_size（重叠样本当独立证据），
+    n=10 的那条会得到一个后验，本用例必红。
+    """
+    enough = preregistered.forward_posterior(
+        preregistered.RuleInput(accuracy=0.6, baseline_up=0.5, effective_sample_size=40)
+    )
+
+    assert enough["prior"] == [1.0, 1.0]
+    assert enough["independent_bets"] == 40
+    assert enough["successes"] == 24
+    assert enough["mean"] > 0.5
+    assert enough["probability_above_threshold"] > 0.5
+    assert enough["ci95"][0] < enough["mean"] < enough["ci95"][1]
+
+    insufficient = preregistered.forward_posterior(
+        preregistered.RuleInput(accuracy=0.6, effective_sample_size=10)
+    )
+    assert insufficient is None
+
+    no_accuracy = preregistered.forward_posterior(
+        preregistered.RuleInput(effective_sample_size=40)
+    )
+    assert no_accuracy is None
+
 def test_readiness_prefers_the_bets_the_backtest_actually_counted():
     """给了实际下注次数就以它为准，不再用日历折算。
 

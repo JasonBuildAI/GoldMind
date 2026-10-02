@@ -216,6 +216,31 @@ def test_forward_slice_is_the_only_deciding_window(make_panel):
     )
 
 
+
+
+def test_down_call_quality_is_measured_against_always_long_on_the_same_rows():
+    """「敢喊跌质量」= 喊跌命中率 − 同一批喊跌日上「永远看多」的命中率。
+
+    变异验证：把增量换成「喊跌命中率 − 0.5」（拿常数当基准），
+    0.20 会变成 0.10，本用例必红。
+    """
+    import pandas as pd
+
+    index = pd.date_range("2026-01-01", periods=60, freq="B")
+    direction = pd.Series([-1.0] * 40 + [1.0] * 20, index=index)
+    # 40 个喊跌日：24 天真跌、16 天上涨 → 命中 60%；同批基准（永远看多）只有 40%
+    realized = pd.Series([-1.0] * 24 + [1.0] * 16 + [1.0] * 20, index=index)
+
+    stats = backtest.down_call_stats(direction, realized)
+
+    assert stats["down_calls"] == 40
+    assert stats["down_call_accuracy"] == pytest.approx(0.60)
+    assert stats["down_call_edge_vs_up"] == pytest.approx(0.20)
+
+    # 喊跌次数不够就不评命中率：不许把「从没喊过跌」算成「喊跌全对」
+    quiet = backtest.down_call_stats(direction, realized, min_calls=41)
+    assert quiet == {"down_calls": 40, "down_call_accuracy": None, "down_call_edge_vs_up": None}
+
 def test_forward_slice_stays_empty_and_says_so_before_the_window_fills(make_panel):
     """窗口还没到/刚开：前向那一列如实空着，不给数字、也不借历史那段。
 
