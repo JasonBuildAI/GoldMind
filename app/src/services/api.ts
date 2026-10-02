@@ -995,10 +995,11 @@ export const quantApi = {
     return response.data
   },
 
-  // 抓取全部数据源 + 重算 + 回测，后端限流同付费档，超时给足
+  // 抓取全部数据源 + 重算 + 回测，后端限流同付费档，超时给足：
+  // 实测一轮约 60–90 秒，源站限速或重试时会到数分钟，3 分钟余量不够。
   refresh: async (): Promise<QuantRefreshResponse> => {
     const response = await api.post<QuantRefreshResponse>('/api/gold/quant/refresh', null, {
-      timeout: 180000,
+      timeout: 300000,
     })
     return response.data
   },

@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { fieldTestId, TESTIDS } from '../src/testids'
 
@@ -10,10 +10,16 @@ import { fieldTestId, TESTIDS } from '../src/testids'
  * 不设 E2E_LLM=real 时整组跳过，默认 `npm run test:e2e` 仍是全离线档。
  * 真栈下这里只做三件事：主要区块必须有非空真实内容、刷新要闭环（POST 之后
  * 内容更新且没有错误态）、不允许任何「暂不可用 / 拒绝出数」的降级块。
+ *
+ * 「数据源不可用：GPR（…）」这类如实披露不是错误态：仓库红线要求拿不到就
+ * 明说，所以断言只看「暂不可用」降级块与「刷新失败」报告，不按 CSS 类名一刀切。
  */
 
 const LIVE = process.env.E2E_LLM === 'real'
 const READY_TIMEOUT = 180_000
+// 真栈一次完整抓取（9 个真实源里通常 8 个可用）实测约 60–90 秒；
+// 受源站限速与重试影响可能更慢，客户端与用例都按更宽的上限等待。
+const REFRESH_TIMEOUT = 540_000
 
 async function expectRealContent(target: Locator, minChars: number, label: string) {
   await expect(target, `${label} 应当可见`).toBeVisible({ timeout: READY_TIMEOUT })
@@ -31,6 +37,12 @@ async function ensureAnalyzed(section: Locator, button: string) {
   if ((await analyzing.count()) > 0) {
     await section.getByRole('button', { name: button }).click()
   }
+}
+
+/** 不允许任何降级块与失败报告：出现即说明真栈该出的数没出。 */
+async function expectNoDegradedState(page: Page) {
+  await expect(page.getByText('暂不可用')).toHaveCount(0)
+  await expect(page.getByText(/刷新失败/)).toHaveCount(0)
 }
 
 test.describe('GoldMind 真栈看板（E2E_LLM=real）', () => {
@@ -55,9 +67,15 @@ test.describe('GoldMind 真栈看板（E2E_LLM=real）', () => {
     // 行情：报价、指标表、日线表、相关性表
     const market = page.locator(`#${TESTIDS.sectionMarket}`)
     await expectRealContent(market.getByTestId(TESTIDS.marketStats), 60, '行情指标')
+    // 逐日数据在「行情」的一层折叠里（设计规范：每节一层折叠），先展开再断言。
+    await market.getByTestId(TESTIDS.marketChart).locator('summary').click()
     await expectRealContent(market.getByTestId(TESTIDS.dailyTable), 40, '日线表')
-    await expect(market.getByTestId(TESTIDS.goldQuote)).toContainText('纽约黄金')
-    await expect(market.getByTestId(TESTIDS.dollarQuote)).toContainText('美元指数')
+    // gold-quote / dollar-quote 是卡片底部的口径行；卡片标题在 h3 上。
+    // exact 必须加：默认子串匹配会连「金价与美元指数对照（N 行）」一起命中。
+    await expect(market.getByRole('heading', { name: '纽约黄金', exact: true })).toBeVisible()
+    await expect(market.getByTestId(TESTIDS.goldQuote)).toContainText('口径')
+    await expect(market.getByRole('heading', { name: '美元指数', exact: true })).toBeVisible()
+    await expect(market.getByTestId(TESTIDS.dollarQuote)).toContainText('交易日')
 
     // 驱动：看涨 / 看跌 / 消息 / 机构
     const bullish = page.getByTestId(TESTIDS.bullishFactors)
@@ -98,29 +116,43 @@ test.describe('GoldMind 真栈看板（E2E_LLM=real）', () => {
     await expect(page.getByRole('contentinfo')).toContainText('不构成投资建议')
 
     // 不允许任何「暂不可用」的降级块与未捕获异常
-    expect(await page.locator('.panel__error').count()).toBe(0)
+    await expectNoDegradedState(page)
     expect(errors).toEqual([])
   })
 
   test('刷新闭环：POST /api/gold/quant/refresh 后内容更新且没有错误', async ({ page }) => {
+    // 真栈刷新要抓 9 个真实源再重算回测，单次实测约 60–90 秒；
+    // 默认 90 秒用例预算只够抓一半，这里整体放宽到 10 分钟。
+    test.setTimeout(600_000)
+
     await page.goto('/', { waitUntil: 'domcontentloaded' })
 
     const quant = page.locator(`#${TESTIDS.sectionQuant}`)
     await expectRealContent(quant.getByTestId(TESTIDS.quantFactorTable).first(), 40, '四类影响因素')
 
-    // 记录刷新前的同步时间戳，刷新后要求它重新渲染（内容确实更新了）
-    const syncStamp = quant.getByTestId(fieldTestId('quant.sync.finished_at'))
-    const before = (await syncStamp.count()) > 0 ? await syncStamp.innerText() : ''
+    // 记录刷新前的同步时间戳（落在「数据与方法 → 同步报告」）。
+    const syncStamp = page.getByTestId(fieldTestId('quant.sync.finished_at'))
+    await expect(syncStamp).toBeVisible({ timeout: READY_TIMEOUT })
+    const before = (await syncStamp.innerText()).trim()
 
     const [response] = await Promise.all([
       page.waitForResponse(
         (res) =>
           res.url().includes('/api/gold/quant/refresh') && res.request().method() === 'POST',
-        { timeout: READY_TIMEOUT },
+        { timeout: REFRESH_TIMEOUT },
       ),
       quant.getByRole('button', { name: '重新抓取' }).click(),
     ])
     expect(response.ok()).toBeTruthy()
+    // 后端原话：本轮抓了几个源、生成了几个周期的预测，都要是真的
+    const body = (await response.json()) as {
+      success: boolean
+      sources: unknown[]
+      predictions: unknown[]
+    }
+    expect(body.success).toBe(true)
+    expect(body.sources.length).toBeGreaterThan(0)
+    expect(body.predictions.length).toBeGreaterThan(0)
 
     // 刷新报告必须显示成功与后端原话
     const success = page.getByTestId(fieldTestId('quant.refresh.success'))
@@ -128,11 +160,18 @@ test.describe('GoldMind 真栈看板（E2E_LLM=real）', () => {
     const message = page.getByTestId(fieldTestId('quant.refresh.message'))
     await expect(message).not.toBeEmpty()
 
-    // 刷新后区块仍非空；同步时间戳有落点（后端可能在同一秒内完成，值可相同）
+    // 刷新后量化区块仍非空
     await expectRealContent(quant.getByTestId(TESTIDS.quantFactorTable).first(), 40, '四类影响因素')
-    await expect(syncStamp.first()).toBeVisible()
-    expect(before.length).toBeGreaterThanOrEqual(0)
-    expect(await page.locator('.panel__error').count()).toBe(0)
-    await expect(page.getByText(/刷新失败/)).toHaveCount(0)
+
+    // 重载页面读刷新后的同步时间戳：格式是「YYYY-MM-DD HH:MM」，可直接
+    // 字符串比较；同一分钟内完成时两者相等，所以断言「不早于」而不是「晚于」。
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expectRealContent(page.getByTestId(TESTIDS.quantFactorTable).first(), 40, '四类影响因素')
+    const after = (await page.getByTestId(fieldTestId('quant.sync.finished_at')).innerText()).trim()
+    expect(before).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
+    expect(after).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
+    expect(after >= before).toBe(true)
+
+    await expectNoDegradedState(page)
   })
 })
