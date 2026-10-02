@@ -50,6 +50,8 @@ backend/backups/
 
 # Cache
 .cache/
+# 零人工冷启动验收产物（脚本 scripts/accept_bootstrap.py；报告另行落 docs/）
+.acceptance/
 # 运行时生成的文件缓存（不入库：既是生成物，也会随时间过时）
 backend/cache/
 *.cache
