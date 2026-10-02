@@ -350,13 +350,6 @@ function PredictionPanel({ prediction }: { prediction: QuantPredictionItem }) {
           </dd>
         </div>
         <div>
-          <dt>因子偏向（未校准）</dt>
-          <dd>
-            <FactorTilt score={prediction.score} />
-            <span className="metrics__note">（只作对照，不参与上面的方向）</span>
-          </dd>
-        </div>
-        <div>
           <dt>上行概率</dt>
           <dd>
             {prediction.probability_up === null
@@ -413,6 +406,18 @@ function PredictionPanel({ prediction }: { prediction: QuantPredictionItem }) {
         </div>
       </dl>
 
+      <details
+        className="row-details"
+        data-testid={`quant-prediction-tilt-${prediction.horizon_days}`}
+      >
+        <summary>因子偏向（未校准）：只作对照，不参与方向</summary>
+        <p className="note">
+          这 {prediction.available_factors} 个因子按方向对齐加权后的原始倾向：
+          <FactorTilt score={prediction.score} />
+          （只作对照；方向、概率、目标价与区间都出自校准后的分布，不取它）。
+        </p>
+      </details>
+
       {prediction.headline ? (
         <p className="note" data-testid={`quant-prediction-headline-${prediction.horizon_days}`}>
           本尺度的主输出：{prediction.headline}
@@ -462,8 +467,8 @@ function PredictionPanel({ prediction }: { prediction: QuantPredictionItem }) {
 
       <p className="provenance">
         方向 = 校准后的期望收益（漂移）符号，与目标价、上行概率、区间、情景出自同一个分布；
-        因子偏向（未校准）是这 {prediction.available_factors} 个因子加权后的原始倾向，只列出来作对照，
-        不顶替方向。数据源不可用时该因子不参与，并在下面的因子表里标注原因。
+        因子偏向（未校准）是这 {prediction.available_factors} 个因子加权后的原始倾向，收在上面的折叠说明里，只作对照，不顶替方向。
+        数据源不可用时该因子不参与，并在下面的因子表里标注原因。
       </p>
     </div>
   )
@@ -488,7 +493,6 @@ function AccuracyPanel({ row }: { row: QuantAccuracyRow }) {
       : null
   const summary = [
     { label: '本模型', value: row.accuracy },
-    ...(tilt === null ? [] : [{ label: '因子偏向（未校准）', value: tilt }]),
     { label: '永远看多', value: row.baseline_up_accuracy },
     { label: '动量（60 日）', value: row.baseline_momentum_accuracy },
     { label: '抛硬币', value: 0.5 },
@@ -524,6 +528,15 @@ function AccuracyPanel({ row }: { row: QuantAccuracyRow }) {
           </tbody>
         </table>
       </div>
+
+      {tilt !== null ? (
+        <details className="row-details" data-testid={`quant-accuracy-tilt-${row.horizon_days}`}>
+          <summary>因子偏向（未校准）：这段历史里的单独成绩</summary>
+          <p className="note">
+            合成得分符号的命中率 {formatShare(tilt * 100, 1)}，只作对照；主表只列本模型与三个基准。
+          </p>
+        </details>
+      ) : null}
 
       {coverage !== null ? (
         <p className="note">
@@ -581,7 +594,7 @@ function AccuracyPanel({ row }: { row: QuantAccuracyRow }) {
         走查式回测：{row.window_start ?? '—'} ~ {row.window_end ?? '—'}，样本 {row.sample_size} 个交易日，
         {row.brier_score === null ? '' : ` Brier 分数 ${row.brier_score.toFixed(3)}，`}
         评估时间 {displayStamp(row.evaluated_at) ?? '—'}。「本模型」= 校准后的期望收益方向，
-        「因子偏向（未校准）」= 合成得分的符号，两份成绩分开列。命中率不看永远看多这一档 ——
+        「因子偏向（未校准）」= 合成得分的符号，作为对照单独折叠展示。命中率不看永远看多这一档 ——
         牛市里它天然很高，不并排给出几个基准，「60%」就没有意义。
       </p>
 
@@ -763,6 +776,7 @@ export default function Quant() {
     )
     const accuracyByHorizon = new Map(data.accuracy.latest.map((row) => [row.horizon_days, row]))
     const failedSources = data.factors.sources.filter((source) => source.status === 'error')
+    const okSources = data.factors.sources.filter((source) => source.status === 'ok').length
 
     body = (
       <div className="space-y-8">
@@ -781,6 +795,42 @@ export default function Quant() {
             {failedSources.map((source) => `${source.label ?? source.name}（${source.error ?? '原因未知'}）`).join('；')}
           </p>
         ) : null}
+
+        <details className="row-details" data-testid="quant-sources-details">
+          <summary>
+            数据源状态（{okSources}/{data.factors.sources.length} 正常，展开看逐个源）
+          </summary>
+          {data.factors.sources.length > 0 ? (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">数据源</th>
+                    <th scope="col">状态</th>
+                    <th scope="col">说明</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.factors.sources.map((source) => (
+                    <tr key={source.name}>
+                      <th scope="row">{source.label ?? source.name}</th>
+                      <td>{STATUS_LABEL[source.status] ?? source.status}</td>
+                      <td className="note">{source.error ?? source.reason ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="note">还没有同步记录 —— 点右上角「重新抓取」跑一轮。</p>
+          )}
+          {data.factors.sync.finished_at ? (
+            <p className="note">
+              最近一次同步完成 {displayStamp(data.factors.sync.finished_at) ?? data.factors.sync.finished_at}；
+              「未到期」表示本轮按各源的最小间隔跳过，不是失败。
+            </p>
+          ) : null}
+        </details>
 
         <div className="panel">
           <h3 className="panel__title">预测结论</h3>
@@ -868,7 +918,7 @@ export default function Quant() {
     <Section
       id="quant"
       title="量化预测"
-      intro="按 1 日 / 1 周 / 1 月 / 1 季 / 1 年五个尺度，用「货币政策与利率 / 避险与信用 / 供需结构 / 市场与技术面」四类因素合成校准后的方向、目标价与三情景，并列出未校准的因子偏向作对照；另给公允价分解、周更监测仪表盘，以及走查式回测的命中率与基准对照。"
+      intro="按 1 日 / 1 周 / 1 月 / 1 季 / 1 年五个尺度，用「货币政策与利率 / 避险与信用 / 供需结构 / 市场与技术面」四类因素合成校准后的方向、目标价与三情景，并把未校准的因子偏向收进折叠说明作对照；另给公允价分解、周更监测仪表盘，以及走查式回测的命中率与基准对照。"
       actions={refreshButton}
     >
       {body}

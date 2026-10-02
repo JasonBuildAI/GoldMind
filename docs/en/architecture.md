@@ -446,7 +446,7 @@ distribution median was tried and lost 60-day hit rate on the real 20-year panel
 walk-forward error's location term is systematically negative: the location term sets the scale for
 probability and interval, it does not make the decision (see `engine.SignalSnapshot.direction`).
 The factor-composite score is an **uncalibrated** input: it appears only in the factor table and the
-"factor tilt (uncalibrated)" row, and backtests score it separately
+"factor tilt (uncalibrated)" details block, and backtests score it separately
 (`metrics.score_direction_accuracy`). When there are fewer than 60 regression samples,
 `expected_return` is NaN → the whole horizon returns "unavailable + reason"; it does not fall back to
 "expected unchanged", and the sign of the score does not stand in for the direction. The actual

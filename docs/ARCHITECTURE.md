@@ -408,8 +408,8 @@ F̂ = 最近 `CALIBRATION_WINDOW` 个 studentized 误差 `e_s/scale_s` 的**半�
 页面上的「方向」= sign(μ)。曾用分布中位数定方向，实测（真实 20 年面板）会让 60 日留出期
 命中率从 83.3% 掉到 78.9%，因为走查误差的位置项系统性偏负、把三成喊单翻成看跌：
 位置项用于给概率与区间定标度，不用于决策（理由记在 `engine.SignalSnapshot.direction`）。
-因子合成的 score 是**未校准**的输入：只在因子表与「因子偏向（未校准）」行展示，
-回测里单列成绩（`metrics.score_direction_accuracy`）。回归样本不足 60 组时
+因子合成的 score 是**未校准**的输入：只在因子表与「因子偏向（未校准）」的折叠详情里展示，
+回测成绩也折进详情单列（`metrics.score_direction_accuracy`）。回归样本不足 60 组时
 `expected_return` 为 NaN → 该尺度整体「不可用 + 原因」，不退回「预期不变」，
 也不拿得分符号顶替方向。超过 `max_age_days` 的观测在 `engine.align_series` 里就变成 NaN，
 因此「陈旧」同时意味着不参与合成、不计入回测的可用因子数。

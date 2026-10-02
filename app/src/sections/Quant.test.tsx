@@ -563,7 +563,7 @@ describe('Quant', () => {
     expect(within(block).queryByText(/\$/)).not.toBeInTheDocument()
   })
 
-  it('方向取校准后的漂移，未校准的因子偏向单列一行作对照', async () => {
+  it('方向取校准后的漂移，未校准的因子偏向折进详情作对照', async () => {
     mockApi()
 
     render(<Quant />)
@@ -571,9 +571,16 @@ describe('Quant', () => {
 
     const panel = screen.getByTestId('quant-prediction-5')
     expect(within(panel).getByText(/校准后的漂移/)).toBeInTheDocument()
-    // 1 周这一档：得分为负、方向也是负 —— 两行各说各的，不是同一份结论
-    expect(within(panel).getByText('因子偏向（未校准）')).toBeInTheDocument()
-    expect(within(panel).getByText('偏空 -0.31')).toBeInTheDocument()
+    // 未校准的因子偏向不再占主表一行：折进详情，默认收起
+    const metrics = panel.querySelector('.metrics')
+    expect(metrics).not.toBeNull()
+    expect(within(metrics as HTMLElement).queryByText(/因子偏向（未校准）/)).not.toBeInTheDocument()
+    const tiltDetails = within(panel).getByTestId('quant-prediction-tilt-5')
+    expect(tiltDetails.tagName).toBe('DETAILS')
+    expect(tiltDetails).not.toHaveAttribute('open')
+    // 1 周这一档：得分为负、方向也是负 —— 值还在（在详情里），两行各说各的，不是同一份结论
+    expect(within(tiltDetails).getByText(/因子偏向（未校准）/)).toBeInTheDocument()
+    expect(within(tiltDetails).getByText('偏空 -0.31')).toBeInTheDocument()
   })
 
   it('期望收益恰为 0 时方向写持平，因子偏向为 0 时写中性', async () => {
@@ -682,6 +689,56 @@ describe('Quant', () => {
     expect(screen.getByText(/超过该因子的更新周期（3 天）/)).toBeInTheDocument()
   })
 
+  it('「未到期」等同步噪音只出现在折叠的数据源状态区', async () => {
+    mockApi()
+    mocked.getFactors.mockResolvedValue({
+      ...FACTOR_RESPONSE,
+      sources: [
+        { name: 'yahoo', label: 'Yahoo Finance 行情', status: 'ok', error: null, reason: null },
+        {
+          name: 'cftc',
+          label: 'CFTC 持仓',
+          status: 'skipped',
+          error: null,
+          reason: '距上次抓取未超过该源的最小间隔',
+        },
+        {
+          name: 'treasury',
+          label: '美国财政部收益率曲线',
+          status: 'error',
+          error: 'HTTPError: 503',
+          reason: null,
+        },
+      ],
+      sync: {
+        started_at: '2026-09-30T12:15:00',
+        finished_at: '2026-09-30T12:16:00',
+        sources_ok: 1,
+        sources_total: 3,
+      },
+    })
+
+    render(<Quant />)
+    await screen.findByText('▼ 看跌')
+
+    const details = screen.getByTestId('quant-sources-details')
+    expect(details.tagName).toBe('DETAILS')
+    expect(details).not.toHaveAttribute('open')
+    expect(within(details).getByText('数据源状态（1/3 正常，展开看逐个源）')).toBeInTheDocument()
+    expect(within(details).getByText('未到期')).toBeInTheDocument()
+    expect(within(details).getByText('距上次抓取未超过该源的最小间隔')).toBeInTheDocument()
+    // 报错源在展开区里可见；主界面顶部另有「数据源不可用」提示
+    expect(within(details).getByText(/HTTPError: 503/)).toBeInTheDocument()
+    expect(within(details).getByText('美国财政部收益率曲线')).toBeInTheDocument()
+
+    // 「未到期」是同步口径的噪音：只能出现在折叠区里，不许出现在主界面别处
+    const noisy = screen.queryAllByText('未到期')
+    expect(noisy.length).toBeGreaterThan(0)
+    for (const node of noisy) {
+      expect(details.contains(node)).toBe(true)
+    }
+  })
+
   it('回测把本模型与三个基准并排展示', async () => {
     mockApi()
 
@@ -697,10 +754,15 @@ describe('Quant', () => {
     expect(screen.getByText('50.0%')).toBeInTheDocument()
     expect(screen.getByText(/样本 780 个交易日/)).toBeInTheDocument()
 
-    // 未校准的因子偏向在这段历史里的成绩，单列一行
+    // 未校准的因子偏向在这段历史里的成绩：折进详情，不占主表一行
     const accuracy = screen.getByTestId('quant-accuracy-5')
-    expect(within(accuracy).getByText('因子偏向（未校准）')).toBeInTheDocument()
-    expect(within(accuracy).getByText('51.2%')).toBeInTheDocument()
+    const summaryTable = within(accuracy).getAllByRole('table')[0]
+    expect(within(summaryTable).queryByText(/因子偏向（未校准）/)).not.toBeInTheDocument()
+    const tiltDetails = within(accuracy).getByTestId('quant-accuracy-tilt-5')
+    expect(tiltDetails.tagName).toBe('DETAILS')
+    expect(tiltDetails).not.toHaveAttribute('open')
+    expect(within(tiltDetails).getByText(/因子偏向（未校准）/)).toBeInTheDocument()
+    expect(within(tiltDetails).getByText(/51\.2%/)).toBeInTheDocument()
 
     expect(screen.getByText(/实际覆盖率 76.4%/)).toBeInTheDocument()
     expect(screen.getByText('2022-01-01 之前')).toBeInTheDocument()
@@ -731,6 +793,7 @@ describe('Quant', () => {
 
     const accuracy = screen.getByTestId('quant-accuracy-5')
     expect(within(accuracy).queryByText('因子偏向（未校准）')).not.toBeInTheDocument()
+    expect(within(accuracy).queryByTestId('quant-accuracy-tilt-5')).not.toBeInTheDocument()
     expect(within(accuracy).getAllByText('本模型').length).toBeGreaterThan(0)
   })
 

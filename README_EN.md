@@ -89,7 +89,7 @@ strategies and a market summary, and runs a quantitative engine over four layers
 (monetary policy & rates / risk & credit / supply & demand / market & technicals) to predict
 1 / 5 / 20 / 60 / 250 trading days ahead (intraday–one week, 1–3 months, 6–18 months): direction,
 target price and scenarios, all derived from one calibrated distribution, with the uncalibrated
-factor tilt shown on its own line. Everything is presented as a single-page **light research
+factor tilt folded into a details note. Everything is presented as a single-page **light research
 briefing** — seven sections, left-aligned, no gradients, no shadows, no card kit; numbers are
 tabular, red-up/green-down, and direction always carries both a symbol and words. The
 "Messages" section crawls high-authority sources (central banks / wire services / industry
@@ -336,7 +336,7 @@ tomorrow's gold price with central-bank buying, or next year's with VIX, gets th
 ### 3. One calibrated distribution feeds every output (`quant-v6`)
 
 The composite `score` is an **uncalibrated** input — it appears only in the factor table and the
-"factor tilt (uncalibrated)" row. Everything on the page comes out of the same
+"factor tilt (uncalibrated)" details block. Everything on the page comes out of the same
 `engine.build_prediction_frame` exit:
 
 ```
@@ -572,7 +572,8 @@ this is not one uniform refresh:
   Sina Finance (central-bank reserves), and this system's own RSS corpus.
 - **Per-source throttling**: the sync engine gives each source its own 6–24h window and fetches
   increments; one source failing does not affect the others, and the failure reason is written
-  into the sync report and shown on the page.
+  into the sync report. The page keeps per-source status (ok / not due / unavailable) in a folded
+  "data source status" block instead of spending space on it.
 - **Per-factor freshness caps** (last column of the section-1 table): 7 days for daily series to
   cover long holidays, 62 days for monthly ones to cover publication delays. Observations past
   the cap become NaN **at composition time** (not filled forward and then labelled), so "stale"
