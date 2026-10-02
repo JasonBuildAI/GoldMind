@@ -15,6 +15,12 @@ from app.services.quant.definitions import HORIZONS
 
 
 def _snapshot_fields(snapshot: engine.SignalSnapshot) -> tuple:
+    """快照里**每一个**对外数字都要参与比对。
+
+    只比 8 个字段是不够的：区间端点、情景区间、中位数、名义水平与分布来源都是
+    用户看得见的数字，任何一条偷偷用上全样本分位，旧的字段表都发现不了。
+    加字段的代价是零，漏字段的代价是「守卫看着在守、其实没守那条路径」。
+    """
     return (
         snapshot.status,
         snapshot.score,
@@ -24,6 +30,14 @@ def _snapshot_fields(snapshot: engine.SignalSnapshot) -> tuple:
         snapshot.target_price,
         snapshot.base_price,
         snapshot.weight_used,
+        snapshot.interval_low_return,
+        snapshot.interval_high_return,
+        snapshot.scenario_low_return,
+        snapshot.scenario_high_return,
+        snapshot.median_return,
+        snapshot.distribution_mode,
+        snapshot.interval_alpha,
+        snapshot.expected_capped,
     )
 
 
