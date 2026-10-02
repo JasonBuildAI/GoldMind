@@ -145,10 +145,15 @@ def _count(bind: Engine, table: str) -> int:
 
 
 def ledger_backfill_rows(bind: Engine) -> int:
-    """需要补写的流水行数：流水表空着、观测表却有数据时，按 `created_at` 逐行补。
+    """还缺多少条流水：观测表里有、流水表里没有的那些。
 
     为什么必须在迁移里做：`load_series_as_of` 只认流水表。老库升级后如果流水表是空的，
     `--as-of` 会**静默返回空面板** —— 看着能跑、其实什么都没算，这是最坏的一种失败。
+
+    为什么不能只判「流水表是不是全空」：`main.py` 启动即 `create_all` 建出**空**表，
+    随后任一次同步都会追加几行流水，于是「全空才补」在最常见的升级路径上失效 ——
+    历史观测永远进不了流水，`--as-of` 给出的是**残缺面板**而不是空面板，
+    更难发现。所以按 `(factor_key, obs_date)` 逐条比对，只补缺的。
 
     诚实的边界：补出来的 `recorded_at` 是那一行**进入本系统**的时间。历史回填是一次性
     写进来的，所以这些行的时点都落在回填那天；问更早的日期得到空面板是**正确**的答案
@@ -157,9 +162,20 @@ def ledger_backfill_rows(bind: Engine) -> int:
     tables = set(inspect(bind).get_table_names())
     if "factor_observation_revisions" not in tables or "factor_observations" not in tables:
         return 0
-    if _count(bind, "factor_observation_revisions"):
-        return 0
-    return _count(bind, "factor_observations")
+    observation = FactorObservation.__table__
+    revision = FactorObservationRevision.__table__
+    with bind.connect() as conn:
+        existing = {
+            (row[0], row[1])
+            for row in conn.execute(select(revision.c.factor_key, revision.c.obs_date))
+        }
+        return sum(
+            1
+            for row in conn.execute(
+                select(observation.c.factor_key, observation.c.obs_date)
+            )
+            if (row[0], row[1]) not in existing
+        )
 
 
 def apply_migration(bind: Engine, dry_run: bool = False) -> list[str]:
