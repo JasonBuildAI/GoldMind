@@ -844,6 +844,11 @@ python -m pytest tests/e2e           # end-to-end: the real usage order, chained
 GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" \
     python -m pytest
 
+# Test-database guard: the database name above **must contain "test"**, otherwise the suite
+# refuses to start. The suite drops/clears every table it connects to; on 2026-10-02 it was
+# once pointed at the dev database gold_analysis and wiped 9 business tables. Leave it unset
+# to use in-memory SQLite (the default, safe path).
+
 # static check: full syntax
 python -m compileall -q app
 

@@ -179,6 +179,10 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 > 测试默认跑内存 SQLite；想验 MySQL 时用 `conftest.py` 的 `GOLDMIND_TEST_DATABASE_URL`
 > 开关拿同一套用例再跑一遍（指向独立的测试库，用例会清空所有表）。两者在枚举存储、
 > JSON 列与字符串比较大小写上都有差异。
+>
+> **硬护栏**（2026-10-02 事故后加）：该 URL 的库名必须含 `test`（SQLite 文件同理），
+> 否则测试在导入期就拒跑并点名库名 —— 用例会 `drop_all`，而事故现场正是它被指向了
+> 开发库 `gold_analysis`，一次会话删光 9 张业务表。实现见 `backend/tests/safety.py`。
 
 ---
 

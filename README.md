@@ -767,6 +767,10 @@ python -m pytest tests/e2e           # 端到端：按真实使用顺序串起�
 GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" \
     python -m pytest
 
+# 测试库护栏：上面这个 URL 的**库名必须含 "test"**，否则测试直接拒跑。
+# 用例会 drop_all / 清空它连上的所有表；2026-10-02 的事故就是它被指向了开发库
+# gold_analysis，会话结束删光 9 张业务表。留空则用内存 SQLite（默认、安全）。
+
 # 静态检查：全量语法
 python -m compileall -q app
 
