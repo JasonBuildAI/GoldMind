@@ -187,7 +187,9 @@ If this project helps or inspires you, a ⭐ **Star** is the best thank-you.
 > The two sides fetch and refresh independently; one side failing does not affect the other.
 > The prompt explicitly says "rather return fewer items than pad the list with common-sense
 > inventions"; when nothing can be found the page says "temporarily unavailable" and offers a
-> re-run, with no built-in fallback text.
+> re-run, with no built-in fallback text. Every model response then passes a deterministic
+> structure check (max 5 factors / dedupe by id / allowed-id enum / best-effort numeric
+> citation); a factor that fails is dropped entirely (`services/factor_validation.py`).
 
 ### Institutional views
 <p align="center">

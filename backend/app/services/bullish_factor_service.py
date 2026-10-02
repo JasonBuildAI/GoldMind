@@ -7,6 +7,7 @@ import asyncio
 from functools import partial
 
 from app.services.analysis_input import build_analysis_input, load_analysis_news
+from app.services.factor_validation import validate_factor_response
 from app.services.news_service import format_news_for_prompt
 from app.utils import timeutil
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
@@ -166,6 +167,10 @@ class BullishFactorAnalyzer:
             search_result = self._search_bullish_factors()
             
             # 检查搜索结果是否有效
+            search_result, dropped = validate_factor_response(search_result, side="bullish")
+            if dropped:
+                logger.warning(f"[BullishFactor] 搜索输出校验丢弃 {len(dropped)} 条: {dropped}")
+
             if search_result.get("bullish_factors") and len(search_result["bullish_factors"]) > 0:
                 logger.info(f"[BullishFactor] 成功获取 {len(search_result['bullish_factors'])} 个看涨因素")
                 search_result["last_updated"] = timeutil.now_str()
@@ -306,6 +311,11 @@ class BullishFactorAnalyzer:
                     )
                     result = self._get_default_factors()
             
+            result, dropped = validate_factor_response(
+                result, side="bullish", reference_text=news_content
+            )
+            if dropped:
+                logger.warning(f"[BullishFactor] 输出校验丢弃 {len(dropped)} 条: {dropped}")
             return result
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
@@ -413,6 +423,9 @@ class BullishFactorService:
         # 1. 首先尝试缓存（支持多进程共享）
         cached_data = self.cache.get()
         if cached_data:
+            cached_data, dropped = validate_factor_response(cached_data, side="bullish")
+            if dropped:
+                logger.warning(f"[BullishFactor] 缓存校验丢弃 {len(dropped)} 条: {dropped}")
             cached_data["metadata"] = {
                 "cached": True,
                 "cache_source": "file",

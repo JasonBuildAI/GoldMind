@@ -93,6 +93,10 @@ News and the price context are assembled into one shared input packet by
 capability statement), consumed by the factor, institutional-view, advice and summary services.
 Every prompt states explicitly that the call is single-turn with no web or tool access and that
 missing data must be reported as such, so the model cannot fill gaps from memory.
+Factor output then passes a deterministic structure check in `services/factor_validation.py`
+(at most 5 factors, dedupe by id / title, ids restricted to the allowed set, best-effort numeric
+citation against the news actually sent); failing factors are dropped entirely, and if none
+survive the service degrades to an empty structure instead of caching half-dirty data.
 
 | Service | File | Output |
 |---|---|---|

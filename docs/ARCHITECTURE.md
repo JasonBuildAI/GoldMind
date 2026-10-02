@@ -88,6 +88,9 @@ SQLite(gold_news, news_digest_items, gold_prices)
 （`build_analysis_input`：`news_items` / `news_block` / `price` / 能力声明），
 多空因子、机构观点、投资建议与市场总结消费同一入口；每个 prompt 里显式声明
 「单轮调用、没有联网与工具、数据不足如实说」，避免模型拿记忆补数字。
+模型返回的因子还要过 `services/factor_validation.py` 的确定性结构校验：最多 5 条、
+按 id / 标题去重、id 必须在允许集合内、正文数字要能在参考新闻里找到（best-effort），
+不合格的因子整条丢弃 —— 全丢光时降级为空结构，不把半份脏数据写进缓存与数据库。
 
 | 服务 | 文件 | 输出 |
 |---|---|---|

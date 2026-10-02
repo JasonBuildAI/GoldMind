@@ -9,6 +9,7 @@ import asyncio
 from functools import partial
 
 from app.services.analysis_input import build_analysis_input, load_analysis_news
+from app.services.factor_validation import validate_factor_response
 from app.services.news_service import format_news_for_prompt
 from app.utils import timeutil
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
@@ -173,6 +174,10 @@ class BearishFactorAnalyzer:
             search_result = self._search_bearish_factors()
             
             # 检查搜索结果是否有效
+            search_result, dropped = validate_factor_response(search_result, side="bearish")
+            if dropped:
+                logger.warning(f"[BearishFactor] 搜索输出校验丢弃 {len(dropped)} 条: {dropped}")
+
             if search_result.get("bearish_factors") and len(search_result["bearish_factors"]) > 0:
                 logger.info(f"[BearishFactor] 成功获取 {len(search_result['bearish_factors'])} 个看空因素")
                 search_result["last_updated"] = timeutil.now_str()
@@ -313,6 +318,11 @@ class BearishFactorAnalyzer:
                     )
                     result = self._get_default_factors()
 
+            result, dropped = validate_factor_response(
+                result, side="bearish", reference_text=news_content
+            )
+            if dropped:
+                logger.warning(f"[BearishFactor] 输出校验丢弃 {len(dropped)} 条: {dropped}")
             return result
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")
@@ -447,6 +457,9 @@ class BearishFactorService:
         # 1. 首先尝试内存缓存（最快，<1ms）
         memory_cache = self._get_from_memory_cache()
         if memory_cache:
+            memory_cache, dropped = validate_factor_response(memory_cache, side="bearish")
+            if dropped:
+                logger.warning(f"[BearishFactor] 内存缓存校验丢弃 {len(dropped)} 条: {dropped}")
             memory_cache["metadata"] = {
                 "cached": True,
                 "cache_source": "memory",
@@ -457,6 +470,9 @@ class BearishFactorService:
         # 2. 其次尝试文件缓存（支持进程重启与多进程共享）
         cached_data = self.cache.get()
         if cached_data:
+            cached_data, dropped = validate_factor_response(cached_data, side="bearish")
+            if dropped:
+                logger.warning(f"[BearishFactor] 缓存校验丢弃 {len(dropped)} 条: {dropped}")
             cached_data["metadata"] = {
                 "cached": True,
                 "cache_source": "file",
