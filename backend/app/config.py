@@ -115,6 +115,10 @@ class Settings(BaseSettings):
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
     # 新闻 RSS 源，格式 "名称|URL,名称|URL"；留空则使用 news_service 内置默认源
     NEWS_RSS_SOURCES: str = ""
+    # 消息板块的高权威来源，格式 "名称|URL|tier|relevance"（tier ∈ 1/2，
+    # relevance ∈ gold/monetary），逗号分隔；留空则使用 news_digest 内置默认源
+    # （央行 / 通讯社 / 行业机构 / 专业财经，全部为实测可用地址）。
+    NEWS_DIGEST_SOURCES: str = ""
     # 机构观点的新闻扫描窗口（天）。机构预测不再要求「24 小时内发布」——
     # 在窗口内逐家提取**最近一次可核实**的预测（可以是窗口内较早发布的）；
     # 没有新研报不等于机构撤回了旧预测，空目标价绝不覆盖已有真实记录。
@@ -146,6 +150,8 @@ class Settings(BaseSettings):
     UPDATE_PRICE_CRON: str = "30 6 * * *"   # 每天早上6:30更新前一日收盘价
     # Agent更新配置 - 偶数整点更新
     UPDATE_NEWS_CRON: str = "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *"    # 偶数整点更新新闻
+    # 消息板块抓取：每小时第 25 分钟（与新闻 / AI 任务错峰）
+    UPDATE_NEWS_DIGEST_CRON: str = "25 * * * *"
     UPDATE_AI_ANALYSIS_CRON: str = "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *"  # 偶数整点更新AI分析（看涨/看跌/机构/建议）
 
     # ------------------------------------------------------------------

@@ -58,6 +58,26 @@ CREATE TABLE IF NOT EXISTS gold_news (
     INDEX ix_gold_news_url (url(191))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 消息板块：高权威黄金消息精选。与 gold_news 隔离，不进入 LLM prompt 窗口。
+CREATE TABLE IF NOT EXISTS news_digest_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    summary TEXT,
+    source VARCHAR(100) NOT NULL,
+    -- 归一化来源标识：聚类时按它统计「多少家不同来源」同题报道
+    source_key VARCHAR(100) NOT NULL,
+    -- 1 = 官方 / 通讯社 / 行业机构；2 = 专业财经媒体
+    authority_tier INT NOT NULL DEFAULT 2,
+    url VARCHAR(500) NOT NULL,
+    published_at TIMESTAMP NOT NULL,
+    fetched_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_news_digest_published (published_at),
+    -- 去重按 url 查；utf8mb4 下 500 字符超长，用前缀索引。
+    -- 名字与 app/models/news_digest.py 的 Index 一致，两者由测试守住。
+    INDEX ix_news_digest_items_url (url(191))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS market_factors (
     id INT AUTO_INCREMENT PRIMARY KEY,
     type ENUM('BULLISH', 'BEARISH') NOT NULL,
