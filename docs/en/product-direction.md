@@ -38,11 +38,12 @@ and what the bullish and bearish arguments are".
 | Historical data storage | A single SQLite file by default (`backend/goldmind.db`), two tables: `gold_prices` / `dollar_index`; `DATABASE_URL` can switch to MySQL (not exercised in this repository) |
 | Bullish/bearish factor analysis | Based on the last 24 hours of news, calls the LLM to generate 5 bullish + 5 bearish factors, with caching |
 | Institutional views | Scans the last 30 days of news (`INSTITUTION_NEWS_LOOKBACK_DAYS`) + (web search) and compiles the **most recent verifiable** prediction from Goldman Sachs / UBS / Morgan Stanley / Citi, labelled with the prediction date and source; an empty price target never overwrites an existing real record |
+| Message board | Crawls four categories of high-authority sources — central banks / wire services / industry bodies / professional financial media (13 built-in, verified working; `NEWS_DIGEST_SOURCES` overrides them) — for gold-related headlines; scores them deterministically by source authority / gold relevance / same-story coverage / recency (no LLM), and shows the Top 10 in each of three windows (24h / 7d / 30d); items expand to a summary and same-story reports, link to the original article, and can be crawled manually; when nothing is available it says so, with the reason |
 | Investment advice | Combines market state, bullish/bearish factors and institutional views to generate three tiers of strategy: conservative / balanced / opportunity |
 | Market summary | Outputs the core logic, the main risks, institutional price targets and an overall judgement |
-| Scheduled refresh | APScheduler: prices daily at 06:30; news and AI analysis every even hour |
+| Scheduled refresh | APScheduler: prices daily at 06:30; news and AI analysis every even hour; the message board at minute 25 of every hour |
 | Quant prediction engine | 14 factors covering four categories of drivers (monetary policy and rates / safe-haven and credit / supply-demand structure / market and technicals), all from free public data sources and updated automatically on each source's own release cadence; rolling z-scores are combined into a score → **one calibrated distribution** over 1 / 5 / 20 / 60 / 250 trading days (intraday–1 week / 1–3 months / 6–18 months) (expected return μ, uncertainty σ, upside probability p = 1 − F̂(−μ/scale), the tail share of that same calibrated distribution); the direction = sign(μ), and the price target and range and the three scenarios are all derived from this one distribution — factor scores are uncalibrated inputs, and the "factor bias (uncalibrated)" row is listed separately for comparison only; **each horizon has its own dominant weights** (short horizons: capital flows and technicals; medium horizons: policy expectations and the dollar; long horizons: central-bank purchases and demand structure); the walk-forward backtest hit rate scores exactly this direction, compared against "always long / momentum / coin flip", with the uncalibrated score direction's record listed as a separate tier. Per-source failures are annotated on the page with the reason, and when fewer than 3 factors are available it says plainly that the "prediction is unavailable" |
-| Frontend dashboard | React single page: masthead + 6 sections (Market / Bullish vs Bearish / Institutions / Strategy / Quant Prediction / Conclusion), with 10-second quote polling; plus a separate "Research" page (`app/research.html`) showing the holdout evaluation of the pre-registered candidates |
+| Frontend dashboard | React single page: masthead + 7 sections (Market / Bullish vs Bearish / Institutions / Messages / Strategy / Quant Prediction / Conclusion), with 10-second quote polling; plus a separate "Research" page (`app/research.html`) showing the holdout evaluation of the pre-registered candidates |
 | Cache | Two-level cache: in-process memory + JSON files, supporting multiple processes and sharing across restarts |
 
 **LLM provider**: not hardcoded — any OpenAI-compatible endpoint (OpenAI / DeepSeek / Qwen /
@@ -92,6 +93,12 @@ shows "temporarily unavailable"), and constructed uniformly through
    The pre-registered verdict of 2026-10-02: 17 candidates × 5 horizons, none passed, so the live version is kept and labelled "no statistical edge" (that was `quant-v4`; the second round fixed the ACI
    mismatch on 2026-10-02 and moved it to `quant-v5`, which changed the interval values, and the third-round C2 candidate was likewise retired by its pre-registered bar); the page honestly shows the coverage
    side by side with the two benchmarks, always-long / momentum (see Section 11 of docs/ARCHITECTURE.md).
+6. **The message board does not fetch full articles and does not translate**. It uses only the
+   title, summary and link that each source's RSS provides, does not bypass logins or paywalls,
+   and sends readers to the original article through an external link that may or may not be
+   reachable. Some outlets have no public RSS, so they are reached through Google News
+   domain-scoped search; when that aggregator is unavailable those sources are counted as
+   failures in the fetch report rather than replaced with other content.
 
 ---
 

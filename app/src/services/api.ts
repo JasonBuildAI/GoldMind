@@ -737,4 +737,92 @@ export const quantApi = {
   },
 }
 
+// --------------------------------------------------------------------------- //
+// 消息板块：高权威黄金消息精选（评分由后端确定性计算，不调用 LLM）
+// --------------------------------------------------------------------------- //
+export interface DigestRelatedItem {
+  title: string
+  source: string
+  url: string
+  published_at: string
+}
+
+export interface DigestItem {
+  rank: number
+  id: number
+  title: string
+  summary: string
+  source: string
+  tier: number
+  tier_label: string
+  url: string
+  published_at: string
+  age_hours: number
+  importance: number
+  confidence: number
+  signals: string[]
+  coverage_count: number
+  related: DigestRelatedItem[]
+}
+
+export interface DigestWindow {
+  key: string
+  label: string
+  hours: number
+  total_clusters: number
+  items: DigestItem[]
+}
+
+export interface DigestFetchSource {
+  name: string
+  status: string
+  entries: number
+  kept: number
+  new: number
+  error?: string | null
+}
+
+export interface DigestFetchReport {
+  fetched_at: string
+  total_sources: number
+  ok_sources: number
+  failed_sources: number
+  entries: number
+  kept: number
+  new_items: number
+  duplicates: number
+  skipped_no_title: number
+  skipped_no_url: number
+  skipped_no_time: number
+  skipped_filtered: number
+  sources: DigestFetchSource[]
+}
+
+export interface DigestResponse {
+  generated_at: string
+  has_data: boolean
+  unavailable_reason: string | null
+  last_fetch: DigestFetchReport | null
+  windows: DigestWindow[]
+}
+
+export interface DigestRefreshResponse extends DigestFetchReport {
+  success: boolean
+}
+
+export const newsDigestApi = {
+  getDigest: async (): Promise<DigestResponse> => {
+    const response = await api.get<DigestResponse>('/api/gold/news/digest')
+    return response.data
+  },
+
+  // 全源抓取可能需要十几秒（13 个来源并发、单源 10 秒超时），超时给足
+  refresh: async (): Promise<DigestRefreshResponse> => {
+    const response = await api.post<DigestRefreshResponse>('/api/gold/news/digest/refresh', null, {
+      timeout: 120000,
+    })
+    return response.data
+  },
+}
+
 export default api;

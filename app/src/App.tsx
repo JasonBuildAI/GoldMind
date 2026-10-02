@@ -4,6 +4,7 @@ import { GoldDataProvider } from './contexts/GoldDataContext'
 import Market from './sections/Market'
 import Factors from './sections/Factors'
 import Institutions from './sections/Institutions'
+import Messages from './sections/Messages'
 import Strategy from './sections/Strategy'
 import Quant from './sections/Quant'
 import Conclusion from './sections/Conclusion'
@@ -22,6 +23,7 @@ function App() {
           <Market />
           <Factors />
           <Institutions />
+          <Messages />
           <Strategy />
           <Quant />
           <Conclusion />

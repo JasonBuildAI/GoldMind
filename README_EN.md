@@ -89,8 +89,11 @@ strategies and a market summary, and runs a quantitative engine over four layers
 1 / 5 / 20 / 60 / 250 trading days ahead (intraday–one week, 1–3 months, 6–18 months): direction,
 target price and scenarios, all derived from one calibrated distribution, with the uncalibrated
 factor tilt shown on its own line. Everything is presented as a single-page **light research
-briefing** — six sections, left-aligned, no gradients, no shadows, no card kit; numbers are
-tabular, red-up/green-down, and direction always carries both a symbol and words. A separate
+briefing** — seven sections, left-aligned, no gradients, no shadows, no card kit; numbers are
+tabular, red-up/green-down, and direction always carries both a symbol and words. The
+"Messages" section crawls high-authority sources (central banks / wire services / industry
+bodies / professional financial media), scores gold-related headlines deterministically by
+importance and confidence, and takes a top 10 in each of three windows (24h / 7d / 30d). A separate
 **research page** (`/research.html`) lays out the pre-registered candidate × horizon evaluation,
 coverage, reliability bins and per-factor breakdown — **including the conclusions that failed**.
 
@@ -998,7 +1001,7 @@ and a human decides when to merge.
 GoldMind/
 ├── app/                          # frontend (React 19 + TypeScript + Tailwind)
 │   ├── src/
-│   │   ├── sections/            # the six page sections, each with its tests
+│   │   ├── sections/            # the seven page sections, each with its tests
 │   │   ├── research/            # research page: pre-registered evaluation, verdict window, bins
 │   │   ├── components/          # reusable components (incl. the forecast-date column)
 │   │   ├── layout/              # masthead / footer
@@ -1012,6 +1015,7 @@ GoldMind/
 │   │   ├── services/            # business logic
 │   │   │   ├── llm_provider.py                     # **the only LLM entry point**
 │   │   │   ├── institution_prediction_service.py   # institutional views (incl. registry)
+│   │   │   ├── news_digest.py                      # message board: crawl / deterministic scoring / per-window top 10 (no LLM)
 │   │   │   └── quant/                              # quant engine: sources / derive / storage /
 │   │   │                                           #   sync / engine / decompose / scenarios /
 │   │   │                                           #   backtest / monitor / screen /

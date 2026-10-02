@@ -6,14 +6,16 @@ export default function RefreshButton({
   onClick,
   busy,
   label,
+  busyLabel = '分析中…',
 }: {
   onClick: () => void
   busy: boolean
   label: string
+  busyLabel?: string
 }) {
   return (
     <button type="button" className="btn no-print" onClick={onClick} disabled={busy}>
-      {busy ? '分析中…' : label}
+      {busy ? busyLabel : label}
     </button>
   )
 }

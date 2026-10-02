@@ -86,8 +86,8 @@ test.describe('GoldMind 看板端到端', () => {
     await page.goto('/')
 
     await expect(page.getByRole('heading', { level: 1, name: /GoldMind/ })).toBeVisible()
-    // 报头的六个锚点全部可达 —— 少一个都会让某一节失去入口
-    for (const label of ['行情', '多空', '机构', '策略', '量化', '总结']) {
+    // 报头的每个锚点全部可达 —— 少一个都会让某一节失去入口
+    for (const label of ['行情', '多空', '机构', '消息', '策略', '量化', '总结']) {
       await expect(page.getByRole('link', { name: label })).toBeVisible()
     }
     // 两条报价都在首屏：纽约黄金与美元指数
@@ -110,6 +110,36 @@ test.describe('GoldMind 看板端到端', () => {
     await expect(bullishSection(page).getByText('端到端看涨因子').first()).toBeVisible({
       timeout: 30_000,
     })
+  })
+
+  test('消息板块展示种子消息，展开可见评分依据与同题报道', async ({ page }) => {
+    await page.goto('/')
+
+    const section = page.locator('#messages')
+    // 同题报道的代表条取簇内重要性最高者：1.2 小时前的美联社那条
+    await expect(
+      section.getByText('Gold hits record high on central bank demand'),
+    ).toBeVisible()
+
+    // 原文链接新窗口打开，且指向真实种子 URL
+    const original = section.getByRole('link', {
+      name: /原文：Gold hits record high on central bank demand/,
+    })
+    await expect(original).toHaveAttribute('target', '_blank')
+    await expect(original).toHaveAttribute('href', 'https://example.invalid/e2e/digest/1')
+
+    // 展开详情：摘要 + 评分依据 + 同题报道（另一家来源的链接）
+    await section.getByText('展开详情').first().click()
+    await expect(section.getByText(/端到端消息摘要 1/)).toBeVisible()
+    await expect(section.getByText(/家来源同题报道/).first()).toBeVisible()
+    await expect(
+      section.getByRole('link', { name: 'Gold hits record high on central bank buying' }),
+    ).toBeVisible()
+
+    // 26 小时前的消息不在 24 小时窗口，切到 7 天窗口才出现
+    await expect(section.getByText('Gold steadies ahead of US payrolls data')).toHaveCount(0)
+    await section.getByRole('tab', { name: '7 天内' }).click()
+    await expect(section.getByText('Gold steadies ahead of US payrolls data')).toBeVisible()
   })
 
   test('全页可见文本不出现未实现的能力宣称', async ({ page }) => {

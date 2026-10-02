@@ -59,8 +59,8 @@ Hard constraints: no gradients, no shadows, no blur; border radius 0–2px; `bac
 
 ## 4. Layout
 
-- Page structure: masthead (wordmark + anchor navigation + data source and time) → six sections (Market / Bullish vs Bearish / Institutions /
-  Strategy / Quant Prediction / Conclusion) → footer (data sources, model notes, disclaimer).
+- Page structure: masthead (wordmark + anchor navigation + data source and time) → seven sections (Market / Bullish vs Bearish / Institutions /
+  Messages / Strategy / Quant Prediction / Conclusion) → footer (data sources, model notes, disclaimer).
 - Maximum width 1180px, everything left-aligned; sections are separated by a single `--rule` hairline.
 - One h2 per section, one h3 per panel inside a section; no numbering decoration such as 01/02/03.
 - Narrow screens: multi-column layouts collapse to one column, tables scroll horizontally inside their container; minimum supported width 360px.
@@ -73,10 +73,11 @@ Hard constraints: no gradients, no shadows, no blur; border radius 0–2px; `bac
 |---|---|---|
 | `Section` | Section container: anchor, title, one-line description, action area | Left-aligned title; a hairline along the top edge |
 | `StateBlock` | Three states: loading / analyzing / unavailable | `role="status"`; when unavailable it must give the reason and the next step |
-| `RefreshButton` | Manually trigger analysis | Copy: "Re-analyze" / "Re-fetch", with "Analyzing…" while running; the disabled state stays visible |
+| `RefreshButton` | Manually trigger analysis or a crawl | Copy: "Re-analyze" / "Re-fetch" / "Fetch the latest messages", with the running label following the action ("Analyzing…" / "Fetching…"); the disabled state stays visible |
 | `Quote` | Quote: name, value, change, source | Values in serif numerals; the change shows both ▲▼ and text |
 | `FactorList` | Factor entries with expandable key points | Uses native `<details>`; keyboard-accessible |
 | `InstitutionTable` | Institutional views table | Horizontal scroll on narrow screens; the header never scrolls out of view |
+| `Messages` | Message board: tabs for the 24h / 7d / 30d windows, each entry expandable | Scores and ordering come entirely from the backend's deterministic scoring; the frontend never re-ranks or recomputes; overlapping windows are by design; original-article links open in a new window (`target="_blank"` + `rel="noreferrer noopener"`); when nothing is available it shows only "unavailable + reason" and never built-in messages |
 | `StrategyColumns` | Three-tier strategy comparison | Stacks into a single column on narrow screens |
 | `Quant` | Quant prediction: conclusion / fair-value decomposition / monitoring dashboard / backtest hit rate / four-category factor tables | Every factor must show its data as-of date and source; when unavailable, give the reason; fields that cannot be computed show "—" and are never filled with defaults |
 
@@ -95,6 +96,13 @@ Rules specific to the quant page: any block that is unavailable only gives the r
 rules in the backend `backend/app/services/quant/monitor.py`, and the interface does not make its own judgement;
 informational metrics (USDCNY, CNY gold price, COMEX open interest) only give values, not directions.
 Scenario trigger / invalidation conditions must be verifiable against the factor table and the 200-day moving average; the interface does not compute a second set of numbers.
+
+Message board (`Messages`) conventions: each of the three windows takes its own top 10, so the same
+event may appear in several windows; the expanded area gives the summary, the scoring signals and
+same-story links; the top meta line shows the last crawl time, and a manual crawl appends the fetch
+report (sources ok / new items / failed sources). An empty window and an empty database are shown
+separately: one sentence for an empty window, and a `StateBlock` with the backend reason and retry
+path for an empty database.
 
 ---
 

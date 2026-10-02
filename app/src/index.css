@@ -272,6 +272,87 @@
     color: var(--ink-muted);
   }
 
+  /* 消息：一条一层细线；展开看摘要、评分依据与同题报道 */
+  .digest {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .digest__item {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .digest__item:last-child {
+    border-bottom: 0;
+  }
+
+  .digest__head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .digest__rank {
+    min-width: 1.4em;
+    color: var(--ink-muted);
+    font-size: var(--text-sm);
+  }
+
+  .digest__title {
+    margin: 0;
+    font-size: var(--text-base);
+  }
+
+  .digest__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin: 4px 0 0 1.4em;
+    font-size: var(--text-xs);
+    color: var(--ink-muted);
+  }
+
+  .digest__details > summary {
+    margin: 4px 0 0 1.4em;
+    font-size: var(--text-xs);
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+
+  .digest__details[open] > summary {
+    color: var(--ink);
+  }
+
+  .digest__body {
+    margin: 8px 0 0 1.4em;
+    max-width: 68ch;
+  }
+
+  .digest__body p {
+    margin: 0 0 8px;
+    font-size: var(--text-sm);
+  }
+
+  .digest__body h4 {
+    margin: 10px 0 4px;
+    font-size: var(--text-sm);
+  }
+
+  .digest__body ul {
+    margin: 0;
+    padding-left: 18px;
+    list-style: disc;
+    font-size: var(--text-sm);
+    color: var(--ink-muted);
+  }
+
+  .digest__related-meta {
+    font-size: var(--text-xs);
+    color: var(--ink-muted);
+  }
+
   /* 栏底总结 */
   /* 栏底小结与文档内的小节：同一种「细线 + 小标题 + 一段话」 */
   .column__summary,

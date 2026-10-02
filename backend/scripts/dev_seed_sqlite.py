@@ -12,6 +12,7 @@
     金价  2025-01-02 起连续 10 个交易日，2600 起、每步 +10 → 最后一天 2690
     美元指数 同步 10 天
     新闻  3 条，发布于 1 小时前
+    消息  3 条：一组同题报道（两家来源，1-2 小时前）+ 一条 26 小时前的消息
 """
 from __future__ import annotations
 
@@ -46,6 +47,8 @@ def main() -> int:
     from app.database import Base, SessionLocal, engine
     from app.models.gold_price import DollarIndex, GoldPrice
     from app.models.news import GoldNews, SentimentType
+    from app.models.news_digest import NewsDigestItem
+    from app.utils import timeutil
 
     # 用 drop_all + create_all 重建，而不是删除数据库文件：
     # Windows 上若后端进程仍持有该文件，unlink 会抛 WinError 32。
@@ -92,9 +95,35 @@ def main() -> int:
         )
 
     db.commit()
+
+    # 消息板块：一组同题报道（两家来源）+ 一条只在 7 天窗口出现（26 小时前）的消息。
+    # 时间用项目时区（timeutil），与窗口口径一致。
+    digest_now = timeutil.now_naive()
+    digest_rows = [
+        ("Gold hits record high on central bank buying", "路透社", "reuters", 1, 1.5),
+        ("Gold hits record high on central bank demand", "美联社", "ap", 1, 1.2),
+        ("Gold steadies ahead of US payrolls data", "Kitco News", "kitco news", 2, 26.0),
+    ]
+    for index, (title, source, source_key, tier, hours_ago) in enumerate(digest_rows):
+        db.add(
+            NewsDigestItem(
+                title=title,
+                summary=f"端到端消息摘要 {index}",
+                source=source,
+                source_key=source_key,
+                authority_tier=tier,
+                url=f"https://example.invalid/e2e/digest/{index}",
+                published_at=digest_now - timedelta(hours=hours_ago),
+                fetched_at=digest_now,
+            )
+        )
+    db.commit()
     db.close()
 
-    print(f"[seed] {db_path} 已就绪：{args.days} 天行情 + 3 条新闻", flush=True)
+    print(
+        f"[seed] {db_path} 已就绪：{args.days} 天行情 + 3 条新闻 + {len(digest_rows)} 条消息",
+        flush=True,
+    )
     print(f"[seed] 最后收盘价应为 {START_PRICE + STEP * (args.days - 1):.2f}", flush=True)
     return 0
 

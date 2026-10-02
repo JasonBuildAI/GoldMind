@@ -5,6 +5,7 @@ const NAV = [
   { href: '#market', label: '行情' },
   { href: '#factors', label: '多空' },
   { href: '#institutions', label: '机构' },
+  { href: '#messages', label: '消息' },
   { href: '#strategy', label: '策略' },
   { href: '#quant', label: '量化' },
   { href: './research.html', label: '研究' },
