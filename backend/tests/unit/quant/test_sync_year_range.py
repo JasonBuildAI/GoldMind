@@ -16,6 +16,16 @@ from app.services.quant.definitions import BENCHMARK_KEY
 TODAY = date(2026, 10, 2)
 HISTORY_YEARS = 10
 
+# 覆盖判据依赖的序列集合，**字面量**写在这里。
+# 不许用 `sync.YAHOO_COVERAGE_KEYS` 自身迭代：删掉一个键，循环跟着变短、断言照样绿
+# （这正是上一版的两个洞）。下面的用例把它与常量逐项对齐。
+YAHOO_COVERAGE_KEYS_EXPECTED = (
+    BENCHMARK_KEY,
+    "gvz",
+    "gold_silver_ratio",
+    "copper_gold_ratio",
+)
+
 
 def _put_year(db, key, year, *, count=250, source="test"):
     """写入某年的一批工作日观测，返回实际写入的日期数。"""
@@ -104,15 +114,27 @@ def test_yahoo_period_tracks_actual_history_span(db_session, monkeypatch):
     sync._fetch_source("yahoo", db_session, today=TODAY, history_years=HISTORY_YEARS)
     assert captured["period"] == "10y", "空库要按请求窗口回填"
 
-    for key in sync.YAHOO_COVERAGE_KEYS:
+    for key in YAHOO_COVERAGE_KEYS_EXPECTED:
         _put_year(db_session, key, 2026, count=60)
     sync._fetch_source("yahoo", db_session, today=TODAY, history_years=HISTORY_YEARS)
     assert captured["period"] == "10y", "只有三个月历史时不能退化成 3mo"
 
-    for key in sync.YAHOO_COVERAGE_KEYS:
+    for key in YAHOO_COVERAGE_KEYS_EXPECTED:
         _put_year(db_session, key, 2016, count=250)
     sync._fetch_source("yahoo", db_session, today=TODAY, history_years=HISTORY_YEARS)
     assert captured["period"] == "3mo", "跨度已够，增量只取最近三个月"
+
+
+def test_the_yahoo_coverage_keys_are_exactly_the_expected_set():
+    """覆盖判据依赖的序列集合必须逐项钉住 —— 删键不能让守卫静默变弱。
+
+    原来的写法用 `sync.YAHOO_COVERAGE_KEYS` **自身**迭代：从常量里删掉一个键，
+    循环跟着变短，断言照样全绿；另一处又只写了三个键（漏掉 `gvz`），
+    于是删掉金银比/铜金比也测不出来。
+
+    变异验证：从 `sync.YAHOO_COVERAGE_KEYS` 里删掉任意一项，本测试必红。
+    """
+    assert tuple(sync.YAHOO_COVERAGE_KEYS) == YAHOO_COVERAGE_KEYS_EXPECTED
 
 
 def test_yahoo_period_extends_when_a_new_series_is_empty(db_session, monkeypatch):
@@ -123,7 +145,11 @@ def test_yahoo_period_extends_when_a_new_series_is_empty(db_session, monkeypatch
         return {}
 
     monkeypatch.setattr(sync.yahoo, "fetch", fake_fetch)
-    for key in (BENCHMARK_KEY, "gold_silver_ratio", "copper_gold_ratio"):
+    # 故意留一个序列空着（新接入的序列就是这种状态）—— 显式跳过而不是「只写三个键」，
+    # 否则常量一改，这个用例就静默失去它要测的那条路径
+    for key in YAHOO_COVERAGE_KEYS_EXPECTED:
+        if key == "gvz":
+            continue
         _put_year(db_session, key, 2016, count=250)
         _put_year(db_session, key, 2026, count=60)
 
