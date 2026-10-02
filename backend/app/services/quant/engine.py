@@ -9,6 +9,9 @@
    一律返回「预测不可用」并给出原因，绝不退回默认方向或默认数字。
 3. **单位跟 definitions 走**。``change_Nd`` 是**原单位**的 N 个交易日变化 ——
    利率是百分点而不是百分比，指数是指数点。
+4. **陈旧即停用**。``max_age_days`` 不只是界面上一行灰字：超过上限的观测在
+   ``align_series`` 里就变成 NaN，因此不进 z、不进合成得分、也不进回测的可用因子计数
+   （见 ``align_series`` 的第二条纪律）。低频因子的空窗是**如实反映**，不是回归。
 
 三段式（与 spec 一致）::
 
@@ -120,18 +123,44 @@ def rolling_z(
     return (series - mean) / std.where(std > EPS)
 
 
+def align_series(
+    series: pd.Series, calendar: pd.DatetimeIndex, *, max_age_days: Optional[int] = None
+) -> pd.Series:
+    """把一个序列落到价格日历上：只向前填充，且**填充不得越过新鲜度上限**。
+
+    两条纪律，缺一不可：
+
+    1. t 时刻不会用到 t 之后才发布的数（只向前填充）；
+    2. 最近一条**真实观测**超过 ``max_age_days`` 之后，该因子在这一行是 NaN。
+       「陈旧」必须同时意味着「不参与合成」：历史上 ``max_age_days`` 只进了
+       ``factor_states`` 的展示分支，于是月频因子断更两个月后，页面写着「陈旧」、
+       得分却继续按它最高档的权重贡献 —— 显示层与计算层说的是两件事。
+    """
+    reindexed = series.reindex(calendar)
+    aligned = reindexed.ffill()
+    if max_age_days is None:
+        return aligned
+    last_real = pd.Series(calendar, index=calendar).where(reindexed.notna()).ffill()
+    age_days = (pd.Series(calendar, index=calendar) - last_real).dt.days
+    return aligned.mask(age_days > max_age_days)
+
+
 def align_factors(
     factors: dict[str, pd.Series], calendar: pd.DatetimeIndex
 ) -> dict[str, pd.Series]:
     """把每个因子对齐到价格日历：低频序列（月度储备、周度持仓）按最近值前向填充。
 
-    只向前填充：t 时刻不会用到 t 之后才发布的数。
+    新鲜度上限取自 ``definitions``（每个因子自己的发布节奏）；不在因子表里的原始序列
+    （金价、HYG/IEF 这类中间量）没有「发布节奏」可言，因此不受该上限约束。
     """
     aligned: dict[str, pd.Series] = {}
     for key, series in factors.items():
         if series is None or series.empty:
             continue
-        aligned[key] = series.reindex(calendar).ffill()
+        definition = factor_by_key.get(key)
+        aligned[key] = align_series(
+            series, calendar, max_age_days=None if definition is None else definition.max_age_days
+        )
     return aligned
 
 
@@ -140,14 +169,15 @@ def build_signals(
 ) -> pd.DataFrame:
     """每个因子的方向对齐信号 ``signed_z = sign × z(transform(x))``。
 
-    返回值：index = 价格日历，columns = 因子 key，NaN = 当日不可用。
+    返回值：index = 价格日历，columns = 因子 key，NaN = 当日不可用（含「陈旧」）。
     """
     columns: dict[str, pd.Series] = {}
     for definition in FACTORS:
         series = factors.get(definition.key)
         if series is None or series.empty:
             continue
-        transformed = apply_transform(series.reindex(calendar).ffill(), definition.transform)
+        aligned = align_series(series, calendar, max_age_days=definition.max_age_days)
+        transformed = apply_transform(aligned, definition.transform)
         z = rolling_z(transformed)
         columns[definition.key] = (z * definition.sign).rename(definition.key)
     if not columns:

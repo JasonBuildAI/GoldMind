@@ -234,14 +234,19 @@ def test_missing_factors_do_not_count_as_zero():
     assert engine.composite_score(only_one).iloc[0] == pytest.approx(weight_10y / weight_10y)
 
 
-def test_alignment_only_fills_forward(calendar):
+def test_alignment_only_fills_forward_but_not_past_freshness(calendar):
     sparse = pd.Series([1.0], index=[calendar[10]])
 
     aligned = engine.align_factors({"vix": sparse}, calendar)["vix"]
+    # 不是因子表里的序列（金价这类中间量）没有「发布节奏」可言，不受新鲜度上限约束
+    unrestricted = engine.align_factors({"gold_close": sparse}, calendar)["gold_close"]
 
     assert np.isnan(aligned.iloc[9])
     assert aligned.iloc[10] == 1.0
     assert aligned.iloc[11] == 1.0  # 前向填充
+    # VIX 的新鲜度上限是 7 天：第 20 个交易日（≈26 天后）必须已经不算数了
+    assert np.isnan(aligned.iloc[20]), "陈旧值被无界前向填充继续当成了今天的观测"
+    assert unrestricted.iloc[200] == 1.0
 
 
 def test_stale_data_is_marked_and_excluded(panel, calendar):
@@ -256,6 +261,21 @@ def test_stale_data_is_marked_and_excluded(panel, calendar):
     assert state.available is False
     assert "天前" in state.reason
     assert snapshot.available_factors == len(FACTORS) - 1
+    # 陈旧必须**同时**退出计算：只看展示分支的话，得分会继续按 VIX 的老 z 贡献
+    signals = engine.build_signals(engine.align_factors(factors, calendar), calendar)
+    assert np.isnan(signals["vix"].iloc[-1])
+    without_vix = engine.composite_score(
+        signals.drop(columns=["vix"]), horizon=5
+    ).iloc[-1]
+    assert snapshot.score == pytest.approx(float(without_vix), rel=1e-12)
+    # 对照旧行为：先无界前向填充再算，VIX 两个月前的 z 会被当成今天的贡献，得分必然不同
+    stale_filled = dict(factors, vix=factors["vix"].reindex(calendar).ffill())
+    stale_signals = engine.build_signals(stale_filled, calendar)
+    stale_score = float(engine.composite_score(stale_signals, horizon=5).iloc[-1])
+    assert not np.isnan(stale_score)
+    assert snapshot.score != pytest.approx(stale_score, rel=1e-6), (
+        "陈旧值仍在贡献得分"
+    )
 
 
 def test_factor_without_any_data_is_marked_missing(panel):
