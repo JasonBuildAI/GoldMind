@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs\images\6779ac1d5f10d9ad61b395a725e21bbd.png" alt="GoldMind Logo" width="600">
+  <img src="docs/images/6779ac1d5f10d9ad61b395a725e21bbd.png" alt="GoldMind Logo" width="600">
 </p>
 
 <h1 align="center">🥇 GoldMind</h1>
@@ -10,67 +10,71 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v2.0.0-brightgreen?style=flat-square" alt="Version">
-  <img src="https://img.shields.io/badge/released-2026--10--01-success?style=flat-square" alt="Release date">
+  <img src="https://img.shields.io/badge/version-v2.0.1-brightgreen?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/released-2026--10--02-success?style=flat-square" alt="Release date">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
-  <img src="https://img.shields.io/badge/SQLite-zero--config--repro-003B57?style=flat-square&logo=sqlite" alt="SQLite">
+  <img src="https://img.shields.io/badge/SQLite-zero--config%20repro-003B57?style=flat-square&logo=sqlite" alt="SQLite">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React">
 </p>
 
 <p align="center">
-  <a href="./README.md">中文</a> | <strong>English</strong>
+  <strong>English documentation</strong> | <a href="./README.md">中文文档</a>
 </p>
 
 ---
 
-<!-- ⬇️⬇️⬇️ 2.0 release banner: the next three lines are this release's "big type" block; update them together when changing versions ⬇️⬇️⬇️ -->
+<!-- ⬇️⬇️⬇️ Release banner: update these lines together with the version ⬇️⬇️⬇️ -->
 
-<h1 align="center">🎉 GoldMind 2.0 is here</h1>
+<h1 align="center">🎉 GoldMind 2.0.1 is here</h1>
 
-<h2 align="center">GoldMind 2.0 已发布</h2>
+<h2 align="center">GoldMind 2.0.1 正式发布</h2>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v2.0.0-FFD700?style=for-the-badge" alt="v2.0.0">
-  <img src="https://img.shields.io/badge/released-2026--10--01-2EA043?style=for-the-badge" alt="2026-10-01">
+  <img src="https://img.shields.io/badge/release-v2.0.1-FFD700?style=for-the-badge" alt="v2.0.1">
+  <img src="https://img.shields.io/badge/released-2026--10--02-2EA043?style=for-the-badge" alt="2026-10-02">
 </p>
 
 <p align="center">
-  <strong>Every number on the page now comes from one calibrated distribution.</strong><br>
-  <em>每一个数字都出自同一份经过校准的概率分布。</em><br><br>
-  📋 <a href="./CHANGELOG.md">Changelog (中文)</a> ·
-  🌍 <a href="./CHANGELOG_EN.md">Changelog (EN)</a> ·
-  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.0">GitHub Release v2.0.0</a>
+  <strong>Every number comes from one calibrated distribution — and every claim that failed its check stays on the page.</strong><br>
+  <em>每个数字都出自同一份校准分布；每条没通过验证的结论，也照样写在页面上。</em><br><br>
+  📋 <a href="./CHANGELOG_EN.md">Changelog</a> ·
+  🌍 <a href="./CHANGELOG.md">更新日志</a> ·
+  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.1">GitHub Release v2.0.1</a>
 </p>
 
-<!-- ⬆️⬆️⬆️ End of the 2.0 release banner ⬆️⬆️⬆️ -->
+<!-- ⬆️⬆️⬆️ Release banner ends ⬆️⬆️⬆️ -->
 
 ---
 
-## 🆕 What 2.0 Brings
+## 🆕 What 2.0.1 delivers
 
-2.0 is not a reskin — it fixes an old rule that would **silently swallow real data**, and converges
-"prediction" from a set of numbers that each said their own thing into one backtestable, checkable
-distribution that can state its own limitations.
+2.0.1 does not swap the model. It does three things: **fix the conventions, make the evaluation
+honest, and take back claims that cannot be proven.** The live model is still `quant-v5` —
+the third pre-registered candidate C2 needed 60-day development coverage in [0.78, 0.82];
+it landed at 0.7679, 1.2pp short, and was eliminated. The bar does not move for it.
 
-| Change | Before | 2.0 |
+| Area | 2.0.0 | 2.0.1 |
 |---|---|---|
-| Institutional views | Only news "published within 24 hours" counted; on a day with no new research note, all four institutions turned into "none" | Each institution now gets its **most recent verifiable prediction** (with prediction date and source), with a configurable 30-day scan window; an empty result **never overwrites** an existing real record |
-| Prediction convention | Direction, probability, target price and interval each computed their own way | Direction = sign(μ), probability = Φ(μ/σ), target price = base price×(1+μ), interval = μ±1.2816σ, three scenarios = quantiles of N(μ, σ²) — **all derived from one and the same distribution** |
-| Interval width | Normal quantiles, systematically too narrow at long horizons | Calibrated to the **empirical quantiles of walk-forward prediction errors**; coverage shown side by side with "always long / momentum / coin flip" |
-| Documentation | Mostly Chinese; the API reference was hand-written and had drifted from the implementation | Chinese and English **versions**; `docs/API.md` and `docs/en/api.md` are generated from the same route table, and drift turns the gate red directly |
-| Verifiability | Data had no "as-of date" | Every factor carries a source and a data-as-of date; every prediction row carries a prediction date and a staleness in days, and when something cannot be fetched it says plainly "unavailable + reason" |
+| Probability | `p_up = Φ(μ/σ)`, with a σ that had already been inflated for interval width — the direct mechanism behind a negative Brier skill score everywhere | `p_up = 1 − F̂(−μ/scale)`: probability, interval and scenarios all come from the same calibrated distribution F̂; direction = sign(μ) |
+| Interval | Normal quantiles; and the ACI α update judged "the bet sent h days ago" with "today's row" | Asymmetric empirical quantiles + online ACI. After the misalignment fix, development coverage went 76.7% → 79.3% (20d) and 72.6% → 73.6% (60d) |
+| Stale factors | Old observations were forward-filled into a fake current level | Observations past their freshness cap become NaN at composition time: no z, no score, no backtest factor count |
+| Bet accounting | 754 overlapping holdout samples in the 250-day window treated as 754 pieces of evidence | Independent bets sampled at stride = h (that same stretch really holds 3 bets); insufficient samples are labelled "undecidable", not "failed" |
+| Significance | iid t only | HAC (Newey–West) shown next to iid: gold/silver at 60d reads **+2.30** HAC vs **+12.70** iid — the literal meaning of "half of your significant factors are fake" |
+| Sample periods | development / holdout | Four: development, historical holdout (record only), **forward holdout** (the only judging window, starting 2026-10-02), full sample |
+| New information sources | — | GVZ, gold/silver ratio, copper/gold ratio, CFTC net-long share of open interest, official daily GPR — all on the monitor table, **all labelled information-only** (none cleared the gates on a 26-year panel; giving them a direction would be fabrication) |
+| Reproducibility | Factor table kept only the current value | Append-only revision ledger + `--as-of` panel rebuild; every stored prediction carries the measured skill of its own horizon |
 
 ---
 
 <p align="center">
   <a href="#-overview">Overview</a> •
-  <a href="#-quant-strategy">Quant Strategy</a> •
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-common-commands">Common Commands</a> •
-  <a href="#-directory-layout">Directory Layout</a> •
-  <a href="#-documentation-map">Documentation Map</a> •
-  <a href="#-honest-scope">Honest Scope</a> •
+  <a href="#-quant-strategy">Quant strategy</a> •
+  <a href="#-quick-start">Quick start</a> •
+  <a href="#-common-commands">Commands</a> •
+  <a href="#-directory-layout">Layout</a> •
+  <a href="#-documentation-map">Docs</a> •
+  <a href="#-honest-statement-implementation-boundaries">Honest statement</a> •
   <a href="#-contributing">Contributing</a>
 </p>
 
@@ -78,596 +82,802 @@ distribution that can state its own limitations.
 
 ## ⚡ Overview
 
-**GoldMind** is a gold market analysis dashboard: it automatically collects the gold price and the
-dollar index, uses a large language model to generate a bullish/bearish contrast, institutional
-views, investment strategies and a market summary from recent news, and uses a quant engine to
-predict, from four classes of drivers (monetary policy and rates / hedging and credit /
-supply-demand structure / market and technicals), the direction, target price and scenarios over
-1 / 5 / 20 / 60 / 250 trading days (intraday–1 week, 1–3 months, 6–18 months) — all from one
-calibrated distribution, with the uncalibrated factor bias listed on its own row — presented as a
-single-page **light research brief**: six sections (Market / Bullish vs Bearish / Institutional
-Views / Investment Strategy / Quant Prediction / Conclusion), all left-aligned, with no gradients,
-no shadows and no card grid; numbers live in tables, rising is red and falling is green, and the
-direction always carries both a sign and a word. There is also a separate **research page** (`/research.html`): it lays out the pre-registered candidates × horizons evaluation, coverage and skill scores on the page, **including the conclusions that did not clear the line**.
+**GoldMind** is a gold-market analysis board. It collects gold prices and the dollar index,
+uses an LLM to turn recent news into bullish/bearish factors, institutional views, investment
+strategies and a market summary, and runs a quantitative engine over four layers of drivers
+(monetary policy & rates / risk & credit / supply & demand / market & technicals) to predict
+1 / 5 / 20 / 60 / 250 trading days ahead (intraday–one week, 1–3 months, 6–18 months): direction,
+target price and scenarios, all derived from one calibrated distribution, with the uncalibrated
+factor tilt shown on its own line. Everything is presented as a single-page **light research
+briefing** — six sections, left-aligned, no gradients, no shadows, no card kit; numbers are
+tabular, red-up/green-down, and direction always carries both a symbol and words. A separate
+**research page** (`/research.html`) lays out the pre-registered candidate × horizon evaluation,
+coverage, reliability bins and per-factor breakdown — **including the conclusions that failed**.
 
-The LLM provider is **not hardcoded**: any OpenAI-compatible endpoint (OpenAI / DeepSeek /
-Qwen / Kimi / a local Ollama / Xiaomi MiMo …) works — just set `LLM_BASE_URL` /
-`LLM_API_KEY` / `LLM_MODEL` in `backend/.env`, and every LLM client is constructed through
-`backend/app/services/llm_provider.py`. When any one of the three is missing the project counts
-as "unconfigured": each section honestly shows "temporarily unavailable" and no built-in
-content is used as a fallback.
+The LLM provider is **not hard-coded**: any OpenAI-compatible endpoint (OpenAI / DeepSeek /
+Qwen / Kimi / local Ollama / Xiaomi MiMo …) works by editing `LLM_BASE_URL` / `LLM_API_KEY` /
+`LLM_MODEL` in `backend/.env`. Every client is constructed through
+`backend/app/services/llm_provider.py`. If any of the three is missing, the feature counts as
+"not configured" and the section says so — it never falls back to built-in content.
 
-> You only need to: open the page
-> GoldMind returns: today's gold price, the dollar index, and a bullish/bearish analysis and
-> strategy suggestions generated from recent news, plus a backtestable quant prediction.
+> You only need to: open the page.
+> GoldMind returns: today's gold price, the dollar index, news-based bull/bear analysis and
+> strategy suggestions — plus a backtestable quantitative forecast.
 
-> 📌 Product boundaries and known limitations are in [`docs/00-产品方向.md`](docs/00-产品方向.md).
-> **Capabilities marked "planned" in that document are not implemented yet — do not treat them as existing features.**
+> 📌 Product boundaries and known limits live in [`docs/00-产品方向.md`](docs/00-产品方向.md)
+> (English mirror: [`docs/en/product-direction.md`](docs/en/product-direction.md)).
+> **Anything marked "target" there is not implemented; do not read it as a shipped feature.**
 
-### 🧩 The Actual Analysis Chain
+### 🧩 The actual pipeline
 
 ```
 Market data ──► SQLite ──┐
-RSS news ───► SQLite ────┼──► assemble prompt ──► llm.invoke() ──► parse JSON ──► cache ──► frontend dashboard
-                        │
-                        └──► (optional) plugin-style web_search (LLM_SEARCH_ENABLED, off by default)
+RSS news    ──► SQLite ──┼──► prompt ──► llm.invoke() ──► parse JSON ──► cache ──► dashboard
+                         │
+                         └──► (optional) plugin-style web_search (LLM_SEARCH_ENABLED, off by default)
 
-Public data sources ──► factor store ──► rolling z-score ──► per-horizon weighted composite ──► one calibrated distribution ──► quant prediction
-(Treasury / NY Fed / CFTC /                                                                     │
- Yahoo / RSS, all key-less)                                                                     └──► walk-forward backtest + coverage
+Public sources ──► factor observations ──► rolling z ──► per-horizon weights ──► one calibrated
+(Treasury / NY Fed / CFTC /     │  (current value + append-only revision ledger; --as-of rebuilds
+ Yahoo / RSS, all key-free)     │   the panel as of any past day)
+                                ├──► walk-forward backtest (independent bets / HAC / four periods)
+                                └──► monitor dashboard (21 water-level rows, 5 of them information-only)
 ```
 
-| Analysis service | Input | Output |
+| Service | Input | Output |
 |---|---|---|
-| Bullish factors | Last 24h news + gold price | 5 bullish factors |
-| Bearish factors | Last 24h news + gold price | 5 bearish factors |
-| Institutional views | Last 30 days of news + (search) | The four institutions' most recent verifiable predictions (with date and source) |
-| Investment advice | Market state + bullish/bearish factors + institutional views | Three strategy tiers: conservative / balanced / opportunity |
-| Market summary | All of the above | Core logic, risks, overall judgement |
+| Bullish factors | last 24h news + gold price | 5 bullish factors |
+| Bearish factors | last 24h news + gold price | 5 bearish factors |
+| Institutional views | last 30 days of news + (search) | each institution's latest verifiable forecast (with date and source) |
+| Investment advice | market state + factors + institutional views | conservative / balanced / opportunity strategies |
+| Market summary | all of the above | core logic, risks, overall judgement |
 
 ---
 
-## 🌟 Our Vision
+## 🌟 Our vision
 
-**GoldMind** is committed to building — through the joint effort of the community — a **genuinely usable AI Agent platform for international gold market data analysis and price prediction**.
+**GoldMind** aims to be a **genuinely usable AI-agent platform for international gold-market
+analysis and price forecasting**, built with the community.
 
-Through technological innovation, we hope to:
+Through technical work we want to:
 
-- 📉 **Reduce information gaps** - let every investor access professional-grade market analysis
-- 🛡️ **Strengthen risk resilience** - provide multi-dimensional risk assessment and early warnings
-- 💡 **Practical investment advice** - give actionable investment strategies based on data and logic
+- 📉 **Reduce the information gap** — give every investor professional-grade market analysis
+- 🛡️ **Strengthen risk resistance** — multi-dimensional risk assessment and warnings
+- 💡 **Offer actionable advice** — strategies grounded in data and reasoning
 
-> 🤝 **We look forward to your participation!** Whether it is code contributions, feature suggestions or usage feedback, it will become an important force in driving the project forward.
+> 🤝 **You are welcome to join!** Code, feature ideas and feedback all move the project forward.
 
-If this project has been helpful or inspiring to you, a ⭐ **Star** is the best affirmation we could ask for!
+If this project helps or inspires you, a ⭐ **Star** is the best thank-you.
 
 ---
 
-## 📸 System Showcase
+## 📸 Screenshots
 
-### Masthead and Market
+> All 14 screenshots were taken on **2026-10-02 against a real running stack** (real backend,
+> real data, real LLM endpoint) by
+> [`app/scripts/capture_screenshots.mjs`](app/scripts/capture_screenshots.mjs). Before saving,
+> the script checks every block for substantial text and for the absence of empty-state markers;
+> if any block degrades into "loading" / "unavailable", it exits with an error and **never writes
+> a half-empty image**. You can reproduce them exactly (see "Common commands").
+
+### Masthead and market data
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/dashboard.jpeg" alt="Masthead and market" width="800">
+  <img src="docs/images/screenshots/dashboard.png" alt="Masthead and market data" width="800">
 </p>
 
-### Trend and Key Data
+### Chart and key figures
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/price-chart.jpeg" alt="Price trend and key data" width="800">
+  <img src="docs/images/screenshots/price-chart.png" alt="Price chart and key figures" width="800">
 </p>
 
-### Bullish vs Bearish
+### Bullish vs bearish factors
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-up.jpeg" alt="Bullish factors" width="400">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/news-analysis-down.jpeg" alt="Bearish factors" width="400">
+  <img src="docs/images/screenshots/news-analysis-up.png" alt="Bullish factors" width="400">
+  <img src="docs/images/screenshots/news-analysis-down.png" alt="Bearish factors" width="400">
 </p>
 
 > The two sides fetch and refresh independently; one side failing does not affect the other.
-> On the day the screenshot was taken the model returned only 2 bearish factors that had news
-> support — the prompt explicitly says "give fewer rather than inventing any to fill a quota";
-> when not a single one can be found the page honestly shows "temporarily unavailable", and
-> "re-analyse" retries it. It never shows built-in copy.
+> The prompt explicitly says "rather return fewer items than pad the list with common-sense
+> inventions"; when nothing can be found the page says "temporarily unavailable" and offers a
+> re-run, with no built-in fallback text.
 
-### Institutional Views
+### Institutional views
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/institutional-views.jpeg" alt="Institutional views" width="800">
+  <img src="docs/images/screenshots/institutional-views.png" alt="Institutional views" width="800">
 </p>
 
+> The only verifiable forecast that day was **Morgan Stanley: $4,000 is the support after the
+> pullback, with a long-term view of $5,000 in H2 2027** (forecast date 2026-10-01, from real
+> coverage inside the 30-day news window). Goldman Sachs, UBS and Citi had no verifiable target
+> price in the window, so the page says "no recent forecast" — having all four say "none", or
+> inventing numbers for them, are both explicitly unwanted behaviours here.
 > Web search is off by default (`LLM_SEARCH_ENABLED=false`): it uses MiMo's plugin-style
-> `web_search` tool, not a generic OpenAI capability, and the endpoint must have it enabled
-> first, otherwise the call returns
+> `web_search`, not a generic OpenAI capability. With the plugin disabled the endpoint returns
 > `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`
-> (verified in practice; reproduce it with `backend/scripts/smoke_llm.py`). When it is off the
-> section falls back to the news window, extracts each institution's **most recent verifiable**
-> prediction, and lists under "prediction date" the date that prediction was last verified,
-> labelling anything older than 30 days as "stale N days". "None" appears only when not a single
-> one can be found, and **an empty target price never overwrites an existing real record in the
-> database**.
-> When the screenshot was taken the 30-day news window held no verifiable institutional target
-> price, so all four institutions honestly show "no recent prediction".
+> (reproducible with `backend/scripts/smoke_llm.py`).
 
-### Investment Strategy
+### Investment strategy
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/investment-advice.jpeg" alt="Investment strategy" width="800">
+  <img src="docs/images/screenshots/investment-advice.png" alt="Investment strategy" width="620">
 </p>
 
-> The three tiers come from one LLM call, and the output budget is controlled by
-> `LLM_MAX_TOKENS` (default 8192). A budget that is too small truncates this large JSON and
-> parsing fails — the page then honestly shows "temporarily unavailable" rather than a built-in
-> strategy; when parsing fails the backend log records `finish_reason` and token usage for the
-> next investigation.
+> The three strategies come from one LLM call; the output budget is `LLM_MAX_TOKENS`
+> (default 8192, raise it for your endpoint). Too small a budget truncates the large JSON and
+> parsing fails — the page then says "temporarily unavailable" instead of showing a built-in
+> strategy; the backend logs `finish_reason` and token usage to make the next diagnosis easy.
 
-### Quant Prediction
+### Quantitative forecast
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-prediction.jpeg" alt="Quant prediction: direction, probability and scenarios across five horizons" width="800">
+  <img src="docs/images/screenshots/quant-prediction.png" alt="Quant forecast: 1-year direction, probability and scenarios" width="800">
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-fair-value.jpeg" alt="Fair value decomposition" width="800">
+  <img src="docs/images/screenshots/quant-fair-value.png" alt="Fair-value decomposition" width="800">
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-monitor.jpeg" alt="Monitor dashboard (weekly table)" width="800">
+  <img src="docs/images/screenshots/quant-monitor.png" alt="Monitor dashboard (21 rows)" width="800">
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/quant-accuracy.jpeg" alt="Backtest hit rate against benchmarks" width="800">
+  <img src="docs/images/screenshots/quant-accuracy.png" alt="Backtest accuracy, baselines and coverage (1 quarter)" width="800">
 </p>
 
-> The quant engine calls no LLM: all 14 factors come from free public data sources. A factor or
-> indicator that cannot be fetched is labelled "unavailable" with its reason, and fewer than three
-> usable factors means "prediction unavailable" outright. When the screenshot was taken 12/14
-> factors were usable; direction, probability, target price and the three scenarios all derive from
-> the same calibrated distribution (see "Quant Strategy").
+> The quantitative engine calls no LLM: all 14 factors come from free public sources; missing
+> factors and indicators are marked "unavailable" with a reason, and fewer than 3 usable factors
+> means "forecast unavailable". On the capture day 12/14 factors were usable (geopolitical
+> strength and GLD shares lacked samples); forecast and backtest share one horizon tab strip,
+> so the shots above are the 1-year and 1-quarter tabs. In the monitor table the last five of the
+> 21 rows are the second round's **information-only** series: GVZ, gold/silver ratio, copper/gold
+> ratio, CFTC net-long share of open interest and official daily GPR — none cleared the gates, so
+> they show values and dates but no bull/bear label.
 
-### Conclusion
+### Research page (pre-registered verdict + skill overview)
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JasonBuildAI/GoldMind/main/docs/images/screenshots/market-summary.jpeg" alt="Market summary" width="800">
+  <img src="docs/images/screenshots/research-verdict.png" alt="Research page: verdict (forward window not yet decidable)" width="800">
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshots/research-forward-window.png" alt="Research page: how many trading days the forward window still needs" width="800">
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshots/research-overview.png" alt="Research page: skill overview across five horizons" width="800">
+</p>
+
+> The research page spells out why no edge can be claimed yet: the verdict only counts independent
+> bets in the forward holdout (from 2026-10-02). The 1-day horizon has 1/20 bets and needs about
+> 19 more trading days; the 5-day horizon needs about 99. The historical-holdout column is
+> explicitly labelled "already seen by the first two rounds — record only" and never substitutes
+> for the verdict.
+
+### Summary
+<p align="center">
+  <img src="docs/images/screenshots/market-summary.png" alt="Market summary" width="800">
 </p>
 
 ---
 
-## 📐 Quant Strategy
+## 📐 Quant strategy
 
-This section explains **how "the four classes of factors that affect the international gold price" become the numbers on the page**, and **where those numbers go wrong**. The factor list, weights, direction priors and freshness caps are defined in one place only, `backend/app/services/quant/definitions.py`, and this section does not copy a second version — if the numbers here disagree with the code, the code wins.
+This section explains **how "the four layers of drivers" become the numbers on the page**, and
+**where those numbers can be wrong**. The factor list, weights, direction priors and freshness
+caps are defined in exactly one place — `backend/app/services/quant/definitions.py`; this section
+does not restate them, and code wins over prose.
 
-### 1. Four Layers of Drivers and 14 Factors
+### 1. Four layers, 14 factors
 
-The framework is a four-layer classification of "the main factors that affect the international gold price":
+The framework classifies the drivers of the international gold price into four layers:
 
-| Layer | Real-world counterpart | Factors | The question this layer answers |
+| Layer | What it maps to | Factors | The question it answers |
 |---|---|---|---|
-| Monetary policy and rates | Real rates, policy path, the dollar | 4 | Is the opportunity cost of holding gold rising or falling? |
-| Hedging and credit | Volatility, credit stress, geopolitical conflict | 3 | What is the market afraid of? Where is money hiding? |
-| Supply-demand structure | Central-bank gold buying, speculative positioning, ETF creation/redemption | 3 | Who is actually buying, and how much? |
-| Market and technicals | Momentum, seasonality, substitutes, risk appetite | 4 | What does price's own inertia say? |
+| Monetary policy & rates | real rates, policy path, the dollar | 4 | Is the opportunity cost of holding gold rising or falling? |
+| Risk & credit | volatility, credit stress, geopolitics | 3 | What is the market afraid of, and where is money hiding? |
+| Supply & demand | central-bank buying, positioning, ETF flows | 3 | Who is really buying, and how much? |
+| Market & technicals | momentum, seasonality, alternatives, risk appetite | 4 | What does price inertia itself say? |
 
-Full definitions of the 14 factors (direction prior `+1` = the factor rising is bullish for gold, `-1` = rising is bearish):
+Full definitions of the 14 factors (prior `+1` = the factor rising is bullish for gold, `-1` = bearish):
 
-| Factor | Layer | Unit | Source | Prior | Weights 1d/1w/1m/1q/1y | Freshness cap |
+| Factor | Layer | Unit | Source | Prior | Weight 1d/1w/1m/1q/1y | Freshness cap |
 |---|---|---|---|---|---|---|
-| 10-year US real yield | Monetary policy and rates | % | US Treasury (TIPS real yield curve) | −1 | 0.25 / 0.5 / 1.0 / 1.0 / 0.8 | 7 days |
-| Market-implied policy expectations | Monetary policy and rates | % | US Treasury (2-year) − New York Fed (EFFR) | −1 | 0.2 / 0.4 / 1.0 / 0.8 / 0.6 | 7 days |
-| 10-year inflation expectations | Monetary policy and rates | % | US Treasury (nominal − real yield) | +1 | 0.1 / 0.2 / 0.5 / 0.5 / 0.4 | 7 days |
-| Dollar index | Monetary policy and rates | points | Yahoo Finance (DX-Y.NYB) | −1 | 0.3 / 0.5 / 0.9 / 0.7 / 0.5 | 7 days |
-| VIX volatility index | Hedging and credit | points | Yahoo Finance (^VIX) | +1 | 0.6 / 0.5 / 0.4 / 0.3 / 0.2 | 7 days |
-| Credit-market risk appetite | Hedging and credit | % (20-day) | Yahoo Finance (HYG/IEF ratio) | −1 | 0.5 / 0.4 / 0.3 / 0.2 / 0.2 | 7 days |
-| Geopolitical risk intensity | Hedging and credit | % (share of news) | This system's RSS corpus (keyword-intensity proxy) | +1 | 0.5 / 0.5 / 0.4 / 0.3 / 0.3 | 3 days |
-| Central-bank gold buying (China official reserves) | Supply-demand structure | 10k oz | Sina Finance macro data (PBoC official reserve assets) | +1 | 0.2 / 0.4 / 0.7 / 1.0 / 1.0 | 62 days |
-| COMEX speculative net long | Supply-demand structure | contracts | CFTC Commitments of Traders (contract code 088691) | +1 | 0.8 / 0.7 / 0.4 / 0.3 / 0.2 | 14 days |
-| Gold ETF shares (GLD) | Supply-demand structure | shares | Yahoo Finance (accumulated since collection began) | +1 | 0.3 / 0.4 / 0.5 / 0.7 / 0.8 | 7 days |
-| Gold trend momentum | Market and technicals | % (60-day) | Yahoo Finance (GC=F close) | +1 | 1.0 / 1.0 / 0.4 / 0.3 / 0.2 | 7 days |
-| Seasonality (historical average for the current month) | Market and technicals | % (historical average) | Own price series (same month in previous years only) | +1 | 0.2 / 0.3 / 0.2 / 0.2 / 0.2 | 7 days |
-| Bitcoin (digital-gold narrative) | Market and technicals | points | Yahoo Finance (BTC-USD) | −1 | 0.2 / 0.2 / 0.2 / 0.2 / 0.3 | 7 days |
-| Equity risk appetite | Market and technicals | points | Yahoo Finance (SPY) | −1 | 0.5 / 0.4 / 0.3 / 0.2 / 0.2 | 7 days |
+| US 10-year real yield | Monetary policy & rates | % | US Treasury (TIPS real yield curve) | −1 | 0.25 / 0.5 / 1.0 / 1.0 / 0.8 | 7 days |
+| Market-implied policy expectation | Monetary policy & rates | % | US Treasury (2-year) − NY Fed (EFFR) | −1 | 0.2 / 0.4 / 1.0 / 0.8 / 0.6 | 7 days |
+| 10-year inflation expectation | Monetary policy & rates | % | US Treasury (nominal − real yields) | +1 | 0.1 / 0.2 / 0.5 / 0.5 / 0.4 | 7 days |
+| Dollar index | Monetary policy & rates | points | Yahoo Finance (DX-Y.NYB) | −1 | 0.3 / 0.5 / 0.9 / 0.7 / 0.5 | 7 days |
+| VIX | Risk & credit | points | Yahoo Finance (^VIX) | +1 | 0.6 / 0.5 / 0.4 / 0.3 / 0.2 | 7 days |
+| Credit-market risk appetite | Risk & credit | % (20d) | Yahoo Finance (HYG/IEF ratio) | −1 | 0.5 / 0.4 / 0.3 / 0.2 / 0.2 | 7 days |
+| Geopolitical risk strength | Risk & credit | % (news share) | this system's RSS corpus (keyword-intensity proxy) | +1 | 0.5 / 0.5 / 0.4 / 0.3 / 0.3 | 3 days |
+| Central-bank gold reserves (China) | Supply & demand | 10k oz | Sina Finance (PBoC official reserve assets) | +1 | 0.2 / 0.4 / 0.7 / 1.0 / 1.0 | 62 days |
+| COMEX speculative net long | Supply & demand | contracts | CFTC positioning report (contract 088691) | +1 | 0.8 / 0.7 / 0.4 / 0.3 / 0.2 | 14 days |
+| Gold ETF shares (GLD) | Supply & demand | shares | Yahoo Finance (GLD share snapshot, accumulating since collection began) | +1 | 0.3 / 0.4 / 0.5 / 0.7 / 0.8 | 7 days |
+| Gold trend momentum | Market & technicals | % (60d) | Yahoo Finance (GC=F close) | +1 | 1.0 / 1.0 / 0.4 / 0.3 / 0.2 | 7 days |
+| Seasonality (month's historical mean) | Market & technicals | % (historical mean) | own price series (calendar month, prior years only) | +1 | 0.2 / 0.3 / 0.2 / 0.2 / 0.2 | 7 days |
+| Bitcoin (digital-gold narrative) | Market & technicals | points | Yahoo Finance (BTC-USD) | −1 | 0.2 / 0.2 / 0.2 / 0.2 / 0.3 | 7 days |
+| Equity risk appetite | Market & technicals | points | Yahoo Finance (SPY) | −1 | 0.5 / 0.4 / 0.3 / 0.2 / 0.2 | 7 days |
 
-Direction priors come from economic reasoning and **are not guaranteed to hold** — the backtest reports each factor's standalone hit rate and IC, and when a direction runs opposite to reality the page still shows it as it is.
+Direction priors come from economic reasoning and are **not guaranteed to hold** — the backtest
+reports per-factor hit rates and IC (the "factor breakdown" section of the research page), and
+the page shows contrary evidence as it is. Besides these 14 factors, the
+`factor_observations` table also stores 10 **monitor-only** series (USDCNY, the CNY gold
+reference, the TGA balance, RRP, open interest, GVZ, the gold/silver ratio, the copper/gold
+ratio, the CFTC net-long share and official daily GPR). They never enter composition — see
+section 8.
 
-### 2. Five Horizons and Their "Dominant Layers"
+### 2. Five horizons, each with its own dominant layer
 
-The first step of the methodology is to **pick the time horizon first, then the variables** — the same factors carry different weights at different horizons:
+The first methodological step is **choose the horizon, then the variables** — the same factor
+carries different weights at different horizons:
 
-| Horizon | Label | Real-world period | Dominant layer | Notes |
+| Horizon | Label | Real-world span | Dominant layer | Comment |
 |---|---|---|---|---|
-| 1 trading day | 1 day | intraday–1 week | Market and technicals → supply-demand structure | Flows, technicals and positioning crowding dominate; macro fundamentals carry the least weight |
-| 5 trading days | 1 week | intraday–1 week | Market and technicals → hedging and credit | One week of flows and event pulses dominates; macro is still second |
-| 20 trading days | 1 month | 1–3 months | Monetary policy and rates → supply-demand structure | Policy expectations, economic data and the dollar dominate |
-| 60 trading days | 1 quarter | 1–3 months | Monetary policy and rates → supply-demand structure | Policy path and demand structure carry equal weight |
-| 250 trading days | 1 year | 6–18 months | Supply-demand structure → monetary policy and rates | The real-rate cycle, the rate-cut path and the central-bank buying trend dominate |
+| 1 trading day | 1d | intraday–1 week | market & technicals → supply & demand | flows, technicals and positioning dominate; macro weighs least |
+| 5 trading days | 1w | intraday–1 week | market & technicals → risk & credit | weekly flows and event impulses; macro still secondary |
+| 20 trading days | 1m | 1–3 months | monetary policy & rates → supply & demand | policy expectations, data and the dollar dominate |
+| 60 trading days | 1q | 1–3 months | monetary policy & rates → supply & demand | policy path and demand structure both matter |
+| 250 trading days | 1y | 6–18 months | supply & demand → monetary policy & rates | real-rate cycles, the easing path and central-bank buying dominate |
 
-This is also why each of the 14 factors carries a five-dimensional weight vector rather than one global weight — using "central-bank gold buying" to explain tomorrow's gold price, or "VIX" to explain next year's, both get the horizon backwards.
+This is why each of the 14 factors carries five weights instead of one global weight: explaining
+tomorrow's gold price with central-bank buying, or next year's with VIX, gets the horizon wrong.
 
-### 3. One Calibrated Distribution, From Which Every Output Derives
+### 3. One calibrated distribution feeds every output (`quant-v5`)
 
-The factor-composite `score` is an **uncalibrated** input — it appears only in the factor table and the "factor bias (uncalibrated)" row. Every conclusion on the page comes from the same exit, `engine.build_prediction_frame`:
-
-```
-μ    = α + β · score              Expanding-window OLS; sample pairs satisfy s + h ≤ t
-σ    = std(r_s − μ_s | s+h ≤ t) × q80( |r_s − μ_s| / (1.2816 · σ_s) )
-                                  Standard deviation of the walk-forward prediction error, then the
-                                  width is calibrated to the error's empirical quantile
-p_up = Φ(μ / σ)                   Upside probability
-Target price = base price × (1 + μ)   Base price = COMEX front-month futures daily close (gold_close)
-80% interval = μ ± 1.2816σ
-Three scenarios = quantiles of N(μ, σ²)   Base [q25, q75] / Bull top 25% / Bear bottom 25%
-Direction = sign(μ)               Exactly 0 is recorded as "flat"
-```
-
-Model version **`quant-v4`**. Four hard conventions:
-
-1. **No look-ahead.** Rolling statistics and regression samples are all `shift`ed to before t; data sources published only after the gold close (the Treasury yield curve, the New York Fed EFFR, CFTC positioning) are shifted wholesale by one business day. Guard: `backend/tests/unit/quant/test_no_lookahead.py` — turn the data after t into garbage values, and the signal at t must remain bit-for-bit identical.
-2. **No falling back to "expected unchanged".** When a horizon has fewer than 60 regression samples, the whole horizon returns "unavailable + reason"; it does not substitute the sign of the score for the direction, nor pretend μ = 0. When there are fewer than 60 realised errors, σ falls back to the "expanding standard deviation of realised h-day returns", still using past data only.
-3. **Missing factors are renormalised over the remaining weights**, not treated as 0; fewer than 3 usable factors means the "prediction is unavailable" outright.
-4. **Time flows in one time zone only** (`app.utils.timeutil`, default `Asia/Shanghai`).
-
-### 4. The Four-Layer Decomposition of Fair Value
-
-`decompose.py` uses walk-forward expanding-window OLS:
+The composite `score` is an **uncalibrated** input — it appears only in the factor table and the
+"factor tilt (uncalibrated)" row. Everything on the page comes out of the same
+`engine.build_prediction_frame` exit:
 
 ```
-log gold price ~ real rate + log dollar index + log central bank reserves + VIX
+signed_z_i = sign_i × z(x_i)                    per-factor direction alignment (5-year rolling z)
+score_h    = Σ w_i(h) · signed_z_i / Σ w_i(h)   weights per horizon, renormalised
+
+μ_h        = α + β · score_h                    expanding-window OLS on pairs with s + h ≤ t
+scale_h    = std(e_s | s + h ≤ t)               std of walk-forward errors
+F̂_h        weighted empirical distribution of recent realised e_s/scale_h; the nominal miss
+            rate α is updated online by ACI
+
+interval   = μ + scale · [ F̂⁻¹(α/2),  F̂⁻¹(1−α/2) ]
+scenarios  = μ + scale · [ F̂⁻¹(0.25), F̂⁻¹(0.75) ]
+p_up       = 1 − F̂( −μ / scale )               same distribution as the interval and scenarios
+target     = base price × (1 + μ)               base = COMEX front-month daily close (gold_close)
+direction  = sign(μ)                            exactly 0 is reported as "flat"
 ```
 
-to split the gold price into **macro anchor + demand premium + risk premium + sentiment residual**. The display convention is written in one place only, `decompose.py`: the demand and risk premiums multiply in a chain (the risk premium takes "anchor + demand premium" as its base), so that both "anchor + demand premium + risk premium = fair value" and "the three blocks + sentiment residual = market price" hold by construction. The regression coefficients at time t use only realised samples with `s ≤ t−1`; when fewer than 120 samples exist or any regressor is missing, it returns "unavailable + reason". Deviation = market price / fair value − 1.
+Model version **`quant-v5`**. Six hard conventions:
 
-> With this, "is it expensive right now" stops being a feeling — it becomes "the market price is so many percentage points above or below the model's fair value, and of that, how much comes from demand, how much from risk, and how much is sentiment".
+1. **No look-ahead.** Rolling statistics and regression samples are all shifted before t;
+   sources published after the gold close (Treasury yield curve, NY Fed EFFR, CFTC) are moved
+   one business day later as a whole.
+   Guard: `backend/tests/unit/quant/test_no_lookahead.py` — replace post-t data with garbage and
+   the signal at t must stay bit-for-bit identical.
+2. **No "assume unchanged" fallback.** With fewer than 60 regression pairs the horizon is
+   "unavailable + reason": no score sign as a stand-in direction, no pretending μ = 0. With fewer
+   than 60 realised errors, `scale` falls back to the expanding std of realised h-day returns,
+   still using only past data.
+3. **Expected return is capped**: `|μ| ≤ EXPECTED_CAP_SIGMAS × expanding std of realised h-day
+   returns`. In windows where the score barely moves, the univariate OLS denominator approaches
+   zero and β can reach 10⁴ — a real 20-year panel produced +126167% at 60 days. The cap keeps
+   displayed targets and intervals from flying off.
+4. **Missing factors are renormalised by remaining weights**, never treated as 0; fewer than 3
+   usable factors means "forecast unavailable".
+5. **Stale means disabled.** Observations past `max_age_days` become NaN in `align_series`: they
+   enter no z, no composite and no backtest factor count — no three-month-old number pretending
+   to be today's level.
+6. **Time flows in one timezone** (`app.utils.timeutil`, default `Asia/Shanghai`).
 
-### 5. Trigger and Invalidation Conditions of the Scenarios
+The probability is **not** `Φ(μ/σ_display)` — that divides by the scale already widened for the
+interval, pushing every probability toward 50%. Before 2.0.1 this was exactly the mechanism
+behind the negative Brier skill score; now probability and interval are different reads of the
+same distribution. `σ_display` still exists, for display only ("equivalent normal scale").
 
-The three scenarios are not written off the top of anyone's head: Base takes the middle 50% of the distribution (q25–q75), Bull and Bear take the top and bottom 25% each, so the three probabilities always sum to 100%. Each scenario also carries **trigger conditions** and **invalidation conditions** — generated from that horizon's **heaviest factor** and the **200-day moving average**, they are sentences you can check line by line on the page, not adjectives. When σ is non-positive, the base price is missing or no factors are usable, it returns "unavailable + reason" without blocking the main prediction output.
+**The interval convention is asymmetric ACI (adaptive conformal inference)**: the nominal miss
+rate α updates online as each forecast is issued. 2.0.1 fixed a misalignment that systematically
+depressed coverage — α was updated by judging the bet sent h days ago with today's row, which
+biases longer horizons more and pushes coverage down. After the fix, development coverage went
+76.7% → 79.3% (20d) and 72.6% → 73.6% (60d) as measured through the research API.
 
-### 6. Backtest Conventions and the Three Benchmarks
+### 4. Fair value in four layers
 
-The backtest (`backtest.py`) is **walk-forward**: every historical point uses only the data available at that time, it scores the **calibrated direction** (`sign(μ)`), and it is always shown side by side with three benchmarks:
+`decompose.py` uses a walk-forward expanding-window OLS:
 
-| Benchmark | Meaning |
+```
+log gold price ~ real yield + log dollar index + log central-bank reserves + VIX
+```
+
+and splits the price into **macro anchor + demand premium + risk premium + sentiment residual**.
+The display convention lives only in `decompose.py`: demand and risk premia are chained
+multiplicatively (the risk premium is applied to "anchor + demand premium"), so both
+"anchor + demand + risk = fair value" and "the three blocks + residual = market price" hold by
+construction. Regression coefficients at t use only realised samples with `s ≤ t−1`; fewer than
+120 samples or a missing regressor returns "unavailable + reason". Deviation = market / fair − 1.
+
+Since 2.0.1 the decomposition **no longer extrapolates beyond the regression's support**: if a
+fitted value leaves the `6σ` / `12 log-premium` envelope, that block is reported as
+`unsupported_by` and refuses to produce a number — a premium "computed" on inputs the historical
+sample never covered is extrapolation noise, not information.
+
+> With this, "is it expensive now" stops being a feeling: it becomes "the market trades X% above
+> the model's fair value; of that, how much is demand, how much is risk, how much is sentiment" —
+> plus "is this judgement inside the range the model has actually seen".
+
+### 5. Scenario triggers and invalidation
+
+The three scenarios are not hand-written: Base takes the middle 50% of the distribution
+(q25–q75 of F̂), Bull and Bear take the top and bottom 25%, so their probabilities always sum to
+100%. Each scenario also carries **trigger** and **invalidation** conditions generated from the
+horizon's heaviest factor and the 200-day moving average — checkable sentences, not adjectives.
+Non-positive scale, a missing base price or no usable factors returns "unavailable + reason"
+without blocking the main forecast.
+
+### 6. Backtest conventions: four periods, independent bets, three baselines
+
+The backtest (`backtest.py`) is **walk-forward**: every historical point uses only what was
+available then. Since 2.0.1 the sample is cut into four periods first — mixing them would be
+evidence laundering:
+
+| Period | Start | Purpose |
+|---|---|---|
+| development | data start | the only stretch where parameters and candidates may be tuned |
+| historical holdout | 2023-10-02 | already seen by the first two rounds; **record only, never a selection basis** |
+| forward holdout | 2026-10-02 (pre-registration seal) | the **only** judging window; below 20 independent bets the status is `pending` and the report says how many trading days are still missing |
+| full sample | data start | display only; never used for verdicts |
+
+Second, **overlapping samples are not independent evidence**. The 250-day historical holdout has
+754 overlapping observations, which at stride = h become **3** genuinely independent bets. Every
+skill judgement also reports `independent_bets` (754 / 151 / 37 / 12 / 3 across horizons); too
+few samples are labelled "undecidable". Hit rates always sit next to three baselines:
+
+| Baseline | Meaning |
 |---|---|
-| Always long | Ignores every signal and guesses up every day |
-| Momentum | Extrapolates the recent trend |
+| Always long | ignore every signal and guess up every day |
+| Momentum | extrapolate the recent trend |
 | Coin flip | 50% |
 
-Three more items are listed separately: the record of the **uncalibrated score direction** (`metrics.score_direction_accuracy`, which answers "does calibration actually add anything"), the **actual coverage of the nominal 80% interval** (`metrics.interval_coverage_80`), and the **per-segment results** split at 2022-01-01 (`metrics.regimes`); per-factor hit rate and IC are also listed one by one, and when a segment has too few samples it gives only the sample count and the reason — no padding the numbers.
+Measured 2026-10-02 (`quant-v5`, exported from the research API; nominal coverage 80%):
 
-**Measured coverage and hit rates (recomputed 2026-10-02, same source as the page):**
+| Horizon | Development hit | Historical-holdout hit | Always-long (holdout) | Diff | Development coverage | Historical-holdout coverage | Full-sample coverage |
+|---|---|---|---|---|---|---|---|
+| 1d | 52.2% | 56.4% | 56.4% | +0.0pp | 80.2% | 78.5% | 79.9% |
+| 1w | 54.0% | 62.1% | 62.1% | +0.0pp | 80.1% | 78.2% | 79.8% |
+| 1m | 53.5% | 68.1% | 68.1% | +0.0pp | 79.3% | 77.2% | 78.9% |
+| 1q | 57.5% | 83.4% | 83.4% | +0.0pp | 73.6% | 65.1% | 72.4% |
+| 1y | 63.1% | 100.0% | 100.0% | +0.0pp | 55.9% | 28.8% | 52.8% |
 
-| Horizon | 1 day | 1 week | 1 month | 1 quarter | 1 year |
+Read this carefully: the historical holdout is a three-year one-way gold rally, so "always long"
+alone scores 56–100%; the model matches it day by day (+0.0pp) and its Brier skill score is
+negative (−0.005 / −0.029 / −0.091 / −0.392 / −1.000). **That record proves neither an edge nor
+its absence — it only proves the historical holdout has been seen.** Hence 2.0.1 moves the
+judging window forward, and coverage gaps are audited by volatility bucket (thresholds from the
+expanding past distribution only, independent bets inside each bucket, counts reported when
+fewer than 30).
+
+### 7. Research bench and pre-registration: improvements must clear the line first
+
+`scripts/quant_lab.py` **freezes the candidate list and the pass lines before running the numbers**,
+then evaluates them over three sample periods. The candidates are not arbitrary: baseline B0,
+drift D1/D3/D5, composite S1–S4, interval P1–P4, calibration C0/C1/C2, factor-set F1–F4 and
+ensemble E0 — 20 in total (defined in one place, `scripts/quant_lab.py`).
+
+**The first round (17 candidates, before 2.0) concluded "no conclusion"**: 17 candidates × 5
+horizons, none cleared the line on the holdout, and after the engine fixes they are
+statistically indistinguishable from each other
+(full table: [`docs/specs/2026-10-02-研究台报告.md`](docs/specs/2026-10-02-研究台报告.md)).
+**That negative result is the most valuable output of this round**: it redirected the budget from
+"keep tuning" to "new information sources and a longer history" — the panel was backfilled to 20
+years, evaluation moved to independent bets + HAC, and five new series were wired in (section 8).
+
+The same discipline now has an executable form: the **factor gate layer**
+(`backend/app/services/quant/screen.py`, driven by `scripts/screen_factors.py`). Any new factor
+must pass three gates before it may enter composition:
+
+1. **Significance**: covariance after de-meaning (not raw correlation) with HAC (Newey–West)
+   t-statistics, plus a Bonferroni correction and a hard `|t| ≥ 3` threshold (p-values alone get
+   fooled by borderline sampling);
+2. **Cross-horizon agreement**: the sign must agree across short/medium/long horizons — one
+   significant cell is not enough;
+3. **Forward-window confirmation**: after the pre-registration seal
+   (`ACTIVE_HOLDOUT_START = 2026-10-02`) the series must accumulate `max(20, ⌈300/h⌉)`
+   independent bets; until then the status is `pending` with the number of trading days still
+   missing.
+
+Measured on all 255 cells of a 26-year panel: **no signal passed gates ①②**; "reversed
+significance" is recorded but never adopted (a pre-committed direction rule — no post-hoc sign
+flips), and the list came out empty with the closest entry at `|t| = 2.98`; gate ③ is `pending`
+everywhere (about 299 trading days short at 1d/5d, 399 at 20d, 1199 at 60d, 4999 at 250d).
+In other words: today no new series deserves a bull/bear label.
+
+**Round three (2.0.1)** pre-registered one candidate, C2 (calibration counted per bet + a lookback
+window), with the bar written down first: 60-day development coverage must land in [0.78, 0.82],
+the width must not widen, and the cross-bucket coverage spread must stay within 2pp. Measured:
+
+| Horizon | Live B0 coverage | C1 (per bet) | **C2 (per bet + window)** | Width ratio (C2/B0) |
+|---|---|---|---|---|
+| 5d | 0.7997 | 0.8097 | 0.8161 | 1.054× (widening — vetoed) |
+| 20d | 0.7895 | 0.8055 | 0.7984 | 0.991× |
+| 60d | 0.7437 | 0.7720 | **0.7679** | 0.881× |
+
+**Verdict: C2 is eliminated.** Its 60-day coverage is 1.2pp short of the pre-registered 0.78, and
+the bar does not move for it. The control candidate C0 equals live B0 value for value (proving
+the machinery itself has no side effects). The record is in
+[`docs/specs/2026-10-02-量化引擎第三轮预注册.md`](docs/specs/2026-10-02-量化引擎第三轮预注册.md);
+reproduce with `python scripts/quant_lab.py --group calibration --horizons 20,60`.
+
+> The honest summary: 2.0.1 did not replace the model with a "looks stronger" version, because
+> the evidence does not support one. It made every future improvement clear the line first — and
+> made "not there yet" visible by itself.
+
+### 8. Monitor dashboard: 21 water-level rows
+
+`monitor.py` covers **21 rows**. Each row carries frequency, source, current value, signal
+(bullish / bearish / neutral / information) and as-of date. Signal rules are deterministic
+thresholds centralised in `_rule`; rows without data or without enough history honestly return
+"unavailable + reason". Each row updates at its own source cadence (daily / weekly / monthly) —
+this is not one uniform refresh:
+
+| # | Indicator | Freq | Unit | Source | Signal rule / note |
 |---|---|---|---|---|---|
-| Holdout (from 2023-10-02) direction hit rate | 56.3% | 62.2% | 68.2% | 83.3% | 100% |
-| Holdout "always long" | 56.3% | 62.2% | 68.2% | 83.3% | 100% |
-| Development-period direction hit rate | 52.2% | 54.0% | 53.5% | 57.5% | 63.1% |
-| Holdout actual coverage of the 80% interval | 78.9% | 77.6% | 73.2% | 61.2% | 24.1% |
+| 1 | US 10y real yield (TIPS) | D | % | US Treasury TIPS curve | 5-obs change ≤ −0.10pp bullish, ≥ +0.10pp bearish |
+| 2 | Breakeven inflation (10y nominal − real) | D | % | US Treasury yield curve | 5-obs change ≥ +0.10pp bullish, ≤ −0.10pp bearish |
+| 3 | Dollar index (DXY) | D | pts | Yahoo Finance (DX-Y.NYB) | 5-obs change ≥ +1% bearish, ≤ −1% bullish |
+| 4 | Market-implied policy expectation (2y − EFFR) | D | % | US Treasury − NY Fed | 5-obs change ≥ +0.10pp bearish, ≤ −0.10pp bullish |
+| 5 | Central-bank gold reserves | M | 10k oz | Sina Finance (official reserves) | MoM increase bullish, decrease bearish |
+| 6 | Gold ETF shares (GLD) | D | shares | Yahoo Finance | last two observations: increase bullish (subscription), decrease bearish |
+| 7 | CFTC net long (crowding) | W | contracts | CFTC positioning report | net z ≥ +1.5 bearish, ≤ −1.5 bullish |
+| 8 | Shanghai gold premium | D | CNY/g | SGE AU9999 | **measured unavailable**: reason shown, no invented number |
+| 9 | VIX | D | pts | Yahoo Finance (^VIX) | ≥ 25 bullish, ≤ 15 bearish |
+| 10 | Credit appetite (HYG/IEF 20d change) | D | % | Yahoo Finance | ≥ +2 bearish, ≤ −2 bullish |
+| 11 | Gold vs 200-day MA | D | USD | own price series | deviation ≥ +0.5% bullish, ≤ −0.5% bearish |
+| 12 | USD/CNY | D | CNY | Yahoo Finance (CNY=X) | information only: conversion reference, no direction |
+| 13 | CNY gold reference | D | CNY/g | gold close × USDCNY ÷ 31.1035 | information only: price anchor for domestic investors |
+| 14 | US Treasury TGA balance | D | USD mn | US Treasury Fiscal Data | 20-obs increase ≥ 50bn bearish, decrease ≥ 50bn bullish |
+| 15 | NY Fed reverse repo (RRP) | D | USD 100mn | NY Fed open-market results | 20-obs increase ≥ 5bn bearish, decrease ≥ 5bn bullish |
+| 16 | COMEX gold open interest | W | contracts | CFTC positioning report | information only: participation gauge, no direction |
+| 17 | Gold implied volatility (^GVZ) | D | pts | Yahoo Finance (^GVZ) | information only: 18-year panel, \|t\| < 0.6 at all horizons |
+| 18 | Gold/silver ratio | D | ratio | Yahoo Finance (GC=F ÷ SI=F) | information only: best cell 60d t=+2.30 (iid +10.76), gate not cleared |
+| 19 | Copper/gold ratio | D | ratio | Yahoo Finance (HG=F ÷ GC=F) | information only: 250d t=+1.27 over 26 years, gate not cleared |
+| 20 | CFTC net long share of open interest | W | % | CFTC positioning report | information only: crowding as a share, 250d t=+0.73, gate not cleared |
+| 21 | Geopolitical risk (official daily GPR) | D | pts | Iacoviello & Papaioannou GPR | information only: 20d t=−2.64 (reversed), short of \|t\| ≥ 3, no direction |
 
-The nominal value is 80%. **The 1-year coverage is still below the plan's ≥70% acceptance line (24.1%)** and heads the next round's agenda — see Section 10, "Known limitations". In the holdout the model's direction matches "always long" day by day (+0.0pp; gold trended up one way after 2023-10): this round did not swap the model for a new version that has no evidence behind it. The verdict process is in Section 7.
+> Rows 17–21 are the second round's five new sources. Whether they carry directional information
+> was tested on a 26-year panel through the strict gates (section 7) and none cleared — so these
+> five **never get a bull/bear label**, they are water levels only. Rows 12–16 are likewise
+> monitor-only series stored in the same table (`factor_observations`) without entering
+> composition; order and count are fixed by `monitor.ROW_SPECS` and guarded line by line in
+> `backend/tests/unit/quant/test_monitor.py`.
 
-### 7. Research Bench and Pre-registration: Improvements Must Clear the Holdout First
+### 9. Data sources and freshness
 
-"The backtest looks good" is not evidence — pick parameters repeatedly on the same data and you will always find a pretty curve. So every improvement is **registered first and tested second**: the candidate list, the selection rules and the pass lines are frozen before the experiment starts (`docs/specs/2026-10-02-量化策略提升路线图.md`, section 6.1; the rules live in one place, `backend/app/services/quant/preregistered.py`). The experiment tool is `backend/scripts/quant_lab.py`, and the page is the "Research" page (`app/research.html` ← `GET /api/gold/quant/research`).
+- **All free, no keys**: US Treasury yield curve and Fiscal Data (TGA), NY Fed RRP and EFFR,
+  CFTC positioning reports, Yahoo Finance (DXY / GC=F / SI=F / HG=F / GLD / SPY / BTC-USD /
+  ^VIX / ^GVZ / HYG / IEF / CNY=X), Iacoviello & Papaioannou's official daily GPR series,
+  Sina Finance (central-bank reserves), and this system's own RSS corpus.
+- **Per-source throttling**: the sync engine gives each source its own 6–24h window and fetches
+  increments; one source failing does not affect the others, and the failure reason is written
+  into the sync report and shown on the page.
+- **Per-factor freshness caps** (last column of the section-1 table): 7 days for daily series to
+  cover long holidays, 62 days for monthly ones to cover publication delays. Observations past
+  the cap become NaN **at composition time** (not filled forward and then labelled), so "stale"
+  really means excluded.
+- **Observations have a revision ledger; historical panels can be rebuilt.**
+  `factor_observations` is append-only: repeating a fetch for the same `(factor_key, obs_date)` is
+  idempotent, and a revised value appends a new observation. Any historical verdict can therefore
+  be recomputed with `--as-of 2026-09-01` against the revision state visible that day —
+  pre-registration has to be re-checkable, otherwise it is just a slogan. When upgrading an old
+  database, `migrate_quant.py` backfills the ledger from existing observations; without it
+  `--as-of` would silently return an empty panel, so the migration prints the number of rows it
+  is backfilling.
+- **Future observations are rejected**: any row whose `obs_date` is later than "today" is
+  refused at the door (timezone rule #5), so the backtest can never read data that had not
+  happened yet.
+- **First backfill defaults to 10 years** (`QUANT_HISTORY_YEARS`, raise it if you like), then
+  increments only. To stretch the panel to 20 years in one go, use
+  `backend/scripts/backfill_quant.py --apply --years 20`; `--dry-run` only prints what each
+  series is missing and writes nothing.
 
-**Verdict on 2026-10-02: 17 candidates × 5 horizons, not one passed.**
+### 10. Known limitations (stated without polish)
 
-| Candidate family | Count | Holdout result |
-|---|---|---|
-| Baseline B0 (the live convention) | 1 | Ties "always long" (+0.0pp); Brier skill score negative |
-| Drift trio D1 / D3 / D5 | 3 | None passed |
-| Compositing quartet S1–S4 | 4 | None passed |
-| Distribution quartet P1–P4 | 4 | Wider intervals raise coverage (P3 normal, 100%) but do not improve direction or Brier skill |
-| Factor-set quartet F1–F4 | 4 | None passed |
-| Ensemble E0 | 1 | None passed |
+1. **The 1-year coverage is still well below nominal.** Development 55.9%, full sample 52.8%,
+   historical holdout 28.8% (nominal 80%). Width calibration cannot repair a biased centre (μ),
+   and the gap grows monotonically with horizon (development coverage 80.2 / 80.1 / 79.3 / 73.6 /
+   55.9% for 1/5/20/60/250 days). This heads the next round's agenda; none of the 20 candidates
+   (including round-three C2) changed that.
+2. **The forward window is not yet decidable.** The verdict counts only independent bets from
+   2026-10-02: 1/20 at 1d, about 19 trading days short; 0/20 at 5d (about 99 short), 20d about
+   399, 60d about 1199, 250d about 4999. Until then neither the page nor the research page
+   claims "edge" or "no edge".
+3. **No directional edge in the historical holdout.** Across the five horizons direction matched
+   "always long" day by day (+0.0pp) and the Brier skill score was negative — that record cannot
+   serve as a selection basis.
+4. **The Shanghai gold premium is unavailable.** SGE AU9999 has no public key-free interface; the
+   row says "unavailable + reason" and invents nothing.
+5. **Web search is off by default.** It uses MiMo's plugin-style `web_search`, not a generic
+   OpenAI capability; with the plugin disabled the endpoint returns `HTTP 400 · web search tool
+   found in the request body, but webSearchEnabled is false` (reproducible). To enable it:
+   `LLM_SEARCH_ENABLED=true` plus an endpoint with the plugin switched on; while off,
+   institutional views fall back to the RSS news window and no doomed request is sent.
+6. **Geopolitical risk strength is a corpus proxy** (share of related coverage in recent news),
+   not an official index. The official daily GPR series is on the monitor table as an
+   information row, but it does not enter composition until it clears the gates; the two are
+   never mixed.
+7. **No authentication, no multi-tenancy.** Every endpoint is public, including
+   `POST .../refresh`, which triggers paid LLM calls.
+8. **Not a trading system.** No brokerage, no orders, no custody; every output carries a
+   disclaimer.
 
-By the pre-registered rules we **keep `quant-v4`** and label it "no statistical edge" on the research page and in the bench output. The full results (per-horizon numbers and failure reasons for every candidate) are in `docs/specs/2026-10-02-研究台报告.md`; reproduce with `python scripts/quant_lab.py` (about 0.0s from cache, about 6s for a full recompute).
-
-> The honest conclusion of this round: the real gain is that **the evaluation is now trustworthy** — complete data (a 20-year backfill), one significance toolkit (HAC / DM / Brier skill / block bootstrap), reproducible conclusions — not a replacement model with no evidence behind it. Next round's candidates must be pre-registered again (write the list, then look at the holdout).
-
-### 8. Monitoring Dashboard: The 16-Row Gauge
-
-`monitor.py` covers **16 rows** of metrics; each row gives frequency, source, current value, signal (bullish / bearish / neutral / info) and data-as-of date. The signal rules are deterministic thresholds, centralised in `_rule` in one place; FX rates, the CNY gold price and open interest are **informational** indicators (`signal = null`) and are not forced into bull/bear; rows with no data or too little history honestly return "unavailable + reason".
-
-Each row's update frequency follows its own data source (daily / weekly / monthly), not a uniform refresh:
-
-| Frequency | Indicators |
-|---|---|
-| Daily | 10-year US real yield, breakeven inflation, dollar index (DXY), market-implied policy expectations, GLD shares, Shanghai gold premium, VIX, credit preference (HYG/IEF), gold price vs 200-day moving average, USDCNY, CNY gold price reference, US Treasury TGA balance, New York Fed RRP |
-| Weekly | CFTC net long (crowding), COMEX gold open interest |
-| Monthly | Central-bank gold reserves |
-
-> The dashboard is a "gauge for you to read", not a scoring item — five of its series, `usdcny` / `cny_gold` / `tga` / `rrp` / `cftc_oi`, are stored in the same table as the factors but **do not participate** in signal composition.
-
-### 9. Data Sources and Freshness
-
-- **All free, no keys required**: the US Treasury yield curve and Fiscal Data (TGA), the New York Fed RRP and EFFR, CFTC Commitments of Traders, Yahoo Finance (DXY / GC=F / GLD / SPY / BTC-USD / ^VIX / HYG / IEF / CNY=X), Sina Finance (PBoC official reserves), and this system's own RSS corpus.
-- **Throttled per source**: the syncer gives each source its own 6h–24h throttle window and fetches incrementally; one source failing does not affect the others, and the failure reason goes into the sync report and is shown on the page.
-- **A freshness cap per factor** (last column of the table above): the 7-day cap for daily factors covers long holidays, and the 62-day cap for monthly ones covers publication delays. A factor past its cap is marked "**stale**" and excluded from the composite, instead of padding with the old value.
-- **The first backfill covers 10 years**, after which only increments are fetched; `factor_observations` has a unique constraint on `(factor_key, obs_date)`, so repeated fetches are idempotent.
-
-### 10. Known Limitations (Stated Here Without Varnish)
-
-1. **The 1-year horizon's drift term is systematically low.** The holdout starting 2023-10 is a one-way gold rally: μ systematically underestimated the gains, and the actual coverage of the 250-day 80% interval is down to **24.1%**, while widening the interval cannot repair a directional bias. This is the number-one target for the next round (none of this round's 17 candidates cleared the pre-registered line). The page shows coverage side by side with "always long / momentum", leaving the judgement to you.
-2. **The Shanghai gold premium is unavailable.** The Shanghai Gold Exchange's AU9999 has no public key-less API and cannot be fetched in practice; the row honestly shows "unavailable + reason" and does not invent numbers.
-3. **Web search is off by default.** It uses MiMo's plugin-style `web_search` tool, not a generic OpenAI capability; when the endpoint has not enabled it, it returns
-   `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false` (reproducible in practice). To enable it: `LLM_SEARCH_ENABLED=true` with the plugin enabled on the endpoint side; while it is off, institutional views fall back to the RSS news window and make no pointless requests.
-4. **Geopolitical risk intensity is a corpus proxy metric** (the share of related reports in recent news), not the official GPR index.
-5. **No auth, no multi-tenancy.** All endpoints are publicly accessible, including `POST .../refresh`, which triggers paid LLM calls.
-6. **No informational edge in the holdout direction.** Over the holdout starting 2023-10-02, all five horizons match "always long" day by day (+0.0pp) and the Brier skill score is negative — see the pre-registered verdict in Section 7 and `docs/specs/2026-10-02-研究台报告.md`.
-7. **It is not a trading system.** It does not place orders, does not connect to brokers and does not custody funds; all output carries a disclaimer.
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
-### Prerequisites
+### Requirements
 
-| Tool | Version required | Purpose | Install check |
-|------|----------|------|----------|
-| Node.js | ≥22.22.2 (or 24.15+/26+) | Frontend runtime, includes npm. The floor comes from the strictest dependency in the lockfile (jsdom `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`); Node 22.2.0 still runs, but Vite prints a version warning | `node -v` |
-| Python | 3.11 - 3.12 | Backend runtime | `python --version` |
-| SQLite | Built into Python | Data storage: a single file, `backend/goldmind.db` — **zero install, zero configuration** | No check needed |
-| Google Chrome | Any recent version | The frontend end-to-end tests reuse the Chrome already installed on the machine and do **not** download Playwright's bundled browser | Open Chrome → `chrome://version` |
+| Dependency | Version | Purpose | Check |
+|---|---|---|---|
+| Node.js | ≥22.22.2 (or 24.15+/26+) | frontend runtime incl. npm. The floor comes from the strictest dependency in the lockfile (jsdom `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`); Node 22.2.0 runs, but Vite prints a version warning | `node -v` |
+| Python | 3.11 - 3.12 | backend runtime | `python --version` |
+| SQLite | bundled with Python | storage: single file `backend/goldmind.db`, **zero install, zero config** | nothing to check |
+| Google Chrome (or Edge) | any recent version | browser E2E reuses the locally installed Chrome; without Chrome, Windows' built-in Edge works (`E2E_BROWSER=msedge`). Neither path **downloads** Playwright browsers | open Chrome → `chrome://version` |
 
-### Local Development (the documented path: SQLite, zero configuration)
+### Local development (the documented path: zero-config SQLite)
 
-#### 1. Configure Environment Variables
-
-```bash
-# Copy the example configuration file
-cd backend
-cp .env.example .env
-
-# Edit the .env file and fill in the required API keys
-```
-
-**Required environment variables:**
+#### 1. Get the code
 
 ```bash
-# ============================================
-# Database configuration (SQLite by default — nothing to install)
-# ============================================
-# Leave DATABASE_URL unset = use backend/goldmind.db (a single-file SQLite database);
-# no database server to install.
-# This one is the **single source of truth**: the backend application, init_db.py,
-# seed_data.py and scripts/*.py all read it from here.
-# Override it explicitly only when you want MySQL (optional; not exercised in this repository):
-# DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/gold_analysis
-
-# ============================================
-# LLM access (any OpenAI-compatible endpoint; all three must be set)
-# ============================================
-# No provider is hardcoded — switching to any of these (or self-hosted / local Ollama)
-# only changes these three lines:
-#   OpenAI        LLM_BASE_URL=https://api.openai.com/v1
-#                 LLM_MODEL=gpt-4o-mini
-#   DeepSeek      LLM_BASE_URL=https://api.deepseek.com/v1
-#                 LLM_MODEL=deepseek-chat
-#   Qwen          LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-#                 LLM_MODEL=qwen-plus
-#   Kimi          LLM_BASE_URL=https://api.moonshot.cn/v1
-#                 LLM_MODEL=moonshot-v1-8k
-#   Ollama (local) LLM_BASE_URL=http://localhost:11434/v1
-#                 LLM_MODEL=qwen2.5:14b
-#   Xiaomi MiMo    LLM_BASE_URL=https://api.xiaomimimo.com/v1
-#                 LLM_MODEL=mimo-v2.6-flash
-LLM_API_KEY=your_api_key_here
-LLM_BASE_URL=https://api.deepseek.com/v1
-LLM_MODEL=deepseek-chat
-# Display-only provider label shown in the UI footer; may be left empty
-LLM_PROVIDER=
+git clone https://github.com/JasonBuildAI/GoldMind.git
+cd GoldMind
 ```
 
-**Optional environment variables** (full list in [`backend/.env.example`](backend/.env.example)):
+#### 2. Install dependencies
 
-| Variable | Default | Effect |
-|---|---|---|
-| `INSTITUTION_NEWS_LOOKBACK_DAYS` | `30` | Window (days) in which institutional views scan the news. Within the window it takes each institution's **most recent verifiable** prediction, which may be the older item |
-| `DEBUG` | `false` | Only affects uvicorn's `--reload`; set it to `true` in `.env` for local hot reload |
-| `LOG_LEVEL` | `INFO` | Log level |
-| `CACHE_DIR` | `backend/cache` | On-disk directory for the file half of the two-level cache |
-| `NEWS_RSS_SOURCES` | Built-in defaults | Format: `name\|URL,name\|URL` |
-| `LLM_MAX_TOKENS` | `8192` | Per-call output token cap; the reasoning model's thinking and its answer share this budget. Too small and a large JSON such as the three strategy tiers is truncated and fails to parse |
-| `LLM_SEARCH_ENABLED` | `false` | Whether to enable the plugin-style web search (MiMo `web_search`); the endpoint must have it enabled first |
-| `LLM_SEARCH_MODEL` / `LLM_SEARCH_BASE_URL` / `LLM_SEARCH_API_KEY` | follows the reasoning config | Fill in only when search uses a separate model / endpoint / key |
-| `LLM_TRUST_ENV` | `false` | Whether httpx reads the host's proxy environment variables; set to `true` when reaching the LLM endpoint through a proxy |
-| `GOLDMIND_TEST_DATABASE_URL` | Unset | Test runs only: run the same suite against a different database (in-memory SQLite by default; only needed when you really want to verify MySQL) |
-| `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | **The project's only time-zone convention**; scheduled tasks and "today" are all computed in it |
-
-#### 2. Install Dependencies
-
-**Backend dependencies:**
+**Backend:**
 
 ```bash
 cd backend
 
-# Create a virtual environment (recommended)
-python -m venv venv
+# create a virtualenv (recommended; the .venv below is this one)
+python -m venv .venv
 
-# Activate the virtual environment
+# activate it
 # Windows:
-venv\Scripts\activate
+.venv\Scripts\activate
 # macOS/Linux:
-source venv/bin/activate
+source .venv/bin/activate
 
-# Install dependencies
+# install
 pip install -r requirements.txt
 ```
 
-> **Versions are pinned** (`==`, not `>=`), pinned to the versions the tests actually ran against.
-> A loose range means `pip install` can pull a new major version with breaking changes at any time,
-> and the problem only surfaces at deployment. The frontend is the same — `package-lock.json` is
-> committed, so use `npm ci`, not `npm install`.
+> **Versions are pinned** (`==`, not `>=`), pinned to the versions the tests actually ran
+> against. Loose ranges mean `pip install` can pull a breaking major any day, and you only find
+> out in deployment. Same on the frontend — `package-lock.json` is committed, so use `npm ci`,
+> not `npm install`.
 
-**Frontend dependencies:**
+**Frontend:**
 
 ```bash
 cd app
 
-# Install dependencies (use ci, not install: strictly follow the lockfile, reproducible)
+# use ci rather than install: strictly lockfile-driven and reproducible
 npm ci
 ```
 
-#### 3. Initialise the Database (SQLite, zero configuration)
+#### 3. Configure (only the three LLM values are required)
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+Open `backend/.env` and fill in three values. The database needs nothing — SQLite is the default:
+
+```ini
+LLM_API_KEY=your_key
+LLM_BASE_URL=https://api.deepseek.com/v1   # any OpenAI-compatible endpoint
+LLM_MODEL=deepseek-chat
+```
+
+Common providers (pick one; the endpoint must speak the OpenAI protocol):
+
+| Provider | `LLM_BASE_URL` | `LLM_MODEL` |
+|---|---|---|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
+| Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
+| Ollama (local) | `http://localhost:11434/v1` | `qwen2.5:14b` |
+| Xiaomi MiMo | `https://api.xiaomimimo.com/v1` | `mimo-v2.6-flash` |
+
+> ⚠️ Keys live only in `.env` (git-ignored): never in the repo, logs or commits. To check your
+> environment, run `python scripts/verify_setup.py` (read-only, no DB, no network).
+> Every other optional setting (scheduler, rate limits, quant backfill years, web-search switch)
+> is commented in `backend/.env.example`; **the defaults just work**.
+
+#### 4. Initialise the database (SQLite, zero config)
 
 ```bash
 cd backend
 
-# Create the tables and seed historical data from 2025 to today (needs network access to public data sources)
+# create tables + fetch and fill recent history (needs internet access to public sources)
 python init_db.py
 
-# Create the tables only, no fetching: takes seconds and works offline
+# tables only, no data: a few seconds, works offline
 SKIP_SEED=1 python init_db.py
 ```
 
-**About data initialisation:**
+`init_db.py` creates `backend/goldmind.db` and all tables, then tries Sina Finance → Eastmoney →
+Yahoo Finance for gold prices and the dollar index. Total failure is not fatal: rerun
+`python seed_data.py` later.
 
-`init_db.py` automatically does the following:
-1. Creates the SQLite file `backend/goldmind.db` (if missing) and all table structures
-2. **Automatically fetches and seeds historical data** (1 January 2025 to today)
-   - Gold price data: open, high, low, close
-   - Dollar index data: open, high, low, close
-
-**Data source priority (domestic first):**
-- Gold data: Sina Finance → Eastmoney → Yahoo Finance
-- Dollar index: Eastmoney → Yahoo Finance
-
-> 💡 **Tip**: the script tries multiple data sources automatically, so that users in mainland China can fetch data successfully too. If every source fails, you can run `python seed_data.py` later to retry.
-
-**Skip data seeding (create the table structures only):**
-```bash
-SKIP_SEED=1 python init_db.py
-```
-
-**Seed data manually:**
-```bash
-# If seeding was skipped during initialisation, or you need to update the data
-python seed_data.py
-```
-
-**Upgrading an old database** (the database already exists and you are moving it to 2.0):
+**Upgrading an existing database to 2.0.1:**
 
 ```bash
 cd backend
 
-# Institutional views: add the as_of_date / source columns and copy real predictions from the old
-# alias rows into the canonical rows (add-only, never delete)
-python scripts/migrate_institution_views.py --dry-run   # dry-run is the default; see what it would do first
+# institutional views: add as_of_date / source and copy real forecasts from legacy alias rows
+# (add-only; no row is ever deleted)
+python scripts/migrate_institution_views.py --dry-run   # dry-run is the default; look first
 python scripts/migrate_institution_views.py --apply
-# Roll back (drop the two columns; existing data rows are untouched)
-python scripts/migrate_institution_views.py --drop-columns --yes
+# rollback (drops the two columns; existing rows stay)
+python scripts/migrate_institution_views.py --drop-columns
 
-# Quant factor engine: upgrade to the structure with factor_observations / model_evaluations
-# (idempotent, add-only)
+# quant engine: upgrade to the factor_observations / factor_observation_revisions /
+# model_evaluations shape and backfill the ledger from existing observations (idempotent,
+# add-only)
 python scripts/migrate_quant.py --dry-run
 python scripts/migrate_quant.py
+# rollback (drops the three new tables and the quant columns on predictions; data survives)
+python scripts/migrate_quant.py --drop --yes
 ```
 
-#### 4. Start the Services
+> The revision ledger is the prerequisite for `--as-of` rebuilds. For backfilled rows,
+> `recorded_at` is the day the row **entered this system**; historical backfill happens in one
+> go, so asking for an earlier date returns an empty panel — that is the **correct** answer, not
+> a bug.
 
-Frontend and backend each take one terminal — the repository has **no** `start_all.ps1`
-one-click script:
+#### 5. Run the services
+
+Two terminals — there is **no** `start_all.ps1` one-liner:
 
 ```bash
-# Terminal 1: backend (in the backend directory)
+# terminal 1: backend (from backend/)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Terminal 2: frontend (in the app directory)
+# terminal 2: frontend (from app/)
 npm run dev
 ```
 
-> You can also skip the second terminal and start only the frontend: when the backend is not
-> running the page honestly reports "API unavailable" and shows no built-in numbers.
+> You can skip the second terminal and run only the frontend: without a backend the page says
+> "API unavailable" and shows no built-in numbers.
 
-**What to expect on a cold start (the first time you open the page):**
+**Cold-start expectations:**
 
-- The five analysis sections **will not have content immediately**: with no cache they return an
-  empty result first and run one analysis in the background (the page says "AI analysis in
-  progress; the first load may take 1-2 minutes") and it appears once done; you can also click
-  each section's "re-analyse / re-fetch" to trigger it manually.
-- The quant prediction needs a multi-year factor backfill on first run; it only turns from
-  "unavailable" into numbers after fetching finishes, and is incremental afterwards.
-- The page polls the market endpoint every 10 seconds; the default rate limit is 60 requests
-  per minute (6 per minute for LLM endpoints), which normal browsing will not hit.
+- The five analysis sections **will not be populated immediately**: with no cache they return
+  empty and kick off a background analysis (the page says "AI analysis in progress; the first
+  load can take 1–2 minutes"), then fill in. You can also trigger each section's re-run button.
+- The quant forecast needs a multi-year factor backfill first; it stays "unavailable" until the
+  fetch completes, then updates incrementally.
+- The page polls the market endpoint every 10 seconds; default limits are 60 req/min (6 req/min
+  for LLM endpoints), so normal browsing never trips them.
 
-**Service addresses:**
+**URLs:**
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-### Optional: MySQL / Docker (not exercised in this repository)
+#### 6. Zero-key self-check (no LLM key required)
 
-This README's quick start, gate commands and CI **run on SQLite only** — that is the only reproduction path the repository actually tests. Two optional MySQL / container assets are kept for people who really need them, but they are **not guaranteed to work out of the box in the current version**:
+No API key, but still want to run the whole thing? The repo ships a fake OpenAI-compatible
+service; with SQLite it drives the entire "news → analysis → cache → page" path without spending
+quota or touching the internet.
 
-- `docker-compose.yml` + `backend/schema.sql`: a three-container setup (mysql / backend / frontend). On first start MySQL creates the tables from `schema.sql`, and compose injects the backend container's `DATABASE_URL`.
-- Using a local MySQL: write
+```powershell
+# terminal 1: fake LLM (OpenAI-compatible, pick any port)
+cd backend
+.venv\Scripts\python.exe scripts\dev_mock_llm.py --port 8099
+
+# terminal 2: SQLite tables + deterministic seed data (offline, repeatable), then point the
+# backend at the fake LLM
+cd backend
+$env:DATABASE_URL = "sqlite:///./goldmind.db"
+.venv\Scripts\python.exe scripts\dev_seed_sqlite.py --db goldmind.db
+$env:LLM_API_KEY  = "zero-key"                          # placeholder, not a real key
+$env:LLM_BASE_URL = "http://127.0.0.1:8099/v1"
+$env:LLM_MODEL    = "dev-mock"
+.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+
+# terminal 3: frontend
+cd app
+npm run dev
+```
+
+Open http://localhost:5173: the five analysis sections show the fake LLM's sample content. The
+quant sections compute for real and need real public market data (no key) — if data is missing,
+follow the page's "re-fetch" prompt, or seed real history via step 4.
+
+> This is also exactly what `npm run test:e2e` automates. For a real LLM, fill the three values
+> in `backend/.env`; environment variables win over `.env`, so the self-check never touches your
+> real configuration.
+
+### Optional: MySQL / Docker (not exercised by this repository)
+
+The quick start, gate commands and CI in this README go through **SQLite only** — the only
+reproduction path covered by this repo's tests. Two optional MySQL/container assets remain for
+people who need them, with **no guarantee they work out of the box at this version**:
+
+- `docker-compose.yml` + `backend/schema.sql`: a three-container setup (mysql / backend /
+  frontend). MySQL is initialised from `schema.sql`; the backend's `DATABASE_URL` is injected by
+  compose.
+- Local MySQL: set
   `DATABASE_URL=mysql+pymysql://user:password@localhost:3306/gold_analysis` in `backend/.env`,
-  then run `python init_db.py` (the MySQL path creates the database first and then executes `schema.sql`).
+  then `python init_db.py` (the MySQL path creates the database first, then runs `schema.sql`).
 
-> ⚠️ Neither path has been through the same gate as this round's SQLite default, and the behavioural differences (ENUM storage, case-insensitive string comparison, transaction semantics) are known. Before relying on them, run
-> `GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" python -m pytest`
-> to confirm the baseline.
+> ⚠️ These paths **have not run the same gates** as the default SQLite path; known behavioural
+> differences exist (ENUM storage, case-sensitive string comparison, transaction semantics).
+> Before relying on them, establish a baseline with
+> `GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" python -m pytest`.
+
 ---
 
-## 🧪 Common Commands
+## 🧪 Common commands
 
-**The single source of truth for the gate commands.** After changing code they must all run green (the rules are in [`AGENTS.md`](AGENTS.md)).
+**The single source of truth for gate commands.** After any change, everything must be green
+(the rules are in [`AGENTS.md`](AGENTS.md)).
 
 ### Backend
 
 ```bash
 cd backend
 
-# Install dependencies (first time)
+# install (first time)
 pip install -r requirements.txt -r requirements-dev.txt
 
-# Configuration self-check (read-only: no DB, no network; failures come with fix commands, exit 0/1)
+# config-level self-check (read-only: no DB, no network; failures print the fix, exit code 0/1)
 python scripts/verify_setup.py
 
-# Tests — the full gate
+# tests — the full gate
 python -m pytest
 
-# Run one layer at a time
-python -m pytest tests/unit          # unit: no database or network
+# one layer at a time
+python -m pytest tests/unit          # unit: no DB, no network
 python -m pytest tests/integration   # integration: in-memory SQLite + fake LLM
-python -m pytest tests/e2e           # end-to-end: the whole chain in real usage order
+python -m pytest tests/e2e           # end-to-end: the real usage order, chained
 
-# Optional: run the same suite under the MySQL dialect (**only when you really want to verify
-# MySQL**; SQLite is the default and the CI convention). The two differ on enum storage, JSON
-# columns and case-insensitive string comparison. It must point at a **separate test database**:
-# the suite truncates every table.
+# optional: rerun under the MySQL dialect (**only if you truly need MySQL**; SQLite is the
+# default and the CI convention). ENUM storage, JSON columns and string case-sensitivity all
+# differ. Point it at a **separate test database**: the suite truncates every table.
 GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" \
     python -m pytest
 
-# Static check: compile everything
+# static check: full syntax
 python -m compileall -q app
 
-# Whether the API docs (Chinese and English) agree with the route table
-python scripts/gen_api_doc.py --check     # exit code 1 when out of sync
+# do the API docs (both languages) still match the router table?
+python scripts/gen_api_doc.py --check     # exit code 1 when stale
 python scripts/gen_api_doc.py             # regenerate docs/API.md and docs/en/api.md
 
-# Database initialisation (SQLite: create tables + seed history; the file is created automatically)
+# database init (SQLite: tables + history; the file is created automatically)
 python init_db.py
-SKIP_SEED=1 python init_db.py        # create the tables only, no seeding (works offline)
+SKIP_SEED=1 python init_db.py        # tables only, no data (works offline)
 
-# Repair enum values in an old database (idempotent; only affects databases created by early
-# versions of schema.sql)
+# fix enum values in old databases (idempotent; only affects databases created by early schema.sql)
 python scripts/fix_enum_columns.py --dry-run
 python scripts/fix_enum_columns.py
 
-# Institutional views: add as_of_date / source and copy real predictions into the canonical rows
-# (idempotent; **never deletes any row**)
-python scripts/migrate_institution_views.py --dry-run
-python scripts/migrate_institution_views.py --apply
-# Roll back (drop the two columns; existing data rows are untouched)
-python scripts/migrate_institution_views.py --drop-columns --yes
-
-# Quant factor engine: upgrade an old database to the structure with factor_observations /
-# model_evaluations (idempotent, add-only)
-python scripts/migrate_quant.py --dry-run    # see what it would do first
-python scripts/migrate_quant.py
-# Roll back (drop the two new tables and the quant columns of predictions; existing data untouched)
-python scripts/migrate_quant.py --drop --yes
-
-# Run one round of factor fetching manually (first run backfills 10 years; increments after that)
+# one manual factor-sync round (first run backfills QUANT_HISTORY_YEARS, default 10; then increments)
 python -c "from app.database import SessionLocal; from app.services.quant.sync import run_sync; db=SessionLocal(); print(run_sync(db, force=True).to_dict()); db.close()"
 
-# Quant research bench: full evaluation of pre-registered candidates × horizons (reads the
-# cache by default; --refresh recomputes everything)
+# stretch the historical panel: 20 years by default; --dry-run prints what is missing, writes nothing
+python scripts/backfill_quant.py --dry-run
+python scripts/backfill_quant.py --apply --years 20
+
+# quant research bench: pre-registered candidates × horizons × three sample periods (reads the DB)
 python scripts/quant_lab.py
-python scripts/quant_lab.py --refresh
+python scripts/quant_lab.py --out docs/specs       # output dir (quant_lab.md / quant_lab.csv)
+python scripts/quant_lab.py --horizons 20,60       # subset of horizons
+python scripts/quant_lab.py --group calibration    # one candidate group (repeatable)
+python scripts/quant_lab.py --as-of 2026-09-01     # rebuild the panel as seen that day
+python scripts/quant_lab.py --holdout-start 2023-10-02   # reproduce a historical verdict
+
+# factor gate: the three gates over candidates (--include-holdout is off by default, to respect
+# the pre-commitment)
+python scripts/screen_factors.py
+python scripts/screen_factors.py --horizons 20,60 --as-of 2026-09-01
 ```
 
 ### Frontend
@@ -675,219 +885,276 @@ python scripts/quant_lab.py --refresh
 ```bash
 cd app
 
-# Install dependencies
+# install
 npm ci
 
-# Build + type check — the full gate
+# build + type check — the full gate
 npm run build
 
-# Static check
+# static check
 npm run lint
 
-# Unit + integration tests (vitest + Testing Library)
+# unit + integration tests (vitest + Testing Library)
 npm test
 
-# Browser end-to-end tests (Playwright) — requires npm run build first
+# browser end-to-end (Playwright) — requires npm run build first
 npm run test:e2e
 
-# Local development
+# local development
 npm run dev
+
+# re-shoot the 14 README screenshots (needs the real stack running: backend 8000 + frontend 5173)
+node scripts/capture_screenshots.mjs
+# optional: SCREENSHOT_BASE_URL / SCREENSHOT_OUT / SCREENSHOT_BROWSER=chrome|msedge|chromium
 ```
 
-### Browser End-to-End Tests
+### Browser end-to-end tests
 
-`npm run test:e2e` really brings up three services and then visits them with a real browser:
+`npm run test:e2e` really starts three services and drives a real browser:
 
-1. A fake LLM service (`backend/scripts/dev_mock_llm.py`, OpenAI-protocol compatible, consumes no quota)
-2. The real backend (uvicorn + SQLite, with data prepared by `backend/scripts/dev_seed_sqlite.py`)
-3. The build output (`vite preview`, proxying `/api` through to the backend)
+1. a fake LLM service (`backend/scripts/dev_mock_llm.py`, OpenAI-compatible, no quota),
+2. the real backend (uvicorn + SQLite, seeded by `backend/scripts/dev_seed_sqlite.py`),
+3. the production build (`vite preview`, proxying `/api` to the backend).
 
-It reuses the Chrome already installed on the machine and does **not** download Playwright's bundled browser. If your Python is not on `PATH`, point `E2E_PYTHON` at the interpreter:
+It reuses the locally installed Chrome and **does not download** Playwright browsers; on Windows
+without Chrome, the built-in Edge works (`E2E_BROWSER=msedge`). If your Python is not on `PATH`,
+point `E2E_PYTHON` at it:
 
 ```powershell
 $env:E2E_PYTHON = "path\to\python.exe"
 cd app
 npm run build
+npm run test:e2e              # default: reuse local Chrome
+
+$env:E2E_BROWSER = "msedge"   # no Chrome: use local Edge
 npm run test:e2e
 ```
 
-> The end-to-end tests use a separate database and cache directory (`backend/e2e.db`, `backend/e2e-cache/`) and will not touch your development data; both are already ignored by `.gitignore`.
+> The E2E run uses an isolated database and cache directory (`backend/e2e.db`,
+> `backend/e2e-cache/`) and never touches your development data; both are git-ignored.
 
-### End-to-End Smoke Test (Real LLM Calls)
+### End-to-end smoke test (real LLM)
 
 ```bash
 cd backend
 python scripts/smoke_llm.py
 ```
 
-> ⚠️ Requires `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` to be configured in `backend/.env`,
-> and it really consumes quota. The script first probes authentication, `max_tokens` and
-> Chinese JSON output; the web-search probe only runs when `LLM_SEARCH_ENABLED=true`
-> (skipped by default). Results are written to `backend/scripts/smoke_llm_result.json`
-> (already ignored by `.gitignore`).
+> ⚠️ Requires `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` in `backend/.env` and really spends
+> quota. It probes auth, `max_tokens` and Chinese JSON output; web search is probed only when
+> `LLM_SEARCH_ENABLED=true` (skipped by default). Results land in
+> `backend/scripts/smoke_llm_result.json` (git-ignored).
 
-### Continuous Integration (GitHub Actions)
+### Continuous integration (GitHub Actions)
 
-The default branch only accepts green merges: `.github/workflows/ci.yml` runs three
-parallel jobs on every PR and every push to `main`, using exactly the gate commands
-listed above —
+The default branch only accepts green merges: `.github/workflows/ci.yml` runs three parallel
+jobs on PRs and pushes to `main`, using exactly the gate commands above —
 
-| Job | What it runs | Environment |
+| Job | Runs | Environment |
 |---|---|---|
-| `Backend (pytest)` | `python -m pytest` | Python 3.11 + in-memory SQLite (MySQL is not needed) |
+| `Backend (pytest)` | `python -m pytest` | Python 3.11 + in-memory SQLite (no MySQL) |
 | `Frontend (lint + test + build)` | `npm run lint` / `npm test` / `npm run build` | Node 22 |
-| `Browser E2E (Playwright)` | `npm run test:e2e` | Python 3.11 + Node 22 + Chromium + mock LLM |
+| `Browser E2E (Playwright)` | `npm run test:e2e` | Python 3.11 + Node 22 + Chromium + fake LLM |
 
-In CI the browser end-to-end job passes `E2E_BROWSER=chromium` to
-`app/playwright.config.ts` and installs the browser with
-`npx playwright install --with-deps chromium`; locally the variable is left unset
-and the already-installed Chrome is reused.
+In CI the E2E job passes `E2E_BROWSER=chromium` into `app/playwright.config.ts` and installs the
+browser via `npx playwright install --with-deps chromium`; locally the variable stays empty so
+the installed Chrome is reused, or set it to `msedge` for Windows' built-in Edge.
 
-Dependency updates are handled by `.github/dependabot.yml`: pip / npm / github-actions
-each open a small number of PRs every week, and **nothing is auto-merged** — every PR
-still has to pass the three jobs above, and a human decides when to merge.
+Dependency updates go through `.github/dependabot.yml`: pip / npm / github-actions each open a
+small number of PRs weekly, **never auto-merged** — every PR still has to pass the three checks,
+and a human decides when to merge.
 
-> Branch protection (required checks, mandatory PRs) is a GitHub repository setting,
-> not version-controlled code, so it must be enabled manually under
-> Settings → Branches. Once the workflow has completed successfully at least once,
-> mark the three checks as required.
+> Branch protection (required checks, PR-only merges) is a GitHub repository setting, not
+> version-controlled; enable it under Settings → Branches. After the workflow has succeeded
+> once, tick the three checks as required.
 
 ### Troubleshooting
 
-- **httpx reports `Invalid port: ':1]'` or `Missing dependencies for SOCKS support`** — the machine has a system proxy set (`ALL_PROXY` / `HTTP_PROXY` etc.), or `NO_PROXY` contains `[::1]`, and httpx cannot parse those values. Clear them before running tests:
+- **httpx raises `Invalid port: ':1]'` or `Missing dependencies for SOCKS support`**
+  — the machine has proxy environment variables (`ALL_PROXY` / `HTTP_PROXY` …) or `NO_PROXY`
+  contains `[::1]`, which httpx cannot parse. Clear them before running tests:
 
   ```powershell
   $env:ALL_PROXY=''; $env:HTTP_PROXY=''; $env:HTTPS_PROXY=''; $env:NO_PROXY=''
   ```
 
-- **Tests report `no such table`** — the tests use in-memory SQLite, so this should not happen; if it does, check whether the fixtures in `backend/tests/conftest.py` were bypassed.
+- **Tests report `no such table`** — tests use in-memory SQLite, so this should not happen; if
+  it does, check whether you bypassed `backend/tests/conftest.py`'s fixtures.
+
+- **Windows console raises `UnicodeEncodeError: 'gbk' codec can't encode ...`** — a GBK console
+  cannot print non-GBK characters such as `−` or `≈`. The repo's entry scripts handle this
+  contract; for your own one-off scripts use `python -X utf8 script.py`, or write results to a
+  UTF-8 file.
+
+- **`--as-of` returns an empty panel** — first check the revision ledger is backfilled:
+  `python scripts/migrate_quant.py --dry-run` prints how many rows are missing. Ledger rows from
+  the historical backfill carry the backfill day, so earlier dates correctly return empty.
+
 ---
 
-## 🗂️ Directory Layout
+## 🗂️ Directory layout
 
 ```
 GoldMind/
-├── app/                          # Frontend (React 19 + TypeScript + Tailwind)
+├── app/                          # frontend (React 19 + TypeScript + Tailwind)
 │   ├── src/
-│   │   ├── sections/            # Six page sections + their tests
-│   │   ├── research/            # The "Research" page: the full pre-registered evaluation
-│   │   ├── components/          # Reusable components (including the prediction-date column of institutional views)
-│   │   ├── layout/              # Masthead / footer
-│   │   ├── services/            # API client and type definitions (api.ts)
-│   │   └── test/                # Test fixtures
+│   │   ├── sections/            # the six page sections, each with its tests
+│   │   ├── research/            # research page: pre-registered evaluation, verdict window, bins
+│   │   ├── components/          # reusable components (incl. the forecast-date column)
+│   │   ├── layout/              # masthead / footer
+│   │   ├── services/            # API client and types (api.ts)
+│   │   └── test/                # test fixtures
+│   ├── scripts/
+│   │   └── capture_screenshots.mjs  # README screenshots: asserts real content, never a blank shot
 │   └── package.json
-├── backend/                      # Backend (FastAPI + SQLAlchemy; a single SQLite file by default)
+├── backend/                      # backend (FastAPI + SQLAlchemy; SQLite single file by default)
 │   ├── app/
-│   │   ├── services/            # Business logic
-│   │   │   ├── llm_provider.py                     # **The only entry point for LLM calls**
-│   │   │   ├── institution_prediction_service.py   # Institutional views (including the institution registry)
-│   │   │   └── quant/                              # Quant engine: sources / derive / storage /
+│   │   ├── services/            # business logic
+│   │   │   ├── llm_provider.py                     # **the only LLM entry point**
+│   │   │   ├── institution_prediction_service.py   # institutional views (incl. registry)
+│   │   │   └── quant/                              # quant engine: sources / derive / storage /
 │   │   │                                           #   sync / engine / decompose / scenarios /
-│   │   │                                           #   backtest / monitor / service /
-│   │   │                                           #   stats / preregistered
+│   │   │                                           #   backtest / monitor / screen /
+│   │   │                                           #   preregistered / stats / service
 │   │   ├── routers/             # API routes
-│   │   ├── models/ schemas/     # Data models and response contracts
-│   │   ├── tasks/ scheduler.py  # Scheduled tasks (including the single time-zone convention)
-│   │   └── utils/timeutil.py    # **The only source of "now" and "today"**
-│   ├── scripts/                 # Migration scripts, doc generator, smoke and dev tools
+│   │   ├── models/ schemas/     # data models and response contracts
+│   │   ├── tasks/ scheduler.py  # scheduled jobs (incl. the single timezone rule)
+│   │   └── utils/timeutil.py    # **the only source of "now" and "today"**
+│   ├── scripts/                 # migrations, backfill, research bench, factor gates, doc gen,
+│   │                            # smoke tests and dev tools
 │   ├── tests/                   # unit / integration / e2e
-│   ├── schema.sql               # MySQL (optional path) DDL; SQLite uses the models' create_all
-│   ├── goldmind.db              # Default SQLite database (created at runtime, gitignored)
+│   ├── schema.sql               # MySQL (optional) DDL; SQLite goes through model create_all
+│   ├── goldmind.db              # default SQLite database (runtime, git-ignored)
 │   └── requirements*.txt
-├── docs/                         # Chinese documentation
-│   ├── en/                      # English mirrors (one-to-one with the Chinese versions)
-│   ├── specs/                   # Specs and plans for each round of changes (process records)
+├── docs/                         # Chinese docs (authoritative)
+│   ├── en/                      # English mirror, one-to-one with the Chinese versions
+│   ├── specs/                   # per-round specs and plans (records, not a second authority)
 │   ├── 00-产品方向.md · 10-密钥与隐私.md · 20-前端设计规范.md
 │   ├── ARCHITECTURE.md · API.md
-│   └── images/screenshots/
+│   └── images/screenshots/      # README screenshots (generated by capture_screenshots.mjs)
 ├── .github/
 │   ├── workflows/ci.yml          # CI gates: backend / frontend / browser E2E
-│   └── dependabot.yml            # Dependency update bot
-├── AGENTS.md                     # How to work: rules, gates, process
+│   └── dependabot.yml            # dependency updates
+├── AGENTS.md                     # how we work: rules, gates, process
 ├── CHANGELOG.md / CHANGELOG_EN.md
 ├── CONTRIBUTING.md / CONTRIBUTING_EN.md
 ├── README.md / README_EN.md
-└── docker-compose.yml            # Optional path (not exercised in this repository)
+└── docker-compose.yml            # optional path (not exercised by this repo)
 ```
 
 ---
 
-## 🗺️ Documentation Map
+## 🗺️ Documentation map
 
-The single mapping table for "changing what → read which file". The Chinese and English versions mirror each other: Chinese is the authoritative version, and English is the same content.
+The single "what to change → what to read" map. The Chinese version is authoritative; the
+English one mirrors it.
 
-| Document | English | What it covers | When to read it |
+| Document | English | Contents | Read it when |
 |---|---|---|---|
-| [`AGENTS.md`](AGENTS.md) | — (stays Chinese) | How to work: rules, gates, process | Must-read before starting work |
-| [`docs/00-产品方向.md`](docs/00-产品方向.md) | [`docs/en/product-direction.md`](docs/en/product-direction.md) | What the product should do; **current vs planned** | Before changing requirements or adding features |
-| [`README.md`](README.md) | [`README_EN.md`](README_EN.md) | Directories, commands, configuration (this file) | When looking for a command / config |
-| [`docs/10-密钥与隐私.md`](docs/10-密钥与隐私.md) | [`docs/en/secrets-and-privacy.md`](docs/en/secrets-and-privacy.md) | Secret rules and the handling of the historical leak | Before touching configuration / secrets |
-| [`docs/20-前端设计规范.md`](docs/20-前端设计规范.md) | [`docs/en/frontend-design.md`](docs/en/frontend-design.md) | Frontend visual language: tokens, typography, components, UI copy rules | Before changing the frontend UI |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | [`docs/en/architecture.md`](docs/en/architecture.md) | Architecture design (Section 11 is the quant engine) | Before changing system structure |
-| [`docs/API.md`](docs/API.md) | [`docs/en/api.md`](docs/en/api.md) | API specification (**both generated from the route table**) | Before changing an endpoint |
-| [`CHANGELOG.md`](CHANGELOG.md) | [`CHANGELOG_EN.md`](CHANGELOG_EN.md) | What changed in each version | Before upgrading |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | [`CONTRIBUTING_EN.md`](CONTRIBUTING_EN.md) | Contribution process | Before opening a PR |
-| [`docs/specs/`](docs/specs/) | — (stays Chinese) | Specs and plans for each round of changes (process records, not a second authority); this round's quant work is in `2026-10-02-量化策略提升路线图.md` + `2026-10-02-研究台报告.md` | When tracing a decision from a past round |
+| [`AGENTS.md`](AGENTS.md) | — (Chinese only) | how we work: rules, gates, process | before touching anything |
+| [`docs/00-产品方向.md`](docs/00-产品方向.md) | [`docs/en/product-direction.md`](docs/en/product-direction.md) | what the product should be; **current vs target** | before changing requirements |
+| [`README.md`](README.md) | [`README_EN.md`](README_EN.md) | layout, commands, configuration (this file) | when looking for a command or setting |
+| [`docs/10-密钥与隐私.md`](docs/10-密钥与隐私.md) | [`docs/en/secrets-and-privacy.md`](docs/en/secrets-and-privacy.md) | key handling rules and the historical leak | before touching config/keys |
+| [`docs/20-前端设计规范.md`](docs/20-前端设计规范.md) | [`docs/en/frontend-design.md`](docs/en/frontend-design.md) | frontend visual language: tokens, typography, copy rules | before UI changes |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | [`docs/en/architecture.md`](docs/en/architecture.md) | architecture (section 11 covers the quant engine) | before structural changes |
+| [`docs/API.md`](docs/API.md) | [`docs/en/api.md`](docs/en/api.md) | API spec (**both generated from the router table**) | before changing endpoints |
+| [`CHANGELOG.md`](CHANGELOG.md) | [`CHANGELOG_EN.md`](CHANGELOG_EN.md) | what changed per release | before upgrading |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | [`CONTRIBUTING_EN.md`](CONTRIBUTING_EN.md) | contribution process | before opening a PR |
+| [`docs/specs/`](docs/specs/) | — (Chinese only) | per-round specs and plans (records, not a second authority). Quant trail: `2026-10-02-量化策略提升路线图.md`, `2026-10-02-研究台报告.md`, `2026-10-02-量化引擎第三轮预注册.md`, `2026-10-02-量化引擎口径一致性修正.md` | when tracing a decision |
 
-> 📌 `docs/API.md` and `docs/en/api.md` **are not hand-written** — they are generated from the FastAPI route table by `backend/scripts/gen_api_doc.py`, and `backend/tests/integration/test_api_doc.py` checks that both stay consistent with the implementation. After changing an endpoint, run `cd backend && python scripts/gen_api_doc.py` to regenerate them.
+> 📌 `docs/API.md` and `docs/en/api.md` are **not hand-written** — they are generated from the
+> FastAPI router table by `backend/scripts/gen_api_doc.py`, and
+> `backend/tests/integration/test_api_doc.py` compares them in the gate: change a route without
+> regenerating and the gate goes red.
+
 ---
 
 ## 🔄 Workflow
 
-1. **Data collection**: Tencent Finance real-time gold price and Sina Finance ICE dollar index; historical backfill supports three sources — Sina / Eastmoney / Yahoo; news is fetched via RSS
-2. **Persistence**: gold prices, the dollar index and news are written to SQLite (a single file by default; `DATABASE_URL` can switch to MySQL)
-3. **Analysis**: 5 analysis services each assemble a prompt → call the LLM once (the endpoint is chosen by `LLM_*`) → parse the JSON
-4. **Quant**: public data sources → factor store → rolling z → per-horizon weights → one calibrated distribution → walk-forward backtest
-5. **Cache**: results are written into a two-level cache of memory + JSON files (TTL 2 hours), shared across restarts and processes
-6. **Display**: the frontend polls the market endpoint every 10 seconds, and analysis results are fetched on demand
+1. **Collection**: Tencent Finance real-time gold; Sina Finance ICE dollar index; history backfill
+   from Sina / Eastmoney / Yahoo; news via RSS
+2. **Persistence**: prices, the dollar index and news go into SQLite (single file by default;
+   `DATABASE_URL` switches to MySQL)
+3. **Analysis**: five services build prompts → one LLM call each (endpoint from `LLM_*`) → parse JSON
+4. **Quant**: public sources → factor observations (current value + revision ledger) → rolling z →
+   per-horizon weights → one calibrated distribution → walk-forward backtest and monitor table
+5. **Caching**: two levels, in-memory + JSON files (2-hour TTL), surviving restarts and shared
+   across processes
+6. **Presentation**: the frontend polls the market endpoint every 10s; analyses are fetched on
+   demand; a stored quant forecast carries the measured skill of its own horizon
 
 ---
 
-## 🤖 Analysis Services
+## 🤖 About the analysis services
 
-Early documents described these 5 services as a "LangChain Agent", which does not match the implementation. They are **independent single-turn LLM calls**: they do not communicate with each other or share state, and are linked only indirectly through the cache and the database. Every client is constructed through `backend/app/services/llm_provider.py`.
+Early docs called these five services "LangChain agents"; that never matched the implementation.
+They are **independent single-turn LLM calls**: no inter-agent communication, no shared state,
+linked only through the cache and the database. Every client is constructed through
+`backend/app/services/llm_provider.py`.
 
-| Service | Code location | Input | Output |
+| Service | Code | Input | Output |
 |---|---|---|---|
-| Bullish factors | `app/services/bullish_factor_service.py` | Last 24h news + gold price | 5 bullish factors + summary |
-| Bearish factors | `app/services/bearish_factor_service.py` | Last 24h news + gold price | 5 bearish factors + summary |
-| Institutional views | `app/services/institution_prediction_service.py` | Last 30 days of news + web search | The four institutions' most recent verifiable predictions (with date and source) |
-| Investment advice | `app/services/investment_advice_service.py` | Market state + bullish/bearish factors + institutional views | Three strategy tiers + risk notes |
-| Market summary | `app/services/market_summary_service.py` | All of the above | Core logic + risks + overall judgement |
+| Bullish factors | `app/services/bullish_factor_service.py` | last 24h news + gold price | 5 bullish factors + summary |
+| Bearish factors | `app/services/bearish_factor_service.py` | last 24h news + gold price | 5 bearish factors + summary |
+| Institutional views | `app/services/institution_prediction_service.py` | last 30 days of news + search | each institution's latest verifiable forecast (date + source) |
+| Investment advice | `app/services/investment_advice_service.py` | market state + factors + views | three strategies + risk notes |
+| Market summary | `app/services/market_summary_service.py` | all of the above | core logic + risks + judgement |
 
-**Model**: decided by `LLM_MODEL` in `backend/.env` (and the provider likewise — see the environment variables under "Local Development"). The model name shown in the page footer comes from `/health`'s `ai_config` and is not hardcoded in the code.
+**Model**: decided by `LLM_MODEL` in `backend/.env` (same for the provider — see "Local
+development"); the model name in the footer comes from `/health`'s `ai_config` and is never
+hard-coded.
 
-**Degradation behaviour**: when a data source or web search is unavailable, any service returns an explicit "unavailable" state and falls back to the database / RSS content; it does **not** fabricate data.
+**Degradation**: when a data source or web search is unavailable, a service returns an explicit
+"unavailable" status and falls back to database / RSS content — it **never** invents data.
 
-When the frontend cannot get data, it **shows "temporarily unavailable" and explains why**, and puts up no built-in numbers or conclusions of any kind. This used to be only a line in the docs: each section actually carried its own hard-coded fallback data (gold price 2823, institutional target prices 5400/5000/4500/2700, a 14-point price series, …), and rendered them as real content whenever an endpoint failed. Those constants have all been deleted, and a test now pins down that "no built-in copy may appear on failure".
+When the frontend has no data it **shows "temporarily unavailable" with the reason** and no
+built-in numbers or conclusions. This used to be documentation only: each section carried its
+own hard-coded fallback (gold 2823, targets 5400/5000/4500/2700, a 14-point price series …) and
+rendered it as real content whenever an API failed. All those constants are gone, and tests pin
+"no built-in copy on failure".
 
-**Removed**: the early `backend/app/agents/` package (`BaseAgent` / `MarketAnalyzerAgent` / `NewsAnalyzerAgent`) was never instantiated anywhere and has been removed.
+**Removed**: the early `backend/app/agents/` package (`BaseAgent` / `MarketAnalyzerAgent` /
+`NewsAnalyzerAgent`) was never instantiated anywhere and has been deleted.
 
 ---
 
-## ⚠️ Honest Scope
+## ⚠️ Honest statement (implementation boundaries)
 
-This section is for anyone who formed expectations after reading the project description in the README. The following capabilities **do not exist** — please do not read this project through them:
+This section is for anyone whose expectations come from the project description. The following
+capabilities **do not exist**; please do not read the project as if they did:
 
 | Rumoured capability | Reality |
 |---|---|
-| Multi-agent collaboration | 4 **independent single-turn LLM calls**, not agent collaboration: assemble a prompt → `llm.invoke(prompt)` → parse the JSON. No tool-calling loop, no inter-agent communication |
-| RAG / vector retrieval | No vector store, no embeddings, no retrieval step. Historical prices and news are pasted straight into the prompt as context |
-| ReAct reasoning loop | Not implemented; there is no Thought / Action / Observation loop |
-| Real-time web search | Off by default (`LLM_SEARCH_ENABLED=false`). It uses MiMo's plugin-style `web_search`, not a generic OpenAI capability; when the endpoint has not enabled it, the call returns `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`, and the project falls back to the RSS news window |
-| Sentiment analysis | The `sentiment` field is always `NEUTRAL`, only to keep the API shape stable; the page does not show sentiment conclusions |
-| Redis / message bus / WebSocket / K8s / WAF / auth middleware | None of them. The cache is two-level: memory + JSON files |
-| Trade execution | No brokers, no orders, no custody of funds |
+| Multi-agent collaboration | 5 **independent single-turn LLM calls**, not agents collaborating: build prompt → `llm.invoke(prompt)` → parse JSON. No tool-calling loop, no agent messages |
+| RAG / vector search | no vector store, no embeddings, no retrieval step. Prices and news are pasted into the prompt context |
+| ReAct reasoning loop | not implemented; no Thought / Action / Observation cycle |
+| Live web search | off by default (`LLM_SEARCH_ENABLED=false`). It uses MiMo's plugin-style `web_search`, not a generic OpenAI feature; with the plugin disabled the endpoint returns `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`, and the service falls back to the RSS news window |
+| Sentiment analysis | `sentiment` is always `NEUTRAL`, kept only for response-shape stability; the page shows no sentiment conclusions |
+| Redis / message bus / WebSocket / K8s / WAF / auth middleware | none. Caching is in-memory + JSON files |
+| Trade execution | no broker, no orders, no custody |
+| A quant forecast with a statistical edge | **the forward window is not decidable yet** (1/20 bets at 1d, 0/20 elsewhere). In the historical holdout the direction matched "always long" day by day (+0.0pp) with a negative Brier skill score; the page and the research page report this as-is instead of overselling the model |
 
-**"A section sometimes shows temporarily unavailable" is designed behaviour, not a bug**: the reasoning model's thinking and its answer share `LLM_MAX_TOKENS` (default 8192). A budget that is too small truncates a large JSON such as the three strategy tiers and parsing fails, so per the hard rule it returns empty content — and the page honestly shows "investment strategy temporarily unavailable" rather than presenting a fabricated strategy (older versions hardcoded 4096, which is why this section stayed empty). On top of that, the endpoint has its own content filter and occasionally returns `finish_reason=content_filter` (the body is "The request was rejected because it was considered high risk"): the backend retries once automatically, and if it is still rejected the section honestly shows "temporarily unavailable" — press "re-analyse" to retry. When parsing fails, the log records `finish_reason` and token usage for the next investigation.
+**"A section says unavailable" is designed behaviour, not a bug**: reasoning models share
+`LLM_MAX_TOKENS` (default 8192) between thinking and output. That budget truncates large JSON
+such as the three-strategy payload, parsing fails, and the section honestly reports
+"investment strategy unavailable" instead of showing a fabricated strategy (old versions pinned
+4096, so this section stayed empty for a long time. Raising `LLM_MAX_TOKENS` on the deployment
+side fixes it; 32768 returned reliably during this repo's development). Endpoints also carry
+content filters and occasionally return `finish_reason=content_filter` (message: "The request
+was rejected because it was considered high risk"); the backend retries once and then reports
+"unavailable", and `finish_reason` plus token usage are in the logs for diagnosis.
 
-**Why so wordy**: this project's core promise is "**no fabrication**". When a data source or web search is unavailable, it returns "unavailable" with a reason, rather than letting the model generate institutional target prices, central-bank purchase volumes or gold price levels from its impressions. Better the page shows "data unavailable".
+**Why so verbose**: the project's core promise is "**no fabrication**". When a source or a search
+is unavailable, it says so and why — instead of letting the model invent institutional target
+prices, central-bank purchases or price levels from memory. Better an honest "data unavailable"
+than a confident lie.
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! See our [contributing guide](./CONTRIBUTING.md) ([English](./CONTRIBUTING_EN.md)) to learn how to get involved.
+All forms of contribution are welcome! See the
+[contribution guide](./CONTRIBUTING_EN.md) ([中文](./CONTRIBUTING.md)) to get involved.
 
 ### Contributors
 
@@ -899,24 +1166,24 @@ We welcome contributions of all kinds! See our [contributing guide](./CONTRIBUTI
 
 ## 📄 License
 
-This project is open source under the [MIT License](./LICENSE).
+Released under the [MIT License](./LICENSE).
 
 ---
 
 ## 🙏 Acknowledgements
 
-- Any OpenAI-compatible LLM endpoint (during development this project used [Xiaomi MiMo](https://platform.xiaomimimo.com/)) - large language model and web-search capabilities
-- [FastAPI](https://fastapi.tiangolo.com/) - high-performance web framework
-- [React](https://react.dev/) - frontend UI framework
-- The US Treasury, the New York Fed, CFTC, Yahoo Finance and Sina Finance - free, key-less public data sources
+- Any OpenAI-compatible LLM endpoint (development used [Xiaomi MiMo](https://platform.xiaomimimo.com/)) — language model and web-search capability
+- [FastAPI](https://fastapi.tiangolo.com/) — high-performance web framework
+- [React](https://react.dev/) — frontend UI framework
+- US Treasury, NY Fed, CFTC, Yahoo Finance, Sina Finance and Iacoviello & Papaioannou (GPR) — key-free public data
 
 ---
 
-## 📧 Contact the Author
+## 📧 Contact
 
-If you have any questions, suggestions or ideas for collaboration, you are welcome to reach us through:
+Questions, suggestions or collaboration ideas:
 
-- 🐛 **Questions and suggestions**: please open a [GitHub Issue](https://github.com/JasonBuildAI/GoldMind/issues)
+- 🐛 **Issues & ideas**: please open a [GitHub Issue](https://github.com/JasonBuildAI/GoldMind/issues)
 
 ---
 
