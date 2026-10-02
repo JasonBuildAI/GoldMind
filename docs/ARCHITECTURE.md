@@ -548,3 +548,54 @@ ReAct 推理循环、多 Agent 协作、TF-IDF / NER、
 
 `app/agents/` 包（`BaseAgent` / `MarketAnalyzerAgent` / `NewsAnalyzerAgent`）
 从未被任何地方实例化，已删除。
+
+
+---
+
+## 十四、全自动运行（2.0.2）
+
+硬目标：**配置 `backend/.env` 是唯一的人工输入**。填好之后，建库建表、迁移、历史回填、
+抓取、分析、备份与体检都由系统自己完成；人工脚本（`init_db.py` / `migrate_*.py` /
+`backfill_quant.py` / 体检 / 备份）全部降级为**可选的运维入口**（见 README「全自动运行」）。
+
+### 启动引导（`app/bootstrap.py`，挂在 FastAPI lifespan）
+
+1. 迁移注册表（`schema_migrations`）应用建表 / 加列类迁移；SQLite 在会改动既有表的
+   迁移前把库文件备份到 `backend/backups/`，备份失败即中止该条迁移（`run_migrations`）。
+   MySQL 只做加列 / 建表 / 改列型，不删除数据。
+2. 数据阶段按 `STEPS` 固定顺序执行：覆盖度检测 → 本地研究长库对齐
+   （`services/store_alignment.py`：长库→服务库 insert-only，服务库→长库覆盖，
+   对齐前冲突数如实上报）→ 金价 / 美元指数历史 → RSS 新闻与高权威消息 →
+   量化因子历史（`QUANT_BACKFILL_YEARS`，可断点续跑）→ 因子修订流水 →
+   五个首轮 AI 分析。
+3. 每个阶段只有两种状态：真跑了，或给出**为什么跳过**的明确理由；单阶段失败记录在
+   `/health` 的 `bootstrap.phases[].note`，不阻塞后续阶段，下一轮启动重试。整条链路
+   幂等：重复启动不会重复回填、不会重复计费。
+4. `/health` 的 `bootstrap` 暴露 `status` / `step.index` / `step.total` / `gaps`，
+   前端初始化期间显示「初始化中（第 N 步 / 共 M 步）」而不是「不可用」。
+
+### 配置热更新（`app/config_watch.py`）
+
+- 每 10 秒比对 `.env` 键值快照；`LLM_*` 出现 / 变化 / 删除即：
+  `config.reload_settings` 只应用变化键（被删除的字符串 / 密钥键置空，防止
+  `os.environ` 里的旧值复活）→ `llm_provider.reset_clients` 丢弃共享 httpx 客户端 →
+  `llm_gate.reset_fingerprints` 清空输入指纹（旧模型的缓存结果不是新模型的答案；
+  当日调用计数保留）→ 后台线程立刻触发一轮 `force=True` 分析。
+- 非 `LLM_*` 变化（如 `DATABASE_URL`）不热应用，`config_watch.note` 明确提示需重启生效。
+- `CONFIG_WATCH=false`，或 `SCHEDULER_ENABLED=false`（测试 / 外部调度模式）时不启动
+  监听线程，`/health` 如实显示 `disabled` 与原因。
+
+### 调度自愈与每日运维（`app/scheduler.py`、`app/services/maintenance.py`）
+
+- 所有任务带 `coalesce=True`、`misfire_grace_time=3600`、`max_instances=1`：错过窗口
+  只补跑一次，绝不并发两份。
+- 启动约 20 秒后执行一轮「补差」（行情 / 美元 / 新闻 / 消息），不等 cron。
+- 每日 04:00（`SCHEDULER_TIMEZONE`）：SQLite 备份（保留最近 7 份）→ `check_data_sanity`。
+  **先备份、后修复**：备份没有真正完成（`AUTO_BACKUP=false`、内存库、MySQL 不代跑
+  mysqldump）时体检只读运行；「自动修复」仅限未来日期清理这一类安全项。
+
+### 部署路径
+
+- 裸机：`uvicorn app.main:app`（README 快速开始）。
+- Docker：`backend/docker-entrypoint.sh` 只做「等库就绪 → 起 uvicorn」。
+- MySQL：自动迁移同样生效；自动备份如实标注为不支持（未代跑 mysqldump）。

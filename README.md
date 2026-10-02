@@ -700,51 +700,20 @@ LLM_MODEL=deepseek-chat
 > 拒绝）；不设则保持旧行为。开启后调用方（如 `curl`、部署脚本）要自行带上该头，
 > 详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 第九节。
 
-#### 4. 初始化数据库（SQLite，零配置）
+#### 4. 启动（不需要任何初始化命令）
 
 ```bash
 cd backend
 
-# 建表 + 抓取并填充最近的历史数据（需要联网访问公开数据源）
-python init_db.py
-
-# 只建表、不抓数据：几秒完成，离线可用
-SKIP_SEED=1 python init_db.py
+# 建表、自动迁移、历史回填与首轮分析全部由启动引导完成（幂等，可随时重启）
+python -m uvicorn app.main:app --port 8000
 ```
 
-`init_db.py` 会自动创建 `backend/goldmind.db` 并建出全部数据表，然后尝试从
-新浪财经 → 东方财富 → Yahoo Finance 抓取金价与美元指数。全部失败也不阻塞：
-稍后再跑 `python seed_data.py` 重试即可。
-
-**老库升级**（已经建过库、现在要升到 2.0.1 的）：
-
-```bash
-cd backend
-
-# 机构观点：加 as_of_date / source 两列，并把旧别名行里的真实预测复制到规范行（只加不删）
-python scripts/migrate_institution_views.py --dry-run   # 默认就是 dry-run，先看会做什么
-python scripts/migrate_institution_views.py --apply
-# 回滚（删除这两列，既有数据行不动）
-python scripts/migrate_institution_views.py --drop-columns
-
-# 量化因子引擎：升级到带 factor_observations / factor_observation_revisions /
-# model_evaluations 的结构，并把既有观测回填进修订流水（幂等，只加不删）
-python scripts/migrate_quant.py --dry-run
-python scripts/migrate_quant.py
-# 回滚（删除三张新表与 predictions 的量化列，既有数据不动）
-python scripts/migrate_quant.py --drop --yes
-
-# 消息板块：把 news_digest_items.url 从 VARCHAR(500) 升到 TEXT
-# （Google News 的文章链接实测超 500 字符；VARCHAR 下 MySQL 会拒绝整批落库，只改列型不删行）
-python scripts/migrate_news_digest_url.py --dry-run
-python scripts/migrate_news_digest_url.py --apply
-# 回滚（库里存在超过 500 字符的 url 时拒绝执行，不截断数据）
-python scripts/migrate_news_digest_url.py --rollback
-```
-
-> 修订流水是 `--as-of` 复现历史面板的前提。回填出来的流水，`recorded_at`
-> 是那一行**进入本系统**的时间；历史回填是一次性写进来的，所以问更早的日期得到空面板
-> 是**正确**的答案，不是 bug。
+打开 `http://localhost:8000/health`：`bootstrap.status` 会从 `running` 走到 `done`，
+`bootstrap.step` 显示当前进度（第 N 步 / 共 M 步）。数据缺口（空库、历史不足、
+新闻过期）会被自动回填；库已经最新时各阶段如实标「skipped」并说明原因。
+手工脚本（`init_db.py` / `migrate_*.py` / `backfill_quant.py` / 体检 / 备份）
+仍然保留，但都降级为**可选运维工具** —— 见「全自动运行」一节。
 
 #### 5. 启动服务
 
@@ -763,10 +732,10 @@ npm run dev
 
 **冷启动预期（第一次打开页面时）：**
 
-- 五个分析区块**不会立刻有内容**：无缓存时先返回空结果并在后台跑一次分析
-  （页面提示「AI 分析进行中，首次加载可能需要 1-2 分钟」），跑完自动出现；
-  也可以点各区块的「重新分析 / 重新抓取」手动触发。
-- 量化预测首次需要回填多年历史因子，要等抓取完成才会从「不可用」变成有数字；之后是增量更新。
+- 页面顶部显示「初始化中（第 N 步 / 共 M 步）」；数据阶段完成后会自动开始首轮
+  AI 分析（首次通常几分钟，期间各区块显示「进行中」而不是错误）。
+- 全部完成后内容自动出现，**不需要**点任何「重新分析 / 重新抓取」；量化预测所需的
+  多年因子历史也由同一次启动引导回填。
 - 页面每 30 秒轮询行情接口（标签页隐藏时暂停、切回立即补一次）；默认限流 60 次/分
   （LLM 接口 6 次/分）。429 / 5xx / 网络错误会自动退避重试（429 尊重 `Retry-After`），
   正常浏览不会把页面打成「整片失败」。
@@ -828,6 +797,43 @@ npm run dev
 > 确认基线再上线。
 
 ---
+
+## 🤖 全自动运行（2.0.2）
+
+**唯一的人工输入是 `backend/.env`**（LLM 三项必填，其余可选项都有默认值）。填好启动后，
+建表、迁移、回填、抓取、分析、备份与体检全部由系统自己完成 —— 不需要再跑任何命令。
+
+| 时机 | 自动完成 | 进度在哪看 |
+|---|---|---|
+| 每次启动 | 建表 → 应用迁移注册表（`schema_migrations` 记账、只应用一次；SQLite 改表前自动备份到 `backend/backups/`） | `/health` → `bootstrap.migrations` |
+| 启动时发现数据缺口 | 对齐本地研究长库 → 回填金价 / 美元指数历史 → 抓 RSS 新闻与高权威消息 → 回填量化因子（默认 20 年，可断点续跑） → 补齐因子修订流水 | `/health` → `bootstrap`（阶段 / 进度 / 缺口） |
+| 启动时 LLM 已配置 | 首轮五个 AI 分析（看涨 / 看跌 / 机构 / 策略 / 总结），受输入指纹与 `LLM_DAILY_CALL_BUDGET` 约束 | 各页面区块、`/health` → `services.ai_config` |
+| 运行中每 10 秒 | 监听 `.env`：`LLM_*` 一出现 / 变化就热生效（重置客户端与缓存指纹）并立刻补一轮分析，**无需重启** | `/health` → `config_watch` |
+| 运行中按调度 | 错过窗口自动补跑（coalesce + misfire）；启动约 20 秒先跑一轮「补差」（行情 / 新闻 / 消息） | `/health` → `services.scheduler` |
+| 每日 04:00 | SQLite 自动备份（保留最近 7 份）→ 数据体检；自动修复仅限「未来日期清理」，且只在前一步**真正备份成功后**执行 | 服务端日志 `[维护]`；MySQL 不支持自动备份，如实标注 |
+
+- **降级语义**：LLM 未配置时数据层照常运行，各分析块显示「暂不可用 + 原因」；
+  之后把 LLM 三项填进 `.env`，监听器会自动重载并补一轮分析。
+- **需要重启的项**：`DATABASE_URL` 等非 `LLM_*` 的变化不会被中途热应用，
+  `/health` 的 `config_watch.note` 会明确提示「需重启生效」。
+- **MySQL**：自动迁移同样生效；自动备份不代跑 `mysqldump`（如实标注为不支持）。
+- **Docker**：`backend/docker-entrypoint.sh` 只做「等库就绪 → 直接起 uvicorn」，
+  初始化同样交给启动引导。
+
+**可选运维工具**（保留但不再是运行必经步骤，不使用不会缺任何功能）：
+
+| 工具 | 用途 |
+|---|---|
+| `python init_db.py` | 只建表（离线用 `SKIP_SEED=1`） |
+| `python scripts/backfill_quant.py --apply --years 20` | 手工把因子面板一次拉长到 20 年 |
+| `python scripts/migrate_*.py` | 手工迁移（启动引导自动应用同一份实现） |
+| `python scripts/check_data_sanity.py [--fix] [--strict]` | 数据体检（每日自动跑一遍） |
+| `python scripts/backup_db.py` | 手工备份（每日自动备份 SQLite，保留 7 份） |
+| `python scripts/verify_setup.py` | 只读配置自检（不连库、不出网） |
+
+> 修订流水是 `--as-of` 复现历史面板的前提。回填出来的流水，`recorded_at` 是那一行
+> **进入本系统**的时间；历史回填是一次性写进来的，所以问更早的日期得到空面板是
+> **正确**的答案，不是 bug。
 
 ## 🧪 常用命令
 

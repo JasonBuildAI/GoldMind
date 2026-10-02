@@ -778,55 +778,22 @@ Common providers (pick one; the endpoint must speak the OpenAI protocol):
 > (curl, deploy scripts, the page) must send the header once it is enabled — see
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 9.
 
-#### 4. Initialise the database (SQLite, zero config)
+#### 4. Start it (no initialisation command needed)
 
 ```bash
 cd backend
 
-# create tables + fetch and fill recent history (needs internet access to public sources)
-python init_db.py
-
-# tables only, no data: a few seconds, works offline
-SKIP_SEED=1 python init_db.py
+# tables, migrations, history backfill and the first analyses are handled by the
+# startup bootstrap (idempotent; restart at any time)
+python -m uvicorn app.main:app --port 8000
 ```
 
-`init_db.py` creates `backend/goldmind.db` and all tables, then tries Sina Finance → Eastmoney →
-Yahoo Finance for gold prices and the dollar index. Total failure is not fatal: rerun
-`python seed_data.py` later.
-
-**Upgrading an existing database to 2.0.1:**
-
-```bash
-cd backend
-
-# institutional views: add as_of_date / source and copy real forecasts from legacy alias rows
-# (add-only; no row is ever deleted)
-python scripts/migrate_institution_views.py --dry-run   # dry-run is the default; look first
-python scripts/migrate_institution_views.py --apply
-# rollback (drops the two columns; existing rows stay)
-python scripts/migrate_institution_views.py --drop-columns
-
-# quant engine: upgrade to the factor_observations / factor_observation_revisions /
-# model_evaluations shape and backfill the ledger from existing observations (idempotent,
-# add-only)
-python scripts/migrate_quant.py --dry-run
-python scripts/migrate_quant.py
-# rollback (drops the three new tables and the quant columns on predictions; data survives)
-python scripts/migrate_quant.py --drop --yes
-
-# news digest: widen news_digest_items.url from VARCHAR(500) to TEXT (Google News
-# article links exceed 500 chars; MySQL rejects the whole batch under VARCHAR;
-# column type only, no row is deleted)
-python scripts/migrate_news_digest_url.py --dry-run
-python scripts/migrate_news_digest_url.py --apply
-# rollback (refuses when any url is longer than 500 chars — never truncates data)
-python scripts/migrate_news_digest_url.py --rollback
-```
-
-> The revision ledger is the prerequisite for `--as-of` rebuilds. For backfilled rows,
-> `recorded_at` is the day the row **entered this system**; historical backfill happens in one
-> go, so asking for an earlier date returns an empty panel — that is the **correct** answer, not
-> a bug.
+Open `http://localhost:8000/health`: `bootstrap.status` walks from `running` to `done` and
+`bootstrap.step` shows the phase progress (N of M). Missing data (empty database, short
+history, stale news) is backfilled automatically; when the database is already up to date,
+each phase reports `skipped` with a reason. The manual scripts (`init_db.py`, `migrate_*.py`,
+`backfill_quant.py`, sanity checks, backups) are still shipped but demoted to **optional ops
+tools** - see "Fully automatic operation".
 
 #### 5. Run the services
 
@@ -845,11 +812,10 @@ npm run dev
 
 **Cold-start expectations:**
 
-- The five analysis sections **will not be populated immediately**: with no cache they return
-  empty and kick off a background analysis (the page says "AI analysis in progress; the first
-  load can take 1–2 minutes"), then fill in. You can also trigger each section's re-run button.
-- The quant forecast needs a multi-year factor backfill first; it stays "unavailable" until the
-  fetch completes, then updates incrementally.
+- The header shows "initialising (step N of M)"; when the data phases finish the first AI
+  analyses start automatically (usually a few minutes - blocks show "in progress", not errors).
+- Everything appears by itself - **no** re-run button needs to be pressed. The multi-year
+  factor backfill the quant forecast needs happens in the same bootstrap.
 - The page polls the market endpoint every 30 seconds (paused while the tab is hidden, with an
   immediate catch-up on return); default limits are 60 req/min (6 req/min for LLM endpoints).
   429 / 5xx / network errors are retried with backoff (429 honours `Retry-After`), so normal
@@ -916,6 +882,40 @@ people who need them, with **no guarantee they work out of the box at this versi
 > `GOLDMIND_TEST_DATABASE_URL="mysql+pymysql://root:pw@localhost:3306/goldmind_test" python -m pytest`.
 
 ---
+
+## 🤖 Fully automatic operation (2.0.2)
+
+**The only human input is `backend/.env`** (the three LLM settings are required; every other
+option has a working default). After that the system creates tables, migrates, backfills,
+fetches, analyses, backs up and health-checks itself - no commands to run.
+
+| When | What happens automatically | Where to watch |
+|---|---|---|
+| Every start | create tables -> apply the migration registry (`schema_migrations`, applied once; SQLite is backed up to `backend/backups/` before DDL) | `/health` -> `bootstrap.migrations` |
+| Start with missing data | align the local research long store -> gold / dollar history -> RSS news + authoritative digest -> quant factor history (`QUANT_BACKFILL_YEARS`, resumable) -> factor revision ledger | `/health` -> `bootstrap` |
+| Start with LLM configured | the five first AI analyses (bullish / bearish / institutions / advice / summary), gated by input fingerprints and `LLM_DAILY_CALL_BUDGET` | page blocks, `/health` -> `services.ai_config` |
+| Running, every 10s | watch `.env`: `LLM_*` appearing / changing hot-reloads the settings (clients and fingerprint cache reset) and triggers one forced analysis round - **no restart** | `/health` -> `config_watch` |
+| Running, scheduled | missed windows are caught up (coalesce + misfire); a one-off catch-up run (prices / news / digest) fires ~20s after boot | `/health` -> `services.scheduler` |
+| Daily 04:00 | SQLite backup (newest 7 kept) then the data health check; automatic fixes are limited to future-date cleanup and run **only after a backup actually succeeded** | server log `[维护]`; MySQL has no automatic backup (stated honestly) |
+
+- **Degradation**: without an LLM the data layer keeps running and each analysis block shows
+  "temporarily unavailable + reason"; fill the three LLM settings into `.env` and the watcher
+  reloads and runs one round automatically.
+- **Restart-only settings**: non-`LLM_*` changes (e.g. `DATABASE_URL`) are never hot-applied;
+  `/health` -> `config_watch.note` says a restart is required.
+- **MySQL**: automatic migrations apply; automatic backups do **not** run mysqldump (stated as
+  unsupported rather than pretended).
+- **Docker**: `backend/docker-entrypoint.sh` only waits for the database and execs uvicorn;
+  initialisation is the startup bootstrap's job.
+
+**Optional ops tools** (kept, but no longer part of any required path; skipping them costs no
+functionality): `init_db.py`, `scripts/backfill_quant.py`, `scripts/migrate_*.py`,
+`scripts/check_data_sanity.py`, `scripts/backup_db.py`, `scripts/verify_setup.py`.
+
+> The revision ledger is the prerequisite for `--as-of` rebuilds. For backfilled rows,
+> `recorded_at` is the day the row **entered this system**; historical backfill happens in one
+> go, so asking for an earlier date returns an empty panel - that is the **correct** answer, not
+> a bug.
 
 ## 🧪 Common commands
 
