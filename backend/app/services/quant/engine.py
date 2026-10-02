@@ -292,6 +292,7 @@ def calibrate_distribution(
     window: Optional[int] = CALIBRATION_WINDOW,
     min_samples: int = MIN_ERRORS_FOR_SIGMA,
     symmetric: bool = False,
+    issued_lag: int = 0,
 ) -> pd.DataFrame:
     """studentized 误差 → 逐日校准分布的出口：区间端点、四分位、上行概率。
 
@@ -314,6 +315,10 @@ def calibrate_distribution(
     ``symmetric=True`` = 对称版本，``interval="normal"`` 由调用方走解析正态、不调这里。
 
     样本不足 ``min_samples`` 的行返回 NaN，由调用方回退到正态分位。
+
+    ``issued_lag`` 是「一条区间从发出发到成熟」的行数（= 尺度 ``horizon``）：调用方传进来的
+    ``ratio`` 已经右移过，所以第 t 行的实现误差对应的是第 ``t - issued_lag`` 行发出的区间。
+    留 0 是给纯经验口径用的（那条路径下 α 不更新，判错也无害）。
     """
     values = ratio.to_numpy(dtype="float64")
     points = flat_z.to_numpy(dtype="float64")
@@ -378,7 +383,15 @@ def calibrate_distribution(
                 )
             value = values[position]
             if np.isfinite(value):
-                miss = 1.0 if (value < q_low or value > q_high) else 0.0
+                # 判的是「当时发出的那条区间」守没守住：ratio 已按实现时间右移，所以这一注
+                # 对应的是 ``issued_lag`` 行前那一条区间。拿现在这条去判旧的那注，等于让 α
+                # 反应在它自己没发出的区间上 —— 长尺度上足够把自适应整个带偏。
+                prior = position - max(0, int(issued_lag))
+                low = q_low if prior < 0 or not np.isfinite(columns["lower"][prior]) else columns["lower"][prior]
+                high = (
+                    q_high if prior < 0 or not np.isfinite(columns["upper"][prior]) else columns["upper"][prior]
+                )
+                miss = 1.0 if (value < low or value > high) else 0.0
                 current_alpha = float(
                     np.clip(
                         current_alpha + gamma * (alpha - miss),
@@ -528,6 +541,7 @@ def build_prediction_frame(
             half_life=ACI_HALF_LIFE if adaptive else None,
             window=CALIBRATION_WINDOW if adaptive else None,
             symmetric=interval in ("aci_symmetric", "empirical"),
+            issued_lag=horizon,
         )
         # 经验样本不足的行：区间、四分位与概率**一起**退回正态，不许一半经验一半正态
         insufficient = calibration["lower"].isna()
