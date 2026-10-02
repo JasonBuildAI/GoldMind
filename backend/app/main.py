@@ -2,7 +2,6 @@
 import os
 import sys
 import time
-import asyncio
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -39,50 +38,6 @@ def _configure_logging() -> None:
     )
 
 _configure_logging()
-
-async def warmup_cache():
-    """启动时预热缓存（后台执行，不阻塞服务启动）"""
-    await asyncio.sleep(5)  # 等待5秒让系统完全启动
-    try:
-        from app.database import SessionLocal
-        from app.services.bullish_factor_service import BullishFactorService
-        from app.services.bearish_factor_service import BearishFactorService
-        from app.services.institution_prediction_service import InstitutionPredictionService
-        from app.services.investment_advice_service import InvestmentAdviceService
-        
-        db = SessionLocal()
-        try:
-            logger.info("[缓存预热] 开始后台预热Agent缓存...")
-            
-            # 预热看涨因子
-            bullish_service = BullishFactorService(db)
-            if not bullish_service.cache.exists():
-                logger.info("[缓存预热] 触发看涨因子分析...")
-                bullish_service._trigger_background_analysis()
-            
-            # 预热看跌因子
-            bearish_service = BearishFactorService(db)
-            if not bearish_service.cache.exists():
-                logger.info("[缓存预热] 触发看跌因子分析...")
-                bearish_service._trigger_background_analysis()
-            
-            # 预热机构预测
-            institution_service = InstitutionPredictionService(db)
-            if not institution_service.cache.exists():
-                logger.info("[缓存预热] 触发机构预测分析...")
-                institution_service._trigger_background_analysis()
-            
-            # 预热投资建议
-            advice_service = InvestmentAdviceService(db)
-            if not advice_service.cache.exists():
-                logger.info("[缓存预热] 触发投资建议分析...")
-                advice_service._trigger_background_analysis()
-            
-            logger.info("[缓存预热] 所有预热任务已启动")
-        finally:
-            db.close()
-    except Exception as e:
-        logger.error(f"[缓存预热] 预热失败: {e}")
 
 # --------------------------------------------------------------------------- #
 # 启动引导（2.0.2）
@@ -132,6 +87,11 @@ async def lifespan(app: FastAPI):
     # 语义（disabled / skipped）都由 bootstrap.start_background 内部处理。
     from app import bootstrap, config_watch
 
+    # 首轮分析（看涨 / 看跌 / 机构 / 策略 / 总结）**只由引导的第 8 步触发**：
+    # 它在数据回填完成后跑、受输入指纹门控与每日预算约束。旧版本在这里另有一个
+    # `warmup_cache()`（启动 5 秒后直接触发四个分析），2.0.2 删除：它跑在回填之前，
+    # 抢跑的分析会在空数据上产出结果并写入门控指纹，导致引导阶段被误跳过；
+    # 其中对投资建议的调用还带着必填参数缺失的真实报错（2026-10-03 冷启动验收抓到）。
     bootstrap.start_background(engine)
     # LLM 配置热生效：.env 里 LLM_* 一出现/变化就自动重载 + 补一轮分析，无需重启。
     config_watch.start_watcher(engine)
@@ -140,8 +100,6 @@ async def lifespan(app: FastAPI):
         init_scheduler()
         logger.info("定时任务调度器已启动")
         
-        # 启动缓存预热（后台执行，不阻塞）
-        asyncio.create_task(warmup_cache())
     
     yield
     
