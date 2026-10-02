@@ -21,7 +21,10 @@ class NewsDigestItem(Base):
     source_key = Column(String(100), nullable=False)
     # 1 = 官方 / 通讯社 / 行业机构；2 = 专业财经媒体
     authority_tier = Column(Integer, nullable=False, default=2)
-    url = Column(String(500), nullable=False)
+    # TEXT 而不是 VARCHAR(500)：Google News 的文章链接实测超过 500 字符
+    # （2026-10-02 事故：MySQL 报 Data too long，整批落库回滚；SQLite 不校验
+    # 长度所以测试全绿）。见 docs/specs/2026-10-02-消息落库修复.md。
+    url = Column(Text, nullable=False)
     published_at = Column(DateTime, nullable=False, index=True)
     fetched_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())

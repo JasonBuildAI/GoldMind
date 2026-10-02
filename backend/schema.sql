@@ -68,12 +68,13 @@ CREATE TABLE IF NOT EXISTS news_digest_items (
     source_key VARCHAR(100) NOT NULL,
     -- 1 = 官方 / 通讯社 / 行业机构；2 = 专业财经媒体
     authority_tier INT NOT NULL DEFAULT 2,
-    url VARCHAR(500) NOT NULL,
+    -- Google News 的文章链接实测超过 500 字符（2026-10-02 事故），用 TEXT。
+    url TEXT NOT NULL,
     published_at TIMESTAMP NOT NULL,
     fetched_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_news_digest_published (published_at),
-    -- 去重按 url 查；utf8mb4 下 500 字符超长，用前缀索引。
+    -- 去重按 url 查；TEXT 在 MySQL 下必须用前缀索引。
     -- 名字与 app/models/news_digest.py 的 Index 一致，两者由测试守住。
     INDEX ix_news_digest_items_url (url(191))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

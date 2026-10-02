@@ -664,6 +664,13 @@ python scripts/migrate_quant.py --dry-run
 python scripts/migrate_quant.py
 # 回滚（删除三张新表与 predictions 的量化列，既有数据不动）
 python scripts/migrate_quant.py --drop --yes
+
+# 消息板块：把 news_digest_items.url 从 VARCHAR(500) 升到 TEXT
+# （Google News 的文章链接实测超 500 字符；VARCHAR 下 MySQL 会拒绝整批落库，只改列型不删行）
+python scripts/migrate_news_digest_url.py --dry-run
+python scripts/migrate_news_digest_url.py --apply
+# 回滚（库里存在超过 500 字符的 url 时拒绝执行，不截断数据）
+python scripts/migrate_news_digest_url.py --rollback
 ```
 
 > 修订流水是 `--as-of` 复现历史面板的前提。回填出来的流水，`recorded_at`

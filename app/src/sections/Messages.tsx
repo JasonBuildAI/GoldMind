@@ -104,6 +104,7 @@ function reportLine(report: DigestRefreshResponse): string {
   ]
   if (report.duplicates > 0) bits.push(`重复 ${report.duplicates} 条`)
   if (report.skipped_filtered > 0) bits.push(`不相关跳过 ${report.skipped_filtered} 条`)
+  if (report.skipped_unstorable > 0) bits.push(`落库失败跳过 ${report.skipped_unstorable} 条`)
   if (report.failed_sources > 0) bits.push(`失败 ${report.failed_sources} 个来源`)
   return bits.join(' · ')
 }

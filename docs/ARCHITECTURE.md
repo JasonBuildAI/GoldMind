@@ -160,7 +160,7 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | `gold_prices` | 金价 OHLC，`date` 唯一 |
 | `dollar_index` | 美元指数，`date` 唯一 |
 | `gold_news` | 新闻；`published_at` 有索引 |
-| `news_digest_items` | 消息板块的高权威条目（与 `gold_news` 完全隔离）；`url` 去重（MySQL 前缀索引 191）、`published_at` 有索引 |
+| `news_digest_items` | 消息板块的高权威条目（与 `gold_news` 完全隔离）；`url` 为 `TEXT`（Google News 链接实测超 500 字符，`VARCHAR(500)` 在 MySQL 下整批落库失败，老库升级走 `scripts/migrate_news_digest_url.py`）、去重靠前缀索引 191、`published_at` 有索引 |
 | `market_factors` | 多空因子（`type` 区分） |
 | `institution_views` | 机构观点；`as_of_date` / `source` 记录每条预测最近一次被核实的日期与线索来源（`web_search` / `news_scan` / `legacy`），老库升级走 `scripts/migrate_institution_views.py`（只加列/补数据，不删行） |
 | `predictions` | 量化引擎（`services/quant/service.py`）每次刷新写入：方向、周期、基准价、目标价、得分、期望收益、不确定度与模型版本 |

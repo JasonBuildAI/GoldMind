@@ -69,6 +69,8 @@ class DigestFetchReport(BaseModel):
     skipped_no_url: int
     skipped_no_time: int
     skipped_filtered: int
+    # 落库阶段被跳过的行（如单行数据超长）。默认 0：修复前写入的缓存报告仍可解析。
+    skipped_unstorable: int = 0
     sources: List[DigestFetchSource]
 
 

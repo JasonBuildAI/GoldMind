@@ -342,7 +342,7 @@ class NewsDigestService:
                 results = [future.result() for future in futures]
 
         fetched = [item for result in results for item in result.items]
-        inserted = self._save_items(fetched)
+        inserted, skipped_unstorable = self._save_items(fetched)
 
         sources_payload = [
             {
@@ -363,24 +363,33 @@ class NewsDigestService:
             "entries": sum(result.entries for result in results),
             "kept": sum(result.kept for result in results),
             "new_items": len(inserted),
-            "duplicates": sum(result.kept for result in results) - len(inserted),
+            # 跳过的行既不是「重复」也不是「新增」——单独计数，别混进 duplicates
+            # （2026-10-02 的故障就是这样被显示成「110 条重复、0 新增」的）。
+            "duplicates": sum(result.kept for result in results) - len(inserted) - skipped_unstorable,
             "skipped_no_title": sum(result.skipped_no_title for result in results),
             "skipped_no_url": sum(result.skipped_no_url for result in results),
             "skipped_no_time": sum(result.skipped_no_time for result in results),
             "skipped_filtered": sum(result.skipped_filtered for result in results),
+            "skipped_unstorable": skipped_unstorable,
             "sources": sources_payload,
         }
         CacheManager(FETCH_STATUS_CACHE_KEY, ttl=FETCH_STATUS_TTL).set(report)
+        skip_note = f"，跳过 {skipped_unstorable} 条" if skipped_unstorable else ""
         logger.info(
             f"[消息板块] 抓取完成：{report['ok_sources']}/{report['total_sources']} 源成功，"
-            f"新增 {report['new_items']} 条"
+            f"新增 {report['new_items']} 条{skip_note}"
         )
         return report
 
-    def _save_items(self, items: Sequence[Dict[str, Any]]) -> set:
-        """按规范化 URL 去重后落库；返回实际插入的 URL 集合。"""
+    def _save_items(self, items: Sequence[Dict[str, Any]]) -> Tuple[set, int]:
+        """按规范化 URL 去重后逐行落库；返回（实际插入的 URL 集合, 跳过行数）。
+
+        单行入库失败只跳过该行：2026-10-02 的故障里，一条超长 URL 让整批
+        INSERT 一起回滚，而报告把它显示成「全部重复」——故障因此静默。
+        逐行 savepoint（`begin_nested`）之后，坏行可数、好行照常入库。
+        """
         if not items:
-            return set()
+            return set(), 0
 
         urls = list({item["url"] for item in items})
         existing: set = set()
@@ -394,22 +403,30 @@ class NewsDigestService:
             )
 
         inserted: set = set()
+        skipped = 0
         for item in items:
             url = item["url"]
             if url in existing or url in inserted:
                 continue
-            self.db.add(NewsDigestItem(**item))
+            try:
+                with self.db.begin_nested():
+                    self.db.add(NewsDigestItem(**item))
+            except Exception as exc:
+                skipped += 1
+                logger.warning(f"[消息板块] 跳过一条无法落库的条目（{url[:80]}）：{exc}")
+                continue
             inserted.add(url)
 
         if not inserted:
-            return set()
+            return set(), skipped
         try:
             self.db.commit()
         except Exception as exc:
             self.db.rollback()
             logger.error(f"[消息板块] 落库失败：{exc}")
-            return set()
-        return inserted
+            # 已插行同样没落上：计入 skipped，宁可报「没落上」也不报成「重复」。
+            return set(), skipped + len(inserted)
+        return inserted, skipped
 
 
 # --------------------------------------------------------------------------- #

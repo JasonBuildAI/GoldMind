@@ -48,6 +48,7 @@ const FETCH_REPORT = {
   skipped_no_url: 0,
   skipped_no_time: 1,
   skipped_filtered: 15,
+  skipped_unstorable: 0,
   sources: [],
 }
 
@@ -167,7 +168,7 @@ describe('Messages', () => {
 
   it('点击「抓取最新消息」先抓取再重读，并显示本次抓取报告', async () => {
     mocked.getDigest.mockResolvedValue(DIGEST)
-    mocked.refresh.mockResolvedValue({ success: true, ...FETCH_REPORT })
+    mocked.refresh.mockResolvedValue({ success: true, ...FETCH_REPORT, skipped_unstorable: 2 })
     const user = userEvent.setup()
 
     render(<Messages />)
@@ -180,6 +181,7 @@ describe('Messages', () => {
     const report = await screen.findByTestId('messages-report')
     expect(report).toHaveTextContent('本次抓取：12/13 个来源成功')
     expect(report).toHaveTextContent('新增 3 条')
+    expect(report).toHaveTextContent('落库失败跳过 2 条')
     expect(report).toHaveTextContent('失败 1 个来源')
   })
 

@@ -888,6 +888,7 @@ export interface DigestFetchReport {
   skipped_no_url: number
   skipped_no_time: number
   skipped_filtered: number
+  skipped_unstorable: number
   sources: DigestFetchSource[]
 }
 

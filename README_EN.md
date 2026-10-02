@@ -730,6 +730,14 @@ python scripts/migrate_quant.py --dry-run
 python scripts/migrate_quant.py
 # rollback (drops the three new tables and the quant columns on predictions; data survives)
 python scripts/migrate_quant.py --drop --yes
+
+# news digest: widen news_digest_items.url from VARCHAR(500) to TEXT (Google News
+# article links exceed 500 chars; MySQL rejects the whole batch under VARCHAR;
+# column type only, no row is deleted)
+python scripts/migrate_news_digest_url.py --dry-run
+python scripts/migrate_news_digest_url.py --apply
+# rollback (refuses when any url is longer than 500 chars — never truncates data)
+python scripts/migrate_news_digest_url.py --rollback
 ```
 
 > The revision ledger is the prerequisite for `--as-of` rebuilds. For backfilled rows,

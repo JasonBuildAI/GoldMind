@@ -616,3 +616,45 @@ def test_fetch_all_sources_calls_every_configured_source(db_session, monkeypatch
     NewsDigestService(db_session).fetch_all_sources()
 
     assert sorted(seen) == ["https://a.invalid/rss", "https://b.invalid/rss"]
+
+
+@pytest.mark.unit
+def test_save_items_keeps_good_rows_when_one_row_is_unstorable(db_session):
+    """一行坏数据只跳过该行，不拖垮整批。
+
+    2026-10-02 的故障形态：一条超长 URL 让整批 INSERT 一起回滚，而报告把它
+    显示成「全部重复」，页面永远是空的。逐行 savepoint 之后，坏行可数、
+    好行照常入库。
+    """
+    service = NewsDigestService(db_session)
+    good_a = _fake_item("https://a.invalid/good-a", "Gold price rises")
+    bad = _fake_item("https://a.invalid/bad", "Gold price falls")
+    bad["published_at"] = None  # NOT NULL 违反：真实数据库会拒绝这一行
+    good_b = _fake_item("https://b.invalid/good-b", "Bullion demand climbs")
+
+    inserted, skipped = service._save_items([good_a, bad, good_b])
+
+    assert inserted == {"https://a.invalid/good-a", "https://b.invalid/good-b"}
+    assert skipped == 1
+    assert {row.url for row in db_session.query(NewsDigestItem).all()} == inserted
+
+
+@pytest.mark.unit
+def test_fetch_report_counts_rows_that_cannot_be_stored(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "NEWS_DIGEST_SOURCES", "甲|https://a.invalid/rss|1|gold")
+    bad = _fake_item("https://a.invalid/bad", "Gold price falls")
+    bad["published_at"] = None
+    monkeypatch.setattr(
+        news_digest,
+        "fetch_source",
+        lambda spec, limit=news_digest.PER_SOURCE_LIMIT: SourceFetchResult(
+            spec=spec, entries=1, kept=1, items=[bad]
+        ),
+    )
+
+    report = NewsDigestService(db_session).fetch_all_sources()
+
+    assert report["skipped_unstorable"] == 1
+    assert report["new_items"] == 0
+    assert report["duplicates"] == 0  # 跳过的行不能被算成「重复」
+    assert db_session.query(NewsDigestItem).count() == 0

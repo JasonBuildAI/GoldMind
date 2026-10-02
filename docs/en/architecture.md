@@ -170,7 +170,7 @@ are **not committed** (`.gitignore` ignores them).
 | `gold_prices` | gold price OHLC, `date` unique |
 | `dollar_index` | dollar index, `date` unique |
 | `gold_news` | news; `published_at` is indexed |
-| `news_digest_items` | high-authority message-board items (fully isolated from `gold_news`); `url` is deduplicated (MySQL prefix index 191), `published_at` is indexed |
+| `news_digest_items` | high-authority message-board items (fully isolated from `gold_news`); `url` is `TEXT` (Google News links exceed 500 chars, and `VARCHAR(500)` makes MySQL reject the whole batch — upgrade old databases with `scripts/migrate_news_digest_url.py`), deduplicated via prefix index 191, `published_at` is indexed |
 | `market_factors` | bullish/bearish factors (separated by `type`) |
 | `institution_views` | institutional views; `as_of_date` / `source` record the date each prediction was last verified and where the lead came from (`web_search` / `news_scan` / `legacy`); upgrading an old database goes through `scripts/migrate_institution_views.py` (adds columns / backfills data only, never deletes rows) |
 | `predictions` | written on every refresh by the quant engine (`services/quant/service.py`): direction, horizon, base price, target price, score, expected return, uncertainty and model version |
