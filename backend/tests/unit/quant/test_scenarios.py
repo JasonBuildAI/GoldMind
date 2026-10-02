@@ -1,15 +1,16 @@
-"""情景：分位数口径、σ 的作用、触发条件与降级。"""
+"""情景：分位数口径、自洽性、触发条件与降级。
+
+情景层**不再自己算分位数**：它只把 ``engine`` 校准分布给出的四分位换算成价格。
+所以这里的测试盯两件事 —— 换算口径与「缺四分位就拒答」，
+而不是（曾经那样的）``μ ± z·σ``：那会让情景区间与页面上的 80% 区间出自两套分布。
+"""
 from __future__ import annotations
 
 from dataclasses import replace
-from statistics import NormalDist
 
 import pytest
 
 from app.services.quant import engine, scenarios
-
-# Φ⁻¹(0.25)：Base 区间来自分布分位数这条口径的锚点，硬编码以免测试与实现共用同一个错误
-Z25 = -0.6744897501960817
 
 
 def _snapshot(panel, horizon=20):
@@ -19,14 +20,14 @@ def _snapshot(panel, horizon=20):
     return snapshot, close
 
 
-def test_base_range_is_the_interquartile_of_the_prediction_distribution(panel):
+def test_base_range_is_the_snapshot_interquartile(panel):
     snapshot, close = _snapshot(panel)
 
     result = scenarios.build_scenarios(snapshot, close)
 
     assert result.status == scenarios.STATUS_OK
-    expected_low = snapshot.base_price * (1.0 + snapshot.expected_return + snapshot.uncertainty * Z25)
-    expected_high = snapshot.base_price * (1.0 + snapshot.expected_return - snapshot.uncertainty * Z25)
+    expected_low = snapshot.base_price * (1.0 + snapshot.scenario_low_return)
+    expected_high = snapshot.base_price * (1.0 + snapshot.scenario_high_return)
     by_key = {scenario.key: scenario for scenario in result.scenarios}
 
     assert set(by_key) == {"base", "bull", "bear"}
@@ -38,21 +39,60 @@ def test_base_range_is_the_interquartile_of_the_prediction_distribution(panel):
     assert by_key["bull"].price_high is None
     assert by_key["bear"].price_high == pytest.approx(expected_low, rel=1e-9)
     assert by_key["bear"].price_low is None
-    assert by_key["base"].probability + by_key["bull"].probability + by_key["bear"].probability == 1.0
+    assert (
+        by_key["base"].probability + by_key["bull"].probability + by_key["bear"].probability == 1.0
+    )
     assert [by_key[key].probability for key in ("base", "bull", "bear")] == [0.5, 0.25, 0.25]
 
 
-def test_scenario_width_is_proportional_to_uncertainty(panel):
+def test_scenarios_never_invent_a_distribution_the_snapshot_lacks(panel):
+    """四分位缺失 / 顺序异常 / 基准价缺失都拒答，不退回「正态 μ ± z·σ」另算一套。"""
+    snapshot, close = _snapshot(panel)
+
+    cases = [
+        ({"scenario_low_return": None}, "四分位"),
+        ({"scenario_high_return": None}, "四分位"),
+        ({"scenario_low_return": 0.10, "scenario_high_return": 0.02}, "顺序异常"),
+        ({"base_price": None}, "基准价"),
+    ]
+    for changes, keyword in cases:
+        result = scenarios.build_scenarios(replace(snapshot, **changes), close)
+        assert result.status == scenarios.STATUS_UNAVAILABLE, changes
+        assert keyword in result.reason, changes
+        assert result.scenarios == ()
+        assert result.range_low is None and result.range_high is None
+
+
+def test_scenario_width_tracks_the_calibrated_quartile_spread(panel):
     snapshot, close = _snapshot(panel)
 
     narrow = scenarios.build_scenarios(snapshot, close)
     wide = scenarios.build_scenarios(
-        replace(snapshot, uncertainty=snapshot.uncertainty * 2.0), close
+        replace(
+            snapshot,
+            scenario_low_return=snapshot.scenario_low_return * 2.0,
+            scenario_high_return=snapshot.scenario_high_return * 2.0,
+        ),
+        close,
     )
 
     narrow_width = narrow.range_high - narrow.range_low
     wide_width = wide.range_high - wide.range_low
+    expected = (
+        snapshot.base_price
+        * (snapshot.scenario_high_return - snapshot.scenario_low_return)
+        * 2.0
+    )
     assert wide_width == pytest.approx(narrow_width * 2.0, rel=1e-9)
+    assert wide_width == pytest.approx(expected, rel=1e-9)
+
+
+def test_price_at_return_maps_the_declared_return_onto_the_base_price():
+    assert scenarios.price_at_return(2000.0, 0.0) == pytest.approx(2000.0)
+    assert scenarios.price_at_return(2000.0, 0.05) == pytest.approx(2100.0)
+    assert scenarios.price_at_return(2000.0, -0.05) == pytest.approx(1900.0)
+    # 与目标价同一个换算口径（简单收益），不是另一种复利
+    assert scenarios.price_at_return(2000.0, 0.05) == pytest.approx(2000.0 * 1.05)
 
 
 def test_triggers_name_the_dominant_factor_and_the_ma200(panel):
@@ -92,13 +132,9 @@ def test_missing_ma_history_is_stated_not_invented(panel):
     "changes, keyword",
     [
         ({"status": engine.PREDICTION_UNAVAILABLE, "reason": "可用因子只有 2 个"}, "可用因子"),
-        ({"expected_return": None}, "期望收益"),
-        ({"uncertainty": None}, "不确定度"),
-        ({"uncertainty": 0.0}, "不确定度"),
-        ({"base_price": None}, "分布"),
     ],
 )
-def test_undefined_distribution_is_unavailable_with_a_reason(panel, changes, keyword):
+def test_unavailable_prediction_carries_its_reason(panel, changes, keyword):
     snapshot, close = _snapshot(panel)
 
     result = scenarios.build_scenarios(replace(snapshot, **changes), close)
@@ -106,17 +142,3 @@ def test_undefined_distribution_is_unavailable_with_a_reason(panel, changes, key
     assert result.status == scenarios.STATUS_UNAVAILABLE
     assert keyword in result.reason
     assert result.scenarios == ()
-    assert result.range_low is None and result.range_high is None
-
-
-def test_price_quantile_moves_with_sigma():
-    low, high = 0.2, 0.4
-
-    assert scenarios.price_at_quantile(2000.0, 0.0, high, 0.25) < scenarios.price_at_quantile(
-        2000.0, 0.0, low, 0.25
-    )
-    assert scenarios.price_at_quantile(2000.0, 0.0, high, 0.75) > scenarios.price_at_quantile(
-        2000.0, 0.0, low, 0.75
-    )
-    assert scenarios.price_at_quantile(2000.0, 0.0, 0.0, 0.25) == pytest.approx(2000.0)
-

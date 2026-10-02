@@ -1,11 +1,14 @@
 """情景：把每个尺度的预测分布变成 Base / Bull / Bear 与触发、失效条件。
 
-口径（与方法论一致，不另算一套数字）：
+口径（**不另算一套数字**）：
 
-  - 未来 h 个交易日收益率 ~ N(μ, σ²)，μ / σ 直接取 ``engine`` 快照的
-    ``expected_return`` / ``uncertainty``；
+  - 情景区间直接取 ``engine`` 校准分布的四分位（``scenario_low_return`` /
+    ``scenario_high_return``，与 80% 区间同批分位样本），
+    价格 = 基准价 × (1 + 分位收益)；
   - Base = [q25, q75]（50%），Bull = q75 以上（25%），Bear = q25 以下（25%），
-    价格 = 基准价 × (1 + 分位收益)，无上/下界如实用「以上 / 以下」表达；
+    无上/下界如实用「以上 / 以下」表达；
+  - 因为两组边界出自同一个分布，α ≤ 0.5 时情景区间必然嵌套在 80% 区间内 ——
+    这条自洽有测试钉住；把情景改回「正态 μ ± z·σ」会让它变红；
   - 触发 / 失效条件由该尺度**权重最大的可用因子**与 200 日均线生成，
     每个数字都能在因子表与行情序列里核对；
   - 分布、基准价或均线之外的数据不足时，返回「不可用 + 原因」，不编区间。
@@ -13,7 +16,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from statistics import NormalDist
 from typing import Optional
 
 import pandas as pd
@@ -23,9 +25,6 @@ from app.services.quant import engine
 STATUS_OK = engine.STATUS_OK
 STATUS_UNAVAILABLE = engine.PREDICTION_UNAVAILABLE
 
-NORMAL = NormalDist()
-LOWER_QUANTILE = 0.25
-UPPER_QUANTILE = 0.75
 MA_WINDOW = 200
 # 200 日均线至少要有这么多交易日才给数字，否则条件里如实写「历史样本不足」
 MIN_MA_SAMPLES = 120
@@ -77,9 +76,9 @@ def _unavailable(reason: str) -> ScenarioSet:
     return ScenarioSet(STATUS_UNAVAILABLE, reason, None, None, ())
 
 
-def price_at_quantile(base_price: float, mu: float, sigma: float, quantile: float) -> float:
-    """分布 N(μ, σ²) 的分位数 → 价格；价格与收益率同一量纲（简单收益）。"""
-    return base_price * (1.0 + mu + sigma * NORMAL.inv_cdf(quantile))
+def price_at_return(base_price: float, quantile_return: float) -> float:
+    """分位收益 → 价格（与目标价同一个换算口径：简单收益）。"""
+    return base_price * (1.0 + quantile_return)
 
 
 def _ma200(close: Optional[pd.Series], as_of) -> Optional[float]:
@@ -150,17 +149,20 @@ def build_scenarios(
     snapshot: engine.SignalSnapshot,
     close: Optional[pd.Series],
 ) -> ScenarioSet:
-    """由快照的预测分布生成三情景；不可用时返回原因。"""
+    """由快照的校准分布生成三情景；不可用时返回原因。"""
     if snapshot.status != STATUS_OK:
         return _unavailable(snapshot.reason or "预测不可用，无法生成情景")
 
-    mu = snapshot.expected_return
-    sigma = snapshot.uncertainty
     base_price = snapshot.base_price
-    if mu is None or sigma is None or base_price is None:
-        return _unavailable("预测分布缺少期望收益或不确定度，无法生成情景区间")
-    if sigma <= 0:
-        return _unavailable("预测分布的不确定度为 0，无法给出情景区间")
+    q25_return = snapshot.scenario_low_return
+    q75_return = snapshot.scenario_high_return
+    if base_price is None:
+        return _unavailable("预测分布缺少基准价，无法生成情景区间")
+    if q25_return is None or q75_return is None:
+        # 宁可不给情景，也不用「正态 μ ± z·σ」另算一套 —— 那会和页面上的区间打架
+        return _unavailable("快照没有来自校准分布的四分位，无法按同一分布生成情景")
+    if q25_return >= q75_return:
+        return _unavailable("校准分布的四分位顺序异常，无法生成情景区间")
     if base_price <= 0:
         return _unavailable("基准价格非正，无法生成情景区间")
 
@@ -168,8 +170,8 @@ def build_scenarios(
     if dominant is None:
         return _unavailable("没有可用因子，无法生成触发条件")
 
-    q25 = price_at_quantile(base_price, mu, sigma, LOWER_QUANTILE)
-    q75 = price_at_quantile(base_price, mu, sigma, UPPER_QUANTILE)
+    q25 = price_at_return(base_price, q25_return)
+    q75 = price_at_return(base_price, q75_return)
     if q25 <= 0:
         return _unavailable("分布下沿价格非正，无法生成情景区间")
 
@@ -215,5 +217,5 @@ __all__ = [
     "Scenario",
     "ScenarioSet",
     "build_scenarios",
-    "price_at_quantile",
+    "price_at_return",
 ]

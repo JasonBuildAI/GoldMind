@@ -4,6 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from typing import Optional
 
 from app.services.quant import engine
 from app.services.quant.definitions import BENCHMARK_KEY, FACTORS, HORIZONS
@@ -22,7 +23,8 @@ def test_snapshot_covers_every_factor_and_contributions_sum_to_the_score(panel):
     assert snapshot.weight_used == pytest.approx(sum(f.weight_for(5) for f in FACTORS))
 
 
-def _snapshot(*, score: float, expected_return: float) -> engine.SignalSnapshot:
+def _snapshot(*, score: float, expected_return: float,
+              median_return: Optional[float] = None) -> engine.SignalSnapshot:
     return engine.SignalSnapshot(
         as_of=pd.Timestamp("2026-09-30").date(),
         horizon_days=5,
@@ -36,38 +38,73 @@ def _snapshot(*, score: float, expected_return: float) -> engine.SignalSnapshot:
         target_price=4200.0 * (1.0 + expected_return),
         states=(),
         weight_used=1.0,
+        median_return=expected_return if median_return is None else median_return,
     )
 
 
-def test_direction_follows_the_calibrated_expectation():
-    """方向 = sign(μ)，不是未校准的得分符号（spec 判据）。
+def test_direction_follows_the_calibrated_median_not_the_mean():
+    """方向 = sign(校准分布的中位数)，不是 sign(μ)，更不是未校准的得分符号。
 
-    变异验证：把 direction 改回 ``"up" if score > 0 else "down"``，本测试必红
-    —— 这里构造的正是「得分为正、期望收益为负」（页面此前会同时显示看跌与上调目标价）。
+    两次变异验证都会把本测试打红：
+    ① 改回 ``"up" if score > 0`` —— 前两行红（构造的就是「得分与方向相反」）；
+    ② 改回 ``sign(μ)`` —— 后两行红：走查预测误差整体偏负时，μ 略正而中位数已为负，
+       此时页面写「看多」、概率写 47%，v3 想消除的自相矛盾就又回来了。
     """
     assert _snapshot(score=+2.0, expected_return=-0.01).direction == "down"
     assert _snapshot(score=-2.0, expected_return=+0.01).direction == "up"
-    # μ=0（回归样本不足，目标价=基准价）既不看涨也不看跌
+    assert _snapshot(score=+1.0, expected_return=+0.001, median_return=-0.004).direction == "down"
+    assert _snapshot(score=+1.0, expected_return=-0.001, median_return=+0.004).direction == "up"
+    # 中位数恰为 0（回归样本不足，目标价=基准价）既不看涨也不看跌
     assert _snapshot(score=+2.0, expected_return=0.0).direction == "flat"
 
 
-def test_probability_up_comes_from_the_same_distribution():
-    """p_up = Φ(μ/σ)：与目标价、区间、情景同一个分布（spec 判据）。
+def test_normal_fallback_probability_is_the_normal_tail():
+    """经验样本不足时退回解析正态：p_up = Φ(μ/scale)，与兜底区间同一套尺度。
 
-    变异验证：把 p_up 改回 ``Φ(score/σ_score)``，第一行断言必红 —— 得分为正、
-    期望收益为负时，那个写法给出的概率大于 0.5，与方向、目标价互相矛盾。
+    变异验证：把兜底概率改成 ``Φ(score/σ_score)``，第一行断言必红 —— 得分为正、
+    期望收益为负时那个写法大于 0.5，与方向、目标价互相矛盾。
     """
     expected = pd.Series([0.02, -0.02, 0.0])
     sigma = pd.Series([0.01, 0.01, 0.01])
 
-    probability = engine.probability_up(expected, sigma)
+    probability = engine.normal_probability_up(expected, sigma)
 
     assert probability.iloc[0] == pytest.approx(0.9772, abs=1e-4)  # Φ(2)
     assert probability.iloc[1] == pytest.approx(0.0228, abs=1e-4)  # Φ(−2)
     assert probability.iloc[2] == pytest.approx(0.5, abs=1e-9)
     # σ 缺失或非正时不给概率，也不退回 50%
-    assert pd.isna(engine.probability_up(pd.Series([0.01]), pd.Series([np.nan])).iloc[0])
-    assert pd.isna(engine.probability_up(pd.Series([0.01]), pd.Series([0.0])).iloc[0])
+    assert pd.isna(engine.normal_probability_up(pd.Series([0.01]), pd.Series([np.nan])).iloc[0])
+    assert pd.isna(engine.normal_probability_up(pd.Series([0.01]), pd.Series([0.0])).iloc[0])
+
+
+def test_probability_is_not_the_normal_tail_of_the_displayed_sigma(panel):
+    """线上口径（ACI）里 p_up 必须**不是** Φ(μ/uncertainty)。
+
+    这是本轮修掉的病症：uncertainty 是「展示区间的等效正态尺度」，曾经还被当成
+    概率的分母，于是每个概率都被往 0.5 拉（Brier 技能分全线为负的机制之一）。
+    同一个测试钉住自洽性：中位数与「概率是否过半」同号，否则页面会出现
+    「看多 + 上行概率 47%」；并钉住情景区间嵌套在 80% 区间之内。
+    """
+    factors, close = panel
+
+    for horizon in HORIZONS:
+        snapshot = engine.build_snapshot(factors, close, horizon=horizon)
+        assert snapshot.distribution_mode == "aci", f"h={horizon}"
+        median = snapshot.median_return
+        probability = snapshot.probability_up
+        assert probability is not None and median is not None, f"h={horizon}"
+        if median > 0:
+            assert probability >= 0.5, f"h={horizon}"
+        elif median < 0:
+            assert probability <= 0.5, f"h={horizon}"
+        assert snapshot.interval_low_return <= snapshot.scenario_low_return, f"h={horizon}"
+        assert snapshot.scenario_high_return <= snapshot.interval_high_return, f"h={horizon}"
+        naive = float(
+            engine.normal_probability_up(
+                pd.Series([snapshot.expected_return]), pd.Series([snapshot.uncertainty])
+            ).iloc[0]
+        )
+        assert abs(probability - naive) > 1e-4, f"h={horizon} 概率仍是那条正态尾"
 
 
 def test_uncertainty_is_the_walk_forward_error_not_the_fit_residual(calendar, make_panel):
@@ -92,16 +129,25 @@ def test_uncertainty_is_the_walk_forward_error_not_the_fit_residual(calendar, ma
     manual_std = errors.expanding(
         min_periods=engine.MIN_ERRORS_FOR_SIGMA
     ).std()
-    factor = (errors.abs() / (engine.INTERVAL_Z_80 * manual_std)).expanding(
-        min_periods=engine.MIN_ERRORS_FOR_SIGMA
-    ).quantile(engine.ERROR_QUANTILE)
-    manual = manual_std * factor
 
-    assert frame["uncertainty"].iloc[-1] == pytest.approx(float(manual.iloc[-1]), rel=1e-9)
-    # 经验校准真的起作用：面板上误差不是正态，校准系数明显偏离 1
-    assert abs(float(factor.iloc[-1]) - 1.0) > 0.05
-    # 误差口径必须大于残差口径，否则这条守卫对「换回残差」的变异不敏感
-    assert manual_std.iloc[-1] > float(residual_sigma.iloc[-1]) * 1.1
+    # uncertainty 的定义换了：它是「展示区间宽度折算成的正态尺度」，不再是乘过经验因子的 σ
+    half_width = float((frame["upper_return"].iloc[-1] - frame["lower_return"].iloc[-1]) / 2.0)
+    assert frame["uncertainty"].iloc[-1] == pytest.approx(
+        half_width / engine.INTERVAL_Z_80, rel=1e-12
+    )
+    # 非对称口径下区间中点不等于 μ，所以「μ ± z80·uncertainty == 边界」只在对称口径成立；
+    # 这里用对称口径钉住那条等式，别让它悄悄变成只有宽度对得上。
+    symmetric_frame = engine.build_prediction_frame(score, close, horizon, interval="empirical")
+    mu = float(symmetric_frame["expected_return"].iloc[-1])
+    scale_display = float(symmetric_frame["uncertainty"].iloc[-1])
+    assert float(symmetric_frame["lower_return"].iloc[-1]) == pytest.approx(
+        mu - engine.INTERVAL_Z_80 * scale_display, rel=1e-12
+    )
+    assert float(symmetric_frame["upper_return"].iloc[-1]) == pytest.approx(
+        mu + engine.INTERVAL_Z_80 * scale_display, rel=1e-12
+    )
+    # 误差口径必须大于残差口径，否则这条守卫对「换回残差 σ」的变异不敏感
+    assert float(manual_std.iloc[-1]) > float(residual_sigma.iloc[-1]) * 1.1
 
 
 def test_uncertainty_is_calibrated_to_the_empirical_error_quantile(calendar):
@@ -150,12 +196,19 @@ def test_every_horizon_publishes_one_story(panel):
         assert snapshot.status == engine.STATUS_OK
         expected = snapshot.expected_return
         assert expected is not None
-        expected_direction = "up" if expected > 0 else "down" if expected < 0 else "flat"
-        assert snapshot.direction == expected_direction, f"h={horizon}"
+        # 方向评的是校准分布的中位数，不是 μ：μ 略正而误差整体偏负时必须说「跌」
+        median = snapshot.median_return
+        assert median is not None, f"h={horizon}"
+        median_direction = "up" if median > 0 else "down" if median < 0 else "flat"
+        assert snapshot.direction == median_direction, f"h={horizon}"
         # 目标价相对基准价的方向 = 期望收益的符号
         assert (snapshot.target_price - snapshot.base_price) * expected >= 0, f"h={horizon}"
-        # 上行概率与期望收益同号（μ=0 时正好 0.5）
-        assert (snapshot.probability_up - 0.5) * expected >= 0, f"h={horizon}"
+        # 上行概率与方向同号：两者都出自同一张校准分布（中位数），不是两套口径
+        assert (snapshot.probability_up - 0.5) * snapshot.median_return >= 0, f"h={horizon}"
+        assert snapshot.distribution_mode in engine.INTERVAL_MODES + ("normal",), f"h={horizon}"
+        # 情景区间（四分位）必须落在 80% 区间之内 —— 同一张分布的两组分位点
+        assert snapshot.interval_low_return <= snapshot.scenario_low_return, f"h={horizon}"
+        assert snapshot.scenario_high_return <= snapshot.interval_high_return, f"h={horizon}"
 
 
 def test_change_transform_uses_the_declared_lag(calendar):

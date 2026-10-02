@@ -15,12 +15,19 @@
     signed_z_i = sign_i × z(x_i)                逐因子方向对齐
     score_h    = Σ w_i(h) × signed_z_i / Σ w_i(h)  按尺度取权重（缺省=基础权重）
     μ_h        = α + β · score                   扩展窗口 OLS，样本对满足 s + h ≤ t
-    σ_h        = std(r_s − μ_s | s + h ≤ t)      走查预测误差，样本不足退回已实现收益的扩展标准差
-                 × q80(|e| / (z80 · σ))          再按误差的经验分位校准（正态分位会偏窄）
-    p_up       = Φ(μ / σ)                        与目标价、区间、情景同一个分布
+    scale_h    = std(e_s | s + h ≤ t)            走查预测误差，样本不足退回已实现收益的扩展标准差
+    F̂_h        最近 CALIBRATION_WINDOW 个已实现 e_s/scale_h 的加权经验分布
+                 （半衰期 ACI_HALF_LIFE；名义错失率 α 由 ACI 在线递推）
+    区间       = μ + scale · [ F̂⁻¹(α/2),  F̂⁻¹(1−α/2) ]
+    情景区间   = μ + scale · [ F̂⁻¹(0.25), F̂⁻¹(0.75) ]
+    p_up       = 1 − F̂( −μ / scale )             与区间、情景同一个分布
+    σ_display  = (区间上界 − 区间下界) / (2 · z80)  展示用的「等效正态尺度」
 
-方向、概率、目标价、区间、情景只从这一个分布出发；``score`` 是**未校准**的因子偏向，
-只在因子表里展示，并在回测里单列成绩（``metrics.score_direction_accuracy``）。
+方向、概率、目标价、区间、情景只从这一个分布出发 —— 概率**不是** ``Φ(μ/σ_display)``，
+那是把为区间宽度放大过的尺度当分母，会把每个概率都压向 50%（实测让 Brier 技能分
+全线为负的直接机制）。样本不足时四者一起退回解析正态，逐行记 ``distribution_mode``。
+``score`` 是**未校准**的因子偏向，只在因子表里展示，
+并在回测里单列成绩（``metrics.score_direction_accuracy``）。
 """
 from __future__ import annotations
 
@@ -45,13 +52,17 @@ MIN_SCORES_FOR_SIGMA = 20
 MIN_OLS_SAMPLES = 60
 # 走查预测误差的 σ 至少要有这么多个「已实现」的误差（与 OLS 同一档）
 MIN_ERRORS_FOR_SIGMA = 60
-# 80% 名义区间的双侧分位点 Φ⁻¹(0.90)；区间 = μ ± INTERVAL_Z_80 × σ
+# 80% 名义区间的双侧分位点 Φ⁻¹(0.90)；展示口径统一成「μ ± INTERVAL_Z_80 × uncertainty」
 INTERVAL_Z_80 = NormalDist().inv_cdf(0.90)
-# 经验校准分位：误差的 80% 分位对应「八成误差都落在里面」（对称版本，
-# 仍用于 σ 的刻度校准；区间边界改用下面的非对称分位 + ACI）
-ERROR_QUANTILE = 0.80
+# 情景分层（基准 = 中间 50%）的分位点 Φ⁻¹(0.75)，正态口径下用
+QUARTILE_Z = NormalDist().inv_cdf(0.75)
+# 分布中位数所在的分位点：方向评的是它，不是 μ（见 SignalSnapshot.direction）
+MEDIAN_QUANTILE = 0.50
 # 80% 名义区间的目标错失率（α = 0.20）
 INTERVAL_ALPHA = 0.20
+# 情景分层的分位点（基准 = [q25, q75]，看涨 q75 以上，看跌 q25 以下）
+QUARTILE_LOW = 0.25
+QUARTILE_HIGH = 0.75
 # ACI（自适应保形推断，Gibbs & Candès 2021）的步长：误差连续落在区间外就把
 # α 调小（区间变宽），连续落在区间内就把 α 调大（区间收紧）
 ACI_GAMMA = 0.01
@@ -196,13 +207,152 @@ def composite_score(
 # --------------------------------------------------------------------------- #
 # 得分 → 概率与期望收益
 # --------------------------------------------------------------------------- #
-def probability_up(expected: pd.Series, sigma: pd.Series) -> pd.Series:
-    """p_up = Φ(μ / σ)：与目标价、区间、情景同一个分布的「上行概率」。
+def _sorted_sample(values: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+    """把校准样本按值排序，返回 ``(值, 对应权重, 权重和)``。
+
+    排序一次就够：分位点与尾概率都从这同一个有序视图取，保证
+    「区间的两个端点」和「上行概率」问的是**同一个**分布。
+    """
+    order = np.argsort(values, kind="stable")
+    ordered = weights[order]
+    return values[order], ordered, float(ordered.sum())
+
+
+def _weighted_quantile_from(sorted_values: np.ndarray, cumulative: np.ndarray,
+                            total: float, level: float) -> float:
+    """加权分位数：按权重累计到 ``level`` 处的样本值（阶梯取值，不线性插值）。"""
+    index = int(np.searchsorted(cumulative, level * total, side="left"))
+    return float(sorted_values[min(index, len(sorted_values) - 1)])
+
+
+def _weighted_tail_above(sorted_values: np.ndarray, cumulative: np.ndarray,
+                         total: float, point: float) -> float:
+    """加权尾概率 ``P(V > point)`` —— 与上面的分位数共用同一个有序视图。"""
+    index = int(np.searchsorted(sorted_values, point, side="right"))
+    if index <= 0:
+        return 1.0
+    if index >= len(sorted_values):
+        return 0.0
+    return float(max(0.0, min(1.0, (total - cumulative[index - 1]) / total)))
+
+
+def normal_probability_up(expected: pd.Series, sigma: pd.Series) -> pd.Series:
+    """正态兜底的上行概率 ``Φ(μ/σ)`` —— 只在经验样本不足时使用。
 
     σ 缺失或非正时不给概率（NaN）—— 不拿别处的 σ 顶替，也不退回 50%。
     """
     ratio = expected / sigma.where(sigma > EPS)
     return ratio.map(lambda value: normal_cdf(float(value)) if pd.notna(value) else np.nan)
+
+
+def calibrate_distribution(
+    ratio: pd.Series,
+    flat_z: pd.Series,
+    *,
+    alpha: float = INTERVAL_ALPHA,
+    gamma: float = ACI_GAMMA,
+    half_life: Optional[int] = ACI_HALF_LIFE,
+    window: Optional[int] = CALIBRATION_WINDOW,
+    min_samples: int = MIN_ERRORS_FOR_SIGMA,
+    symmetric: bool = False,
+) -> pd.DataFrame:
+    """studentized 误差 → 逐日校准分布的出口：区间端点、四分位、上行概率。
+
+    输入 ``ratio`` 是**已经实现**的预测误差除以其尺度（``e / scale``，已按实现时间
+    右移），``flat_z`` 是「收益恰好为 0」在这套 z 上的位置（``−μ / scale``）。
+    一行之内所有出口都来自同一个加权经验分布 ``F̂``：
+
+    ```
+    区间   = μ + scale · [ F̂⁻¹(α/2),      F̂⁻¹(1−α/2) ]      （symmetric 时取 ±|z| 分位）
+    四分位 = μ + scale · [ F̂⁻¹(0.25),     F̂⁻¹(0.75)  ]
+    上行   = 1 − F̂(flat_z)                                  （不是 Φ(μ/σ)！）
+    ```
+
+    名义错失率 α 按 ACI（自适应保形推断，Gibbs & Candès 2021）在线递推：
+    ``α ← α + γ × (α_target − miss)``，误差落在区间外就把 α 调小（区间变宽），
+    落回区间内则逐步收紧；半衰期 ``half_life`` 个交易日让分布能缓慢漂移。
+
+    三个参数把预注册的四种区间口径统一到这里，不再各写一套：
+    ``gamma=0`` 且 ``half_life=None`` 且 ``window=None`` = 纯经验分位（无 ACI、全历史等权），
+    ``symmetric=True`` = 对称版本，``interval="normal"`` 由调用方走解析正态、不调这里。
+
+    样本不足 ``min_samples`` 的行返回 NaN，由调用方回退到正态分位。
+    """
+    values = ratio.to_numpy(dtype="float64")
+    points = flat_z.to_numpy(dtype="float64")
+    count = len(values)
+    columns = {
+        "lower": np.full(count, np.nan, dtype="float64"),
+        "upper": np.full(count, np.nan, dtype="float64"),
+        "alpha": np.full(count, np.nan, dtype="float64"),
+        "q25": np.full(count, np.nan, dtype="float64"),
+        "q50": np.full(count, np.nan, dtype="float64"),
+        "q75": np.full(count, np.nan, dtype="float64"),
+        "probability_up": np.full(count, np.nan, dtype="float64"),
+    }
+    history: list[float] = []
+    current_alpha = float(alpha)
+
+    for position in range(count):
+        if len(history) >= min_samples:
+            tail = history[-window:] if window else history
+            if half_life:
+                ages = np.arange(len(tail) - 1, -1, -1, dtype="float64")
+                weights = np.power(0.5, ages / float(half_life))
+            else:
+                weights = np.ones(len(tail), dtype="float64")
+            sample = np.asarray(tail, dtype="float64")
+            sorted_values, sorted_weights, total = _sorted_sample(sample, weights)
+            cumulative = np.cumsum(sorted_weights)
+            if symmetric:
+                # 对称口径：用 |z| 的经验分位当半宽，两个端点强制关于 0 对称
+                magnitude_values, magnitude_weights, magnitude_total = _sorted_sample(
+                    np.abs(sample), weights
+                )
+                magnitude = _weighted_quantile_from(
+                    magnitude_values,
+                    np.cumsum(magnitude_weights),
+                    magnitude_total,
+                    1.0 - current_alpha / 2.0,
+                )
+                q_low, q_high = -magnitude, magnitude
+            else:
+                q_low = _weighted_quantile_from(
+                    sorted_values, cumulative, total, current_alpha / 2.0
+                )
+                q_high = _weighted_quantile_from(
+                    sorted_values, cumulative, total, 1.0 - current_alpha / 2.0
+                )
+            columns["lower"][position] = q_low
+            columns["upper"][position] = q_high
+            columns["alpha"][position] = current_alpha
+            columns["q25"][position] = _weighted_quantile_from(
+                sorted_values, cumulative, total, QUARTILE_LOW
+            )
+            columns["q50"][position] = _weighted_quantile_from(
+                sorted_values, cumulative, total, MEDIAN_QUANTILE
+            )
+            columns["q75"][position] = _weighted_quantile_from(
+                sorted_values, cumulative, total, QUARTILE_HIGH
+            )
+            if np.isfinite(points[position]) and total > EPS:
+                columns["probability_up"][position] = _weighted_tail_above(
+                    sorted_values, cumulative, total, points[position]
+                )
+            value = values[position]
+            if np.isfinite(value):
+                miss = 1.0 if (value < q_low or value > q_high) else 0.0
+                current_alpha = float(
+                    np.clip(
+                        current_alpha + gamma * (alpha - miss),
+                        ACI_ALPHA_FLOOR,
+                        ACI_ALPHA_CAP,
+                    )
+                )
+        if np.isfinite(values[position]):
+            history.append(float(values[position]))
+
+    return pd.DataFrame(columns, index=ratio.index)
 
 
 def expanding_ols(
@@ -271,79 +421,6 @@ def expanding_ols(
     )
 
 
-def _weighted_quantile(values: np.ndarray, weights: np.ndarray, level: float) -> float:
-    """加权分位数：按权重累计到 ``level`` 处的样本值（线性插值不做，取阶梯值）。"""
-    order = np.argsort(values, kind="stable")
-    sorted_values = values[order]
-    cumulative = np.cumsum(weights[order])
-    total = cumulative[-1]
-    index = int(np.searchsorted(cumulative, level * total, side="left"))
-    return float(sorted_values[min(index, len(sorted_values) - 1)])
-
-
-def calibrate_interval_factors(
-    ratio: pd.Series,
-    *,
-    alpha: float = INTERVAL_ALPHA,
-    gamma: float = ACI_GAMMA,
-    half_life: int = ACI_HALF_LIFE,
-    window: int = CALIBRATION_WINDOW,
-    min_samples: int = MIN_ERRORS_FOR_SIGMA,
-    symmetric: bool = False,
-) -> pd.DataFrame:
-    """非对称经验分位 + ACI：studentized 误差 → 逐日的上下分位因子。
-
-    区间口径：``μ + σ × lower`` ～ ``μ + σ × upper``。分位因子只从**已经实现**
-    的误差里取（``ratio`` 序列已按实现时间右移），并带指数权重（半衰期
-    ``half_life`` 个交易日，允许分布缓慢漂移）。名义错失率 α 按 ACI 在线递推：
-    ``α ← α + γ × (α_target − miss)`` —— 误差落在区间外（miss=1）就把 α 调小
-    使下一次区间更宽，落回区间内则逐步收紧。
-
-    样本不足 ``min_samples`` 的行返回 NaN，由调用方回退到正态分位。
-    """
-    values = ratio.to_numpy(dtype="float64")
-    count = len(values)
-    lower = np.full(count, np.nan, dtype="float64")
-    upper = np.full(count, np.nan, dtype="float64")
-    alphas = np.full(count, np.nan, dtype="float64")
-    history: list[float] = []
-    current_alpha = float(alpha)
-
-    for position in range(count):
-        if len(history) >= min_samples:
-            tail = history[-window:]
-            ages = np.arange(len(tail) - 1, -1, -1, dtype="float64")
-            weights = np.power(0.5, ages / float(half_life))
-            sample = np.asarray(tail, dtype="float64")
-            if symmetric:
-                magnitude = _weighted_quantile(
-                    np.abs(sample), weights, 1.0 - current_alpha / 2.0
-                )
-                q_low, q_high = -magnitude, magnitude
-            else:
-                q_low = _weighted_quantile(sample, weights, current_alpha / 2.0)
-                q_high = _weighted_quantile(sample, weights, 1.0 - current_alpha / 2.0)
-            lower[position] = q_low
-            upper[position] = q_high
-            alphas[position] = current_alpha
-            value = values[position]
-            if np.isfinite(value):
-                miss = 1.0 if (value < q_low or value > q_high) else 0.0
-                current_alpha = float(
-                    np.clip(
-                        current_alpha + gamma * (alpha - miss),
-                        ACI_ALPHA_FLOOR,
-                        ACI_ALPHA_CAP,
-                    )
-                )
-        if np.isfinite(values[position]):
-            history.append(float(values[position]))
-
-    return pd.DataFrame(
-        {"lower": lower, "upper": upper, "alpha": alphas}, index=ratio.index
-    )
-
-
 def build_prediction_frame(
     score: pd.Series,
     close: pd.Series,
@@ -352,13 +429,28 @@ def build_prediction_frame(
     regression_window: Optional[int] = None,
     interval: str = "aci",
 ) -> pd.DataFrame:
-    """把得分序列变成逐日的预测：期望收益、不确定度、上行概率、目标价。
+    """把得分序列变成逐日的预测：期望收益、区间、情景区间、上行概率、目标价。
 
-    ``uncertainty`` 是**走查预测误差**的标准差，不是回归残差：残差只说明
+    **一个分布，四个出口。** 区间、情景的四分位区间与上行概率必须来自同一张
+    校准分布，否则页面会出现「区间按 80% 说的是一套、概率说的是另一套」。
+    四种 ``interval`` 口径只是同一张分布的不同取法：
+
+    ```
+    aci            加权经验分位 + ACI 在线调 α（非对称，线上口径）
+    aci_symmetric  同上，但端点关于期望收益强制对称
+    empirical      全历史等权经验分位、不调 α（预注册候选 P2）
+    normal         解析正态 N(μ, scale²)（预注册候选 P3，也是样本不足时的兜底）
+    ```
+
+    ``uncertainty`` 定义为**该行区间宽度折算成的正态尺度** ``（上界 − 下界）/ (2·z80)``：
+    对称口径（``normal`` / ``empirical``）下 ``μ ± 1.2816 × uncertainty`` 恰好等于展示的区间；
+    线上口径 ``aci`` 是非对称的，区间中点不等于 μ，两者只有宽度相等。
+    它不再充当概率的分母：概率要么来自同一个经验分布的尾部比例，
+    要么来自同一个正态 —— 拿放大过的 σ 去除 ``Φ`` 会把每个概率都压向 50%。
+
+    尺度 ``scale`` 是**走查预测误差**的标准差，不是回归残差：残差只说明
     「拟合线周围的散布」，预测误差才回答「模型自己错了多少」——
     两者的差距就是区间覆盖率与名义值（80%）之间的差距。
-    再按误差的**经验分位**校准一次（``q80(|e| / (z80·σ))``）：正态分位假设
-    在误差不是正态时会系统性偏窄，实测长尺度区间只盖住一半名义范围。
     """
     if interval not in INTERVAL_MODES:
         raise ValueError(f"未知的区间口径：{interval}")
@@ -370,49 +462,66 @@ def build_prediction_frame(
     expected = (alpha + beta * score).where(calibrated)
     # t 时刻只取 (s + h ≤ t) 的误差：e_s = 已实现收益 − 当时给出的期望收益
     errors = (forward - expected).shift(horizon)
-    sigma = errors.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).std()
-    # 经验分位校准：把「正态假设下的 80% 分位」换成「历史误差实际的 80% 分位」
-    ratio = errors.abs() / (INTERVAL_Z_80 * sigma)
-    factor = ratio.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).quantile(ERROR_QUANTILE)
-    sigma = sigma * factor
+    error_scale = errors.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).std()
     # 回归样本不足时退回「已实现 h 日收益的扩展标准差」，仍然只用过去的数据
     fallback = forward.shift(horizon).expanding(min_periods=MIN_SCORES_FOR_SIGMA).std()
-    sigma = sigma.fillna(fallback)
-
-    # 区间边界：按预注册口径生成（默认 aci = 非对称经验分位 + ACI）。
-    # studentized 误差在样本不足时回退到正态分位，保证早期也有区间。
-    error_scale = errors.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).std()
     scale = error_scale.fillna(fallback)
+    # 收益恰好为 0 在这套 studentized 误差上的位置：r = 0 ⟺ z = −μ / scale
+    flat_z = -expected / scale.where(scale > EPS)
+
     if interval == "normal":
         lower_factor = pd.Series(-INTERVAL_Z_80, index=expected.index)
         upper_factor = pd.Series(INTERVAL_Z_80, index=expected.index)
+        quartile_low = pd.Series(-QUARTILE_Z, index=expected.index)
+        quartile_high = pd.Series(QUARTILE_Z, index=expected.index)
+        # 解析正态关于 μ 对称，中位数就是 μ
+        median = pd.Series(0.0, index=expected.index)
+        probability = normal_probability_up(expected, scale)
         interval_alpha = pd.Series(np.nan, index=expected.index)
-    elif interval == "empirical":
-        ratio = errors.abs() / (INTERVAL_Z_80 * error_scale)
-        empirical = ratio.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).quantile(ERROR_QUANTILE)
-        lower_factor = -INTERVAL_Z_80 * empirical
-        upper_factor = INTERVAL_Z_80 * empirical
-        interval_alpha = pd.Series(np.nan, index=expected.index)
+        distribution_mode = pd.Series("normal", index=expected.index)
     else:
-        calibration = calibrate_interval_factors(
-            errors / scale, symmetric=(interval == "aci_symmetric")
+        adaptive = interval != "empirical"
+        calibration = calibrate_distribution(
+            errors / scale,
+            flat_z,
+            gamma=ACI_GAMMA if adaptive else 0.0,
+            half_life=ACI_HALF_LIFE if adaptive else None,
+            window=CALIBRATION_WINDOW if adaptive else None,
+            symmetric=interval in ("aci_symmetric", "empirical"),
         )
-        lower_factor = calibration["lower"].fillna(-INTERVAL_Z_80)
-        upper_factor = calibration["upper"].fillna(INTERVAL_Z_80)
+        # 经验样本不足的行：区间、四分位与概率**一起**退回正态，不许一半经验一半正态
+        insufficient = calibration["lower"].isna()
+        lower_factor = calibration["lower"].mask(insufficient, -INTERVAL_Z_80)
+        upper_factor = calibration["upper"].mask(insufficient, INTERVAL_Z_80)
+        quartile_low = calibration["q25"].mask(insufficient, -QUARTILE_Z)
+        quartile_high = calibration["q75"].mask(insufficient, QUARTILE_Z)
+        median = calibration["q50"].mask(insufficient, 0.0)
+        probability = calibration["probability_up"].mask(
+            insufficient, normal_probability_up(expected, scale)
+        )
         interval_alpha = calibration["alpha"]
+        distribution_mode = pd.Series(
+            np.where(insufficient.to_numpy(), "normal", interval), index=expected.index
+        )
 
+    lower_return = expected + scale * lower_factor
+    upper_return = expected + scale * upper_factor
     frame = pd.DataFrame(
         {
             "score": score,
             "expected_return": expected,
-            "uncertainty": sigma,
             "base_price": close,
-            "lower_return": expected + scale * lower_factor,
-            "upper_return": expected + scale * upper_factor,
+            "lower_return": lower_return,
+            "upper_return": upper_return,
+            "quartile_low_return": expected + scale * quartile_low,
+            "quartile_high_return": expected + scale * quartile_high,
+            "median_return": expected + scale * median,
             "interval_alpha": interval_alpha,
+            "distribution_mode": distribution_mode,
         }
     )
-    frame["probability_up"] = probability_up(frame["expected_return"], frame["uncertainty"])
+    frame["uncertainty"] = (upper_return - lower_return) / (2.0 * INTERVAL_Z_80)
+    frame["probability_up"] = probability
     frame["target_price"] = frame["base_price"] * (1.0 + frame["expected_return"])
     return frame
 
@@ -459,19 +568,32 @@ class SignalSnapshot:
     target_price: Optional[float]
     states: tuple[FactorState, ...]
     weight_used: float
+    # 校准分布的其余出口（与区间同批分位样本，见 build_prediction_frame）：
+    # 情景区间取四分位，distribution_mode 记录这一行用的是经验分布还是正态兜底。
+    interval_low_return: Optional[float] = None
+    interval_high_return: Optional[float] = None
+    scenario_low_return: Optional[float] = None
+    scenario_high_return: Optional[float] = None
+    median_return: Optional[float] = None
+    distribution_mode: Optional[str] = None
 
     @property
     def direction(self) -> Optional[str]:
-        """方向 = 校准后期望收益 μ 的符号 —— 页面上的方向、回测评的都是它。
+        """方向 = 校准分布的**中位数收益**符号 —— 页面方向与回测评的都是它。
 
-        μ 恰为 0（回归样本不足，目标价 = 基准价）记 ``flat``：
+        为什么不是 ``sign(μ)``：``p_up = P(r > 0) = 1 − F̂(−μ/scale)`` 里误差分布可以
+        整体偏离 0（走查预测误差的均值不为 0 是常态）。μ 略为正、而历史误差系统性
+        偏负时，「看多」和「上行概率 47%」会同时出现在页面上。取中位数就不会：
+        ``median > 0`` 与 ``p_up > 0.5`` 按构造等价，这条自洽有测试钉住。
+
+        中位数恰为 0（回归样本不足，目标价 = 基准价）记 ``flat``：
         不拿未校准的得分符号顶替，那样页面会出现「看跌 + 目标价上调」。
         """
-        if self.status != STATUS_OK or self.expected_return is None:
+        if self.status != STATUS_OK or self.median_return is None:
             return None
-        if self.expected_return > 0:
+        if self.median_return > 0:
             return "up"
-        if self.expected_return < 0:
+        if self.median_return < 0:
             return "down"
         return "flat"
 
@@ -655,6 +777,12 @@ def build_snapshot(
         target_price=_clean(row["target_price"]),
         states=states,
         weight_used=weight_used,
+        interval_low_return=_clean(row["lower_return"]),
+        interval_high_return=_clean(row["upper_return"]),
+        scenario_low_return=_clean(row["quartile_low_return"]),
+        scenario_high_return=_clean(row["quartile_high_return"]),
+        median_return=_clean(row["median_return"]),
+        distribution_mode=str(row["distribution_mode"]),
     )
 
 
