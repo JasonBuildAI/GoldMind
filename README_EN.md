@@ -872,6 +872,11 @@ python scripts/verify_setup.py
 python scripts/backup_db.py
 python scripts/backup_db.py --out D:/goldmind-backups
 
+# data sanity: future dates / invalid values / cross-store consistency (report only, exit 0/1)
+python scripts/check_data_sanity.py
+python scripts/check_data_sanity.py --strict   # cross-store drift also fails
+python scripts/check_data_sanity.py --fix      # delete future-dated rows (irreversible: back up first!)
+
 # tests — the full gate
 python -m pytest
 

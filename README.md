@@ -793,6 +793,11 @@ python scripts/verify_setup.py
 python scripts/backup_db.py
 python scripts/backup_db.py --out D:/goldmind-backups
 
+# 数据体检：未来日期 / 非法数值 / 跨库一致性（只报告，退出码 0/1）
+python scripts/check_data_sanity.py
+python scripts/check_data_sanity.py --strict   # 跨库偏差也算失败
+python scripts/check_data_sanity.py --fix      # 删除未来日期行（不可逆：先备份！）
+
 # 测试 —— 全档闸门
 python -m pytest
 

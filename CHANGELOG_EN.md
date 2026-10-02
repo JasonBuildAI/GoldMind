@@ -14,6 +14,7 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ### Added
 
+- Data-sanity entry point `scripts/check_data_sanity.py`: future dates / NaN and ±inf / loose plausibility bounds / cross-store consistency in one report; its first run flagged 1 future-dated row in the long store (etf_shares 2026-10-05, purged after backup) and 778 diverging seasonality rows between the two stores
 - The 13 high-authority digest sources now feed all four LLM analyses: factors / institutions / advice / market summary share one "analysis input packet"; news goes from titles-only to "title + summary (truncated, HTML stripped)", and source, time and link travel into the prompt
 - Deterministic structure validation of LLM output (`services/factor_validation.py`): id and title dedupe, empty-item filtering, at most 5 items, best-effort numeric citation checks; a failing response degrades to an empty structure instead of passing through
 - Predictions are stored as an **append-only daily snapshot**: one row per `(model version, horizon, as-of date)`, updated in place within a day and kept across days, so "what was said then" can be replayed
