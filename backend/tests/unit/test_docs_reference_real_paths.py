@@ -27,8 +27,6 @@ INLINE_PATH = re.compile(
 PATH_EXEMPTIONS = {
     # 约定名（「密钥只进 .env」），真实文件是 backend/.env
     ".env",
-    # 文中已明确写「本项目还没有 docs/specs/ 目录」
-    "docs/specs/",
 }
 
 # markdown 链接目标里指向仓库内的相对路径
@@ -127,6 +125,44 @@ def test_agents_md_names_only_real_skills():
     unknown = named - known - not_skills
     assert not unknown, f"AGENTS.md 点名了不存在的 skill：{sorted(unknown)}"
     assert named & known, "流程表里一个真实 skill 都没提到，解析大概失效了"
+
+
+@pytest.mark.unit
+def test_spec_docs_reference_real_paths():
+    """`docs/specs/` 里的仓库内路径也必须真实存在。
+
+    这一条以前没有：spec 是「那一轮的记录」，但记录里引用一样会过期 —— 实际就漏过：
+    某份 spec 引用了一个早已改名的测试，谁也没发现，因为守卫只扫 `AGENTS.md` / `README*`。
+    spec 不是权威，但**记录也不许指向不存在的东西**。
+
+    规范化（否则会满屏假阳性，实测规范化前 20+ 条「死链」全是这三类）：
+    1. 去掉 `:行号` 后缀（`README.md:279` 是「文档的某一行」，不是路径）；
+    2. 跳过含通配符的写法（`docs/en/*`、`app/src/hooks/useAiConfig*.ts`）；
+    3. spec 里写的 `app/services/...` 指的是 `backend/app/services/...` —— 两种前缀都认。
+
+    变异验证：在任意 spec 里写一个不存在的 `backend/xxx.py`，本测试必红
+    （规范化之前它会被 `app/` 前缀与行号后缀淹没，所以那三条规定本身也要留住）。
+    """
+    specs = sorted((REPO_ROOT / "docs" / "specs").glob("*.md"))
+    assert specs, "没扫到任何 spec，这个测试就白写了"
+
+    line_suffix = re.compile(r":\d+(-\d+)?$")
+    missing = []
+    checked = 0
+    for path in specs:
+        for token in sorted(_inline_paths(path.read_text(encoding="utf-8"))):
+            if "*" in token:
+                continue
+            clean = line_suffix.sub("", token)
+            checked += 1
+            candidates = (REPO_ROOT / clean, REPO_ROOT / "backend" / clean)
+            if any(candidate.exists() for candidate in candidates):
+                continue
+            if _gitignored(clean):
+                continue
+            missing.append(f"{path.name} -> {clean}")
+    assert checked > 50, f"只解析出 {checked} 条引用，规范化逻辑大概失效了"
+    assert not missing, "spec 里引用了不存在的路径：\n" + "\n".join(f"  {m}" for m in missing)
 
 
 # --------------------------------------------------------------------------- #
