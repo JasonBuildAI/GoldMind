@@ -60,6 +60,11 @@ export default defineConfig({
         // 前端 e2e 会在一次跑动里连续触发多次分析（远超默认的 6 次/分钟）。
         // 那个上限保护的是真实额度，这里打的是假 LLM，放开以消除与被测行为无关的 429。
         RATE_LIMIT_AI_PER_MINUTE: '100',
+        // 同理：一次完整跑动里浏览器要发出上百次请求（每个用例都重新加载页面），
+        // 默认的 60 次/分钟会在最后一个用例（研究页）上撞出 429 ——
+        // CI 没有 backend/.env，用的是默认值，因此这会表现为「本地过、CI 红」。
+        // 这里显式放开，让端到端结果只取决于代码，不取决于跑在哪台机器、有没有 .env。
+        RATE_LIMIT_PER_MINUTE: '2000',
       },
       reuseExistingServer: false,
       timeout: 90_000,
