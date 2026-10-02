@@ -63,7 +63,7 @@ GROUP_LABELS = {
     "drift": "漂移三档",
     "composite": "合成四档",
     "interval": "分布四档",
-    "calibration": "校准样本两档",
+    "calibration": "校准样本三档",
     "factor_set": "因子集四档",
     "ensemble": "集成一档",
 }
@@ -140,6 +140,12 @@ def candidates() -> tuple[Candidate, ...]:
             "calibration",
             "校准样本 = 每注计一次（stride = 尺度；γ 0.05、半衰期 60 注、不设回看窗）",
             calibration_mode=engine.CALIBRATION_BET,
+        ),
+        Candidate(
+            "C2",
+            "calibration",
+            "校准样本 = 每注计一次 + 回看窗（stride = 尺度；γ 0.05、半衰期 60 注、窗 = 750/h 注，下限 60 注）",
+            calibration_mode=engine.CALIBRATION_BET_WINDOW,
         ),
         Candidate("F1", "factor_set", "因子集 = 货币 + 避险（7 个）", include=FACTOR_SETS["macro"]),
         Candidate(

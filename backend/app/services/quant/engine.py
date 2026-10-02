@@ -96,9 +96,16 @@ INTERVAL_MODES = ("aci", "aci_symmetric", "empirical", "normal")
 # 所以配套常数另给一组，不与 row 混用（混用等于悄悄改了学习速率）。
 CALIBRATION_ROW = "row"
 CALIBRATION_BET = "bet"
-CALIBRATION_MODES = (CALIBRATION_ROW, CALIBRATION_BET)
+#   bet_window = ``bet`` 再把回看窗按日历等值加回来（第三轮候选 C2）。C1 淘汰时留下
+#         的线索是它一次改了两个自变量：既换了取样单位，又把窗整个去掉；这一档只补窗，
+#         γ 与半衰期与 C1 逐值相同，好让「窗该不该留」成为一个可以单独回答的问题。
+CALIBRATION_BET_WINDOW = "bet_window"
+CALIBRATION_MODES = (CALIBRATION_ROW, CALIBRATION_BET, CALIBRATION_BET_WINDOW)
 ACI_GAMMA_BET = 0.05
 ACI_HALF_LIFE_BET = 60  # 单位：注
+
+# 交付口径的取样单位：候选过线之后由这里切换，其余代码只认这个常量。
+DEFAULT_CALIBRATION_MODE = CALIBRATION_ROW
 
 
 def calibration_settings(mode: str, horizon: int) -> dict:
@@ -109,6 +116,16 @@ def calibration_settings(mode: str, horizon: int) -> dict:
     """
     if mode not in CALIBRATION_MODES:
         raise ValueError(f"未知的校准样本口径：{mode}")
+    if mode == CALIBRATION_BET_WINDOW:
+        return {
+            "gamma": ACI_GAMMA_BET,
+            "half_life": ACI_HALF_LIFE_BET,
+            # 日历等值：线上口径的 750 个交易日回看窗，换成「每 horizon 行记一注」就是
+            # 750 / horizon 注。下界是 ``MIN_ERRORS_FOR_SIGMA`` —— 比它更短的窗会让经验
+            # 分布从不足 min_samples 个样本里取分位，等于绕过「样本不够就退回正态」的守卫。
+            "window": max(MIN_ERRORS_FOR_SIGMA, CALIBRATION_WINDOW // max(1, int(horizon))),
+            "stride": max(1, int(horizon)),
+        }
     if mode == CALIBRATION_BET:
         return {
             "gamma": ACI_GAMMA_BET,
@@ -517,7 +534,7 @@ def build_prediction_frame(
     *,
     regression_window: Optional[int] = None,
     interval: str = "aci",
-    calibration_mode: str = CALIBRATION_ROW,
+    calibration_mode: str = DEFAULT_CALIBRATION_MODE,
 ) -> pd.DataFrame:
     """把得分序列变成逐日的预测：期望收益、区间、情景区间、上行概率、目标价。
 
@@ -531,9 +548,11 @@ def build_prediction_frame(
     normal         解析正态 N(μ, scale²)（预注册候选 P3，也是样本不足时的兜底）
     ```
 
-    ``calibration_mode`` 定的是这张分布**怎么取样本**（研究台候选 C0 / C1）：
-    ``row`` 每一行计一次（线上口径），``bet`` 每 ``horizon`` 行才计一次 —— 理由见
-    ``CALIBRATION_MODES`` 的注释。四种区间口径与两种取样方式共用同一张分布。
+    ``calibration_mode`` 定的是这张分布**怎么取样本**（研究台候选 C0 / C1 / C2）：
+    ``row`` 每一行计一次（线上口径），``bet`` 每 ``horizon`` 行才计一次，
+    ``bet_window`` 在 ``bet`` 之上按日历等值加回回看窗 —— 三种口径的参数都在
+    ``calibration_settings()`` 里，理由见 ``CALIBRATION_MODES`` 的注释。
+    四种区间口径与三种取样方式共用同一张分布。
 
     ``uncertainty`` 定义为**该行区间宽度折算成的正态尺度** ``（上界 − 下界）/ (2·z80)``：
     对称口径（``normal`` / ``empirical``）下 ``μ ± 1.2816 × uncertainty`` 恰好等于展示的区间；

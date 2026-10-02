@@ -360,10 +360,12 @@ F̂ = 最近 `CALIBRATION_WINDOW` 个 studentized 误差 `e_s/scale_s` 的**半�
   校准函数时已按实现时间右移 `horizon` 行，所以第 t 行的误差属于第 `t − horizon` 行发出的
   那一注（`calibrate_distribution(issued_lag=)`）。搞混的代价是长尺度覆盖率系统性偏低
   （开发期实测 20 日 0.767、60 日 0.726，修复后 0.791 / 0.744）；
-- 校准样本怎么取有两档（`engine.CALIBRATION_MODES`，研究台候选 C0 / C1）：`row` 每行计一次
-  （线上口径），`bet` 每 `horizon` 行才计一次 —— h 日前瞻误差在日频上重叠，同一次下注被数了
-  h 遍，保形推断的「样本可交换」前提就不成立了。bet 档的四个配套常数由
-  `engine.calibration_settings()` 一处给出，取样单位一变，γ / 半衰期 / 回看窗必须跟着变。
+- 校准样本怎么取有三档（`engine.CALIBRATION_MODES`，研究台候选 C0 / C1 / C2）：`row` 每行计
+  一次（交付口径），`bet` 每 `horizon` 行才计一次，`bet_window` 在 `bet` 之上按日历等值加回
+  回看窗 —— h 日前瞻误差在日频上重叠，同一次下注被数了 h 遍，保形推断的「样本可交换」
+  前提就不成立了。三档的配套常数由 `engine.calibration_settings()` 一处给出，取样单位一变，
+  γ / 半衰期 / 回看窗必须跟着变；交付用哪一档由 `engine.DEFAULT_CALIBRATION_MODE` 决定，
+  候选定义与判据见 `docs/specs/2026-10-02-量化引擎第三轮预注册.md`。
 
 四个出口全部取自这一张 F̂：
 

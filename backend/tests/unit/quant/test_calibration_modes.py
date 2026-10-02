@@ -1,10 +1,10 @@
-"""校准样本的两档取法（第三轮候选 C0 / C1）：接线正确性，不是统计优劣。
+"""校准样本的三档取法（第三轮候选 C0 / C1 / C2）：接线正确性，不是统计优劣。
 
-判据本身写在 spec 第二轮 §六.5（开发期 60 日覆盖率 ≥ 0.78 且宽度 ≤ 线上的 1.05 倍），
-由研究台跑出来裁决；这一文件只保证三件事：
+判据本身写在 spec 第二轮 §六.5（C1）与第三轮 §一（C2）—— 都是「开发期 60 日覆盖率 ≥ 0.78
+且宽度 ≤ 线上的 1.05 倍」，由研究台跑出来裁决；这一文件只保证三件事：
 
 1. 默认口径（``row``）与改动之前逐值相同 —— 不许因为加了候选而动了线上数；
-2. ``bet`` 口径真的「每注才更新一次」，而不是把常数换了个写法；
+2. ``bet`` / ``bet_window`` 口径真的「每注才更新一次」，而不是把常数换了个写法；
 3. 未知口径一律抛错，不许静默退回默认。
 """
 from __future__ import annotations
@@ -82,6 +82,38 @@ def test_the_bet_preset_is_exactly_the_four_numbers_written_in_the_spec():
 
 
 @pytest.mark.unit
+def test_the_bet_window_preset_keeps_c1_learning_and_adds_the_calendar_equivalent_window():
+    """C2 = C1 + 回看窗：学习速率逐值不动，只有 ``window`` 是新加的那一个自变量。
+
+    变异验证：把 ``window`` 换成 ``None``（退化成 C1）、把 ``CALIBRATION_WINDOW // horizon``
+    改回固定 750（丢掉日历折算）、或把下界 ``MIN_ERRORS_FOR_SIGMA`` 拿掉（250 日尺度会从
+    3 个样本里取分位），对应断言都会红。
+    """
+    bet = engine.calibration_settings(engine.CALIBRATION_BET, 60)
+    bet_window = engine.calibration_settings(engine.CALIBRATION_BET_WINDOW, 60)
+
+    assert bet_window["gamma"] == bet["gamma"] == engine.ACI_GAMMA_BET
+    assert bet_window["half_life"] == bet["half_life"] == engine.ACI_HALF_LIFE_BET
+    assert bet_window["stride"] == bet["stride"] == 60
+    assert bet["window"] is None, "C1 的定义就是「不设窗」，改它等于偷换候选"
+
+    # 窗随尺度按日历等值折算，并被 min_samples 托底。四个分辨率下的取值先写在
+    # spec 第三轮 §二.1 的表里，这里逐值钉住 —— 折算规则改了必须两处一起改。
+    resolved = {
+        horizon: engine.calibration_settings(engine.CALIBRATION_BET_WINDOW, horizon)["window"]
+        for horizon in (1, 5, 20, 60, 250)
+    }
+    assert resolved == {1: 750, 5: 150, 20: 60, 60: 60, 250: 60}
+    assert resolved[5] == engine.CALIBRATION_WINDOW // 5
+    assert resolved[1] == engine.CALIBRATION_WINDOW
+
+    for horizon in resolved:
+        settings = engine.calibration_settings(engine.CALIBRATION_BET_WINDOW, horizon)
+        assert settings["window"] >= engine.MIN_ERRORS_FOR_SIGMA
+        assert settings["stride"] == max(1, horizon)
+
+
+@pytest.mark.unit
 def test_an_unknown_calibration_mode_is_refused():
     index = pd.date_range("2020-01-01", periods=80, freq="B")
     close = pd.Series(np.linspace(1500.0, 1600.0, len(index)), index=index)
@@ -99,6 +131,8 @@ def test_the_control_candidate_dedupes_with_the_baseline_and_c1_does_not():
     assert by_key["C0"].run_key() == by_key["B0"].run_key()
     assert by_key["C1"].run_key() != by_key["B0"].run_key()
     assert by_key["C1"].calibration_mode == engine.CALIBRATION_BET
+    assert by_key["C2"].calibration_mode == engine.CALIBRATION_BET_WINDOW
+    assert by_key["C2"].run_key() != by_key["C1"].run_key()
     assert quant_lab.GROUP_LABELS["calibration"] in {
         quant_lab.GROUP_LABELS[candidate.group] for candidate in quant_lab.CANDIDATES
     }

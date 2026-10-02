@@ -391,12 +391,15 @@ errors `e_s/scale_s`, with the nominal miss rate α updated online by ACI
   the bet issued on row `t − horizon` (`calibrate_distribution(issued_lag=)`). Mixing the two up
   leaves long horizons systematically under-covered (development period, before the fix: 20-day
   0.767, 60-day 0.726; after: 0.791 / 0.744);
-- calibration samples come in two modes (`engine.CALIBRATION_MODES`, research-bench candidates C0 /
-  C1): `row` counts every row (the live convention), `bet` counts every `horizon`-th row — h-day
-  forward errors overlap at daily frequency, so one bet is counted h times and the conformal
-  "exchangeable samples" premise breaks. The four constants that belong to `bet` are given in one
+- calibration samples come in three modes (`engine.CALIBRATION_MODES`, research-bench candidates
+  C0 / C1 / C2): `row` counts every row (the delivered convention), `bet` counts every
+  `horizon`-th row, and `bet_window` adds a calendar-equivalent look-back window on top of `bet` —
+  h-day forward errors overlap at daily frequency, so one bet is counted h times and the conformal
+  "exchangeable samples" premise breaks. All constants that belong to these modes are given in one
   place, `engine.calibration_settings()`: change the sampling unit and γ / half-life / look-back
-  window must move with it.
+  window must move with it. Which mode ships is decided by `engine.DEFAULT_CALIBRATION_MODE`; the
+  candidate definitions and decision rules live in
+  `docs/specs/2026-10-02-量化引擎第三轮预注册.md`.
 
 All four outputs come from that one F̂:
 
