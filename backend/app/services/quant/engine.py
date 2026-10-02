@@ -88,6 +88,40 @@ SCORE_MODES = ("weighted", "equal", "winsor", "trimmed")
 WINSOR_LIMIT = 2.0
 # 区间口径的变体（研究台用；默认仍是 aci，即线上口径）
 INTERVAL_MODES = ("aci", "aci_symmetric", "empirical", "normal")
+# 校准样本的取法（研究台候选 C0/C1，判据写在 spec 第二轮 §六.5）：
+#   row = 每一行都计一次样本（线上口径）；
+#   bet = 每 ``horizon`` 行才计一次 —— h 日前瞻误差在日频上重叠，同一次下注被数了 h 遍，
+#         保形推断的「样本可交换」前提因此被破坏，长尺度的尾部分位被系统性估窄。
+# bet 模式下 ``half_life`` / ``window`` / ``min_samples`` 的单位从「行」变成「注」，
+# 所以配套常数另给一组，不与 row 混用（混用等于悄悄改了学习速率）。
+CALIBRATION_ROW = "row"
+CALIBRATION_BET = "bet"
+CALIBRATION_MODES = (CALIBRATION_ROW, CALIBRATION_BET)
+ACI_GAMMA_BET = 0.05
+ACI_HALF_LIFE_BET = 60  # 单位：注
+
+
+def calibration_settings(mode: str, horizon: int) -> dict:
+    """一档校准取法对应的四个参数 —— 候选口径的唯一真源（`build_prediction_frame` 用它）。
+
+    单独成为一个函数，是为了让「C1 到底是哪四个常数」能被逐值钉住测试：
+    这四个数是一起的（换了取样单位就必须配套改学习速率），只改其中一个等于偷换候选。
+    """
+    if mode not in CALIBRATION_MODES:
+        raise ValueError(f"未知的校准样本口径：{mode}")
+    if mode == CALIBRATION_BET:
+        return {
+            "gamma": ACI_GAMMA_BET,
+            "half_life": ACI_HALF_LIFE_BET,
+            "window": None,  # 60 注的半衰期已覆盖整个面板，再设回看窗只是自我欺骗
+            "stride": max(1, int(horizon)),
+        }
+    return {
+        "gamma": ACI_GAMMA,
+        "half_life": ACI_HALF_LIFE,
+        "window": CALIBRATION_WINDOW,
+        "stride": 1,
+    }
 
 EPS = 1e-12
 
@@ -293,6 +327,7 @@ def calibrate_distribution(
     min_samples: int = MIN_ERRORS_FOR_SIGMA,
     symmetric: bool = False,
     issued_lag: int = 0,
+    stride: int = 1,
 ) -> pd.DataFrame:
     """studentized 误差 → 逐日校准分布的出口：区间端点、四分位、上行概率。
 
@@ -315,6 +350,10 @@ def calibrate_distribution(
     ``symmetric=True`` = 对称版本，``interval="normal"`` 由调用方走解析正态、不调这里。
 
     样本不足 ``min_samples`` 的行返回 NaN，由调用方回退到正态分位。
+
+    ``stride > 1`` 时，每 ``stride`` 行才把一次实现误差计入校准样本（并据此更新 α），
+    ``half_life`` / ``window`` / ``min_samples`` 的单位随之从「行」变成「注」—— 见
+    ``CALIBRATION_MODES`` 为什么要这么数。跳过的那些行照常输出区间（没有新信息而已）。
 
     ``issued_lag`` 是「一条区间从发出发到成熟」的行数（= 尺度 ``horizon``）：调用方传进来的
     ``ratio`` 已经右移过，所以第 t 行的实现误差对应的是第 ``t - issued_lag`` 行发出的区间。
@@ -382,7 +421,7 @@ def calibrate_distribution(
                     sorted_values, cumulative, total, points[position]
                 )
             value = values[position]
-            if np.isfinite(value):
+            if np.isfinite(value) and position % stride == 0:
                 # 判的是「当时发出的那条区间」守没守住：ratio 已按实现时间右移，所以这一注
                 # 对应的是 ``issued_lag`` 行前那一条区间。拿现在这条去判旧的那注，等于让 α
                 # 反应在它自己没发出的区间上 —— 长尺度上足够把自适应整个带偏。
@@ -399,7 +438,7 @@ def calibrate_distribution(
                         ACI_ALPHA_CAP,
                     )
                 )
-        if np.isfinite(values[position]):
+        if np.isfinite(values[position]) and position % stride == 0:
             history.append(float(values[position]))
 
     return pd.DataFrame(columns, index=ratio.index)
@@ -478,6 +517,7 @@ def build_prediction_frame(
     *,
     regression_window: Optional[int] = None,
     interval: str = "aci",
+    calibration_mode: str = CALIBRATION_ROW,
 ) -> pd.DataFrame:
     """把得分序列变成逐日的预测：期望收益、区间、情景区间、上行概率、目标价。
 
@@ -486,11 +526,14 @@ def build_prediction_frame(
     四种 ``interval`` 口径只是同一张分布的不同取法：
 
     ```
-    aci            加权经验分位 + ACI 在线调 α（非对称，线上口径）
-    aci_symmetric  同上，但端点关于期望收益强制对称
+    aci            加权经验分位 + ACI 在线调 α（非对称，线上口径）    aci_symmetric  同上，但端点关于期望收益强制对称
     empirical      全历史等权经验分位、不调 α（预注册候选 P2）
     normal         解析正态 N(μ, scale²)（预注册候选 P3，也是样本不足时的兜底）
     ```
+
+    ``calibration_mode`` 定的是这张分布**怎么取样本**（研究台候选 C0 / C1）：
+    ``row`` 每一行计一次（线上口径），``bet`` 每 ``horizon`` 行才计一次 —— 理由见
+    ``CALIBRATION_MODES`` 的注释。四种区间口径与两种取样方式共用同一张分布。
 
     ``uncertainty`` 定义为**该行区间宽度折算成的正态尺度** ``（上界 − 下界）/ (2·z80)``：
     对称口径（``normal`` / ``empirical``）下 ``μ ± 1.2816 × uncertainty`` 恰好等于展示的区间；
@@ -504,6 +547,8 @@ def build_prediction_frame(
     """
     if interval not in INTERVAL_MODES:
         raise ValueError(f"未知的区间口径：{interval}")
+    if calibration_mode not in CALIBRATION_MODES:
+        raise ValueError(f"未知的校准样本口径：{calibration_mode}")
     forward = close.shift(-horizon) / close - 1.0
     alpha, beta, _, calibrated = expanding_ols(
         score.shift(horizon), forward.shift(horizon), window=regression_window
@@ -534,14 +579,16 @@ def build_prediction_frame(
         distribution_mode = pd.Series("normal", index=expected.index)
     else:
         adaptive = interval != "empirical"
+        settings = calibration_settings(calibration_mode, horizon)
         calibration = calibrate_distribution(
             errors / scale,
             flat_z,
-            gamma=ACI_GAMMA if adaptive else 0.0,
-            half_life=ACI_HALF_LIFE if adaptive else None,
-            window=CALIBRATION_WINDOW if adaptive else None,
+            gamma=settings["gamma"] if adaptive else 0.0,
+            half_life=settings["half_life"] if adaptive else None,
+            window=settings["window"] if adaptive else None,
             symmetric=interval in ("aci_symmetric", "empirical"),
             issued_lag=horizon,
+            stride=settings["stride"],
         )
         # 经验样本不足的行：区间、四分位与概率**一起**退回正态，不许一半经验一半正态
         insufficient = calibration["lower"].isna()

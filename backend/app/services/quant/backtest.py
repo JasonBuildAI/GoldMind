@@ -84,12 +84,14 @@ def prepare_evaluation(
     include: Optional[tuple[str, ...]] = None,
     regression_window: Optional[int] = None,
     interval: str = "aci",
+    calibration_mode: str = engine.CALIBRATION_ROW,
     score: Optional[pd.Series] = None,
 ) -> dict:
     """把因子面板算成一次评估所需的全部序列。
 
     研究台（``scripts/quant_lab.py``）的预注册候选在这里落地：``score_mode``
     见 ``engine.SCORE_MODES``、``interval`` 见 ``engine.INTERVAL_MODES``、
+    ``calibration_mode`` 见 ``engine.CALIBRATION_MODES``、
     ``include`` 限定因子子集、``regression_window`` 指定滚动回归窗口。
     计算量最大的一段（信号、回归、区间校准）只做一次，
     ``evaluate_periods`` 在开发期 / 留出期 / 全样本三个切片上复用同一结果。
@@ -105,7 +107,12 @@ def prepare_evaluation(
             signals, horizon=horizon, mode=score_mode, include=include
         )
     frame = engine.build_prediction_frame(
-        score, close, horizon, regression_window=regression_window, interval=interval
+        score,
+        close,
+        horizon,
+        regression_window=regression_window,
+        interval=interval,
+        calibration_mode=calibration_mode,
     )
     forward = close.shift(-horizon) / close - 1.0
     outcome = np.sign(forward)
@@ -148,6 +155,7 @@ def evaluate_horizon(
     include: Optional[tuple[str, ...]] = None,
     regression_window: Optional[int] = None,
     interval: str = "aci",
+    calibration_mode: str = engine.CALIBRATION_ROW,
     score: Optional[pd.Series] = None,
 ) -> HorizonEvaluation:
     """对一段区间做走查式回测。``start`` / ``end`` 为闭区间（按日期）。
@@ -166,6 +174,7 @@ def evaluate_horizon(
         include=include,
         regression_window=regression_window,
         interval=interval,
+        calibration_mode=calibration_mode,
         score=score,
     )
     mask = _base_mask(prepared)
@@ -640,6 +649,7 @@ def evaluate_periods(
     include: Optional[tuple[str, ...]] = None,
     regression_window: Optional[int] = None,
     interval: str = "aci",
+    calibration_mode: str = engine.CALIBRATION_ROW,
     score: Optional[pd.Series] = None,
 ) -> dict[str, HorizonEvaluation]:
     """开发期 / 留出期 / 全样本三列。
@@ -660,6 +670,7 @@ def evaluate_periods(
         include=include,
         regression_window=regression_window,
         interval=interval,
+        calibration_mode=calibration_mode,
         score=score,
     )
     base = _base_mask(prepared)

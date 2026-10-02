@@ -58,6 +58,7 @@ GROUP_LABELS = {
     "drift": "漂移三档",
     "composite": "合成四档",
     "interval": "分布四档",
+    "calibration": "校准样本两档",
     "factor_set": "因子集四档",
     "ensemble": "集成一档",
 }
@@ -96,14 +97,21 @@ class Candidate:
     include: Optional[tuple[str, ...]] = None
     regression_window: Optional[int] = None
     interval: str = "aci"
+    calibration_mode: str = engine.CALIBRATION_ROW
 
     @property
     def is_ensemble(self) -> bool:
         return len(self.score_modes) > 1
 
     def run_key(self) -> tuple:
-        """参数指纹：同口径的控制候选（S4 / P4 / F4）与 B0 只计算一次。"""
-        return (self.score_modes, self.include, self.regression_window, self.interval)
+        """参数指纹：同口径的控制候选（S4 / P4 / F4 / C0）与 B0 只计算一次。"""
+        return (
+            self.score_modes,
+            self.include,
+            self.regression_window,
+            self.interval,
+            self.calibration_mode,
+        )
 
 
 def candidates() -> tuple[Candidate, ...]:
@@ -121,6 +129,13 @@ def candidates() -> tuple[Candidate, ...]:
         Candidate("P2", "interval", "区间 = 经验分位（无 ACI）", interval="empirical"),
         Candidate("P3", "interval", "区间 = 正态分位", interval="normal"),
         Candidate("P4", "interval", "区间 = ACI 非对称（控制，与 B0 同口径）", interval="aci"),
+        Candidate("C0", "calibration", "校准样本 = 每行计一次（控制，与 B0 同口径）"),
+        Candidate(
+            "C1",
+            "calibration",
+            "校准样本 = 每注计一次（stride = 尺度；γ 0.05、半衰期 60 注、不设回看窗）",
+            calibration_mode=engine.CALIBRATION_BET,
+        ),
         Candidate("F1", "factor_set", "因子集 = 货币 + 避险（7 个）", include=FACTOR_SETS["macro"]),
         Candidate(
             "F2",
@@ -212,6 +227,7 @@ def evaluate_candidate(
         include=candidate.include,
         regression_window=candidate.regression_window,
         interval=candidate.interval,
+        calibration_mode=candidate.calibration_mode,
         score=ensemble_score(factors, close, candidate, horizon=horizon),
     )
 
