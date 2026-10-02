@@ -192,6 +192,7 @@ def test_bench_rows_carry_the_round_two_adjudication_metrics(make_panel, monkeyp
             "coverage_turbulent",
             "coverage_bets_calm",
             "coverage_bets_turbulent",
+            "distribution_normal_share",
         ):
             assert key in row, f"{row['period']} 缺少 {key}：第二轮规则无法裁决"
         for key in (

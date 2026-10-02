@@ -202,6 +202,9 @@ ROW_FIELDS = (
     "down_call_accuracy",
     "interval_sharpness_80",
     "expected_cap_rate",
+    # 「这一行是经验分布还是正态兜底」的占比：bet 档在长尺度上会整段退回正态，
+    # 不写出来，候选标签与实跑口径就对不上
+    "distribution_normal_share",
     "independent_bets",
     "accuracy_nonoverlap",
     "reason",
@@ -287,6 +290,7 @@ def _row(candidate: Candidate, horizon: int, period: str, evaluation) -> dict:
         "down_call_accuracy": metrics.get("down_call_accuracy"),
         "interval_sharpness_80": metrics.get("interval_sharpness_80"),
         "expected_cap_rate": metrics.get("expected_cap_rate"),
+        "distribution_normal_share": metrics.get("distribution_normal_share"),
         "independent_bets": metrics.get("nonoverlapping_samples"),
         "accuracy_nonoverlap": metrics.get("accuracy_nonoverlapping"),
         "reason": metrics.get("reason"),
@@ -517,8 +521,8 @@ def format_markdown(
         "",
         "## 主表（命中率四列）",
         "",
-        "| 候选 | 组 | 尺度(日) | 开发期 | 历史留出期 | 前向留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | 覆盖率(留出) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| 候选 | 组 | 尺度(日) | 开发期 | 历史留出期 | 前向留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | 覆盖率(留出) | 正态兜底(留出) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for candidate in order:
         for horizon in horizons:
@@ -529,7 +533,7 @@ def format_markdown(
             diff = holdout["accuracy_diff_vs_up"]
             difference = "—" if _missing(diff) else f"{100.0 * diff:+.1f}pp"
             lines.append(
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
                     candidate.key,
                     GROUP_LABELS.get(candidate.group, candidate.group),
                     horizon,
@@ -542,6 +546,7 @@ def format_markdown(
                     "—" if _missing(holdout["p_value_vs_up"]) else f"{holdout['p_value_vs_up']:.3f}",
                     _number(holdout["brier_skill_score"]),
                     _pct(holdout["coverage_80"]),
+                    _pct(holdout.get("distribution_normal_share")),
                 )
             )
 
