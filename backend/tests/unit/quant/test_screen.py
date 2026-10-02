@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -112,3 +114,99 @@ def test_too_little_history_says_so_instead_of_guessing():
     assert verdict.status == screen.STATUS_INSUFFICIENT
     assert "样本" in verdict.reason
     assert verdict.passed_significance == ()
+
+@pytest.mark.unit
+def test_forward_window_is_reported_as_pending_with_today_s_data():
+    """第 ③ 道闸门现在必然还没到：把「还要等多久」摊开，而不是假装能判。
+
+    变异验证：把 reason 里的 ``approx_trading_days_needed`` 换成写死的 0（或整段删掉），
+    下面按数值断言的那条必红；把 ``decidable`` 的判断反过来，前两条断言必红。
+    """
+    benchmark = _benchmark()  # 止于 2023 年附近，全部早于前向窗口起点
+
+    readiness = screen.forward_window_readiness(benchmark, 20)
+
+    assert readiness["decidable"] is False
+    assert readiness["independent_bets"] == 0
+    assert readiness["window_start"] == screen.FORWARD_WINDOW_START.isoformat()
+    # 门槛要同时覆盖「独立下注次数」和「滚动 z 需要的原始样本量」，取两者更大者
+    assert readiness["required_bets"] == max(
+        screen.MIN_FORWARD_BETS, math.ceil(screen.MIN_SCREEN_SAMPLES / 20)
+    )
+    assert readiness["shortfall_bets"] == readiness["required_bets"]
+
+    verdict = screen.confirm_on_forward_window("噪声", _noise(), benchmark, 20, development_t=2.5)
+    assert verdict["verdict"] == screen.STATUS_FORWARD_PENDING
+    assert verdict["forward_t"] is None
+    assert f"还需约 {readiness['approx_trading_days_needed']} 个交易日" in verdict["reason"], (
+        f"pending 文案没有给出真实的等待天数：{verdict['reason']}"
+    )
+
+
+def _split_market() -> tuple[pd.Series, pd.Series, pd.Series]:
+    """造一段跨过前向窗口起点的市场，返回 (收盘价, 翻转信号, 稳定信号)。
+
+    两个信号都是「作弊序列」（直接由未来收益构造），只用来检验代码路径：一个在窗口
+    起点处方向翻转，一个方向不变。注意不能用「动量 + 两段不同的漂移」来造反转：
+    两边先去均值之后，漂移在协方差里根本不留痕迹（随机行走的滞后收益与前向收益
+    不相关），那种构造看似有反转、其实两边都是噪声。
+    """
+    start = pd.Timestamp(screen.FORWARD_WINDOW_START)
+    calendar = pd.date_range("2020-01-02", start + pd.tseries.offsets.BDay(700), freq="B")
+    rng = np.random.default_rng(9)
+    close = pd.Series(
+        2000.0 * np.exp(np.cumsum(rng.normal(0.0003, 0.008, len(calendar)))), index=calendar
+    )
+    ahead = (close.shift(-5) / close - 1.0).fillna(0.0)
+    noise = rng.normal(0.0, 0.001, len(calendar))
+    regime = np.where(calendar < start, 1.0, -1.0)
+    return close, pd.Series(ahead.to_numpy() * regime + noise, index=calendar), pd.Series(
+        ahead.to_numpy() + noise, index=calendar
+    )
+
+
+@pytest.mark.unit
+def test_forward_window_confirmation_uses_only_post_announcement_data():
+    """前向确认只许看结论公布日之后的数据：开发期同号、新窗口反向必须判成反转。
+
+    变异验证：把 `confirm_on_forward_window` 里的窗口切片删掉（改用全样本），
+    全样本 t 与开发期同号 → 判成 agrees，`pending["verdict"]` 那条断言必红，
+    因为那样它把开发期数据当成了新证据。
+    """
+    close, flip_signal, _ = _split_market()
+
+    whole = screen.test_one(flip_signal, close, 5)
+    pending = screen.confirm_on_forward_window(
+        "反转候选", flip_signal, close, 5, development_t=whole.t_stat
+    )
+
+    readiness = screen.forward_window_readiness(close, 5)
+    assert readiness["decidable"] is True, readiness
+    assert readiness["required_bets"] >= screen.MIN_FORWARD_BETS
+    # 先确认全样本确实给出了正向证据，否则后面的「反转」断言是空的
+    assert whole.t_stat is not None and whole.t_stat > 0, whole
+    assert pending["verdict"] == screen.STATUS_FORWARD_FLIP
+    assert pending["forward_t"] is not None and pending["forward_t"] < 0
+    assert "噪声" in pending["reason"] or "反转" in pending["reason"]
+
+
+@pytest.mark.unit
+def test_forward_window_confirmation_accepts_a_direction_that_hold_up():
+    """方向在新数据上站得住，就必须报 agrees —— 只会说 pending 的闸门等于没有闸门。
+
+    变异验证：把 `verdict` 那行两个状态常量互换，本测试与上一条同时红。
+    """
+    close, _, stable_signal = _split_market()
+
+    whole = screen.test_one(stable_signal, close, 5)
+    confirmed = screen.confirm_on_forward_window(
+        "稳定候选", stable_signal, close, 5, development_t=whole.t_stat
+    )
+
+    assert whole.t_stat is not None and whole.t_stat > 0, whole
+    assert confirmed["verdict"] == screen.STATUS_FORWARD_AGREE
+    assert confirmed["forward_t"] > 0
+    assert confirmed["observations"] > 0
+    # agrees 也只是「可进入评审」：采纳权仍在人工预注册，本模块不越权
+    assert "人工预注册" in confirmed["reason"]
+

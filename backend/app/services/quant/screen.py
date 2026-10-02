@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import date
 from typing import Iterable, Mapping, Optional, Sequence
 
 import numpy as np
@@ -99,6 +100,87 @@ class Verdict:
             "adopted": self.adopted,
             "results": [item.to_dict() for item in self.results],
         }
+
+
+# 第 ③ 道闸门的数据起点：第二轮结论写进 spec 的那一天（2026-10-02）。
+# 之前的历史已经被看过、被汇报过，拿它确认自己 = 事后挑参数；只有这一天之后
+# 新增的观测才是干净的。改动它等于作废整轮预注册，必须换新的窗口而不是挪日期。
+FORWARD_WINDOW_START = date(2026, 10, 2)
+# 前向窗口至少要有这么多次独立下注才允许下结论（与裁决层的可判定下限同档）
+MIN_FORWARD_BETS = 20
+STATUS_FORWARD_PENDING = "forward_window_pending"
+STATUS_FORWARD_AGREE = "forward_window_agrees"
+STATUS_FORWARD_FLIP = "forward_window_reversed"
+
+
+def forward_window_readiness(benchmark: pd.Series, horizon: int) -> dict:
+    """第 ③ 道闸门现在能不能判？把已经积累多少、还差多少摊开说。"""
+    after = benchmark[benchmark.index >= pd.Timestamp(FORWARD_WINDOW_START)]
+    bets = int(np.floor(len(after) / horizon)) if len(after) else 0
+    # 两个门槛同时才算「够判」：独立下注次数，以及窗口内的原始样本量
+    # （滚动 z 需要历史窗口，样本太少时检验根本给不出 t 值，勉强判等于瞎判）
+    required_bets = max(MIN_FORWARD_BETS, math.ceil(MIN_SCREEN_SAMPLES / horizon))
+    return {
+        "window_start": FORWARD_WINDOW_START.isoformat(),
+        "observations": int(len(after)),
+        "independent_bets": bets,
+        "required_bets": required_bets,
+        "decidable": bets >= required_bets,
+        "shortfall_bets": max(0, required_bets - bets),
+        "approx_trading_days_needed": max(0, required_bets * horizon - len(after)),
+    }
+
+
+def confirm_on_forward_window(
+    name: str,
+    signal: pd.Series,
+    benchmark: pd.Series,
+    horizon: int,
+    *,
+    development_t: Optional[float] = None,
+) -> dict:
+    """在**结论公布日之后**的窗口上重算一次同号性。
+
+    与闸门 ①② 的分工：①② 在开发期判「有没有、方向稳不稳」，这一道只回答
+    「那个方向在新数据上还是不是同一个方向」。新窗口样本不足时只报 pending，
+    绝不拿开发期数据顶替 —— 那正是这一层要防的事。
+    """
+    readiness = forward_window_readiness(benchmark, horizon)
+    result = {
+        "name": name,
+        "horizon_days": horizon,
+        "development_t": development_t,
+        **readiness,
+        "forward_t": None,
+        "verdict": STATUS_FORWARD_PENDING,
+        "reason": (
+            f"前向窗口（{FORWARD_WINDOW_START.isoformat()} 起）只有 "
+            f"{readiness['independent_bets']}/{readiness['required_bets']} 次独立下注，"
+            f"还需约 {readiness['approx_trading_days_needed']} 个交易日才能判"
+        ),
+    }
+    if not readiness["decidable"]:
+        return result
+
+    # z 必须在**全样本**上算（滚动窗口需要历史），只用前向窗口里的行参与评估；
+    # 反过来先切数据再算 z 会因为历史不足而拿不到 t 值，看起来「永远判不了」。
+    window_mask = benchmark.index >= pd.Timestamp(FORWARD_WINDOW_START)
+    forward_result = test_one(
+        signal, benchmark, horizon, mask=pd.Series(window_mask, index=benchmark.index)
+    )
+    t_forward = forward_result.t_stat
+    result["forward_t"] = t_forward
+    if t_forward is None or development_t is None:
+        result["reason"] = "前向窗口或开发期缺少可比 t 值，不下结论"
+        return result
+    same_sign = (t_forward > 0) == (development_t > 0)
+    result["verdict"] = STATUS_FORWARD_AGREE if same_sign else STATUS_FORWARD_FLIP
+    result["reason"] = (
+        f"开发期 t={development_t:+.2f}、前向窗口 t={t_forward:+.2f}："
+        + ("方向一致，可进入因子集评审（采纳仍需人工预注册）" if same_sign
+           else "方向反转，开发期那个结果不能算信息，判为噪声")
+    )
+    return result
 
 
 def _finite(value) -> Optional[float]:
@@ -283,6 +365,13 @@ def summary_rows(verdicts: Iterable[Verdict]) -> list[dict]:
 
 __all__ = [
     "HorizonResult",
+    "forward_window_readiness",
+    "confirm_on_forward_window",
+    "STATUS_FORWARD_PENDING",
+    "STATUS_FORWARD_FLIP",
+    "STATUS_FORWARD_AGREE",
+    "MIN_FORWARD_BETS",
+    "FORWARD_WINDOW_START",
     "MIN_SCREEN_SAMPLES",
     "SCREEN_HORIZONS",
     "MIN_T_FOR_DIRECTION",

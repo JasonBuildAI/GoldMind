@@ -50,6 +50,8 @@ EXTRA_CANDIDATES: dict[str, Callable[[dict], Optional[pd.Series]]] = {
     "copper_gold_ratio": lambda series: series.get("copper_gold_ratio"),
     "gvz": lambda series: series.get("gvz"),
     "cftc_net_oi_ratio": lambda series: series.get("cftc_net_oi_ratio"),
+    # 官方地缘指数：现有 geopolitical 因子是新闻语料代理（实测只有 1 条观测，等于没跑）
+    "gpr_daily": lambda series: series.get("gpr_daily"),
 }
 
 
@@ -93,6 +95,74 @@ def format_markdown(rows: list[dict], *, horizons: tuple[int, ...]) -> str:
     lines.append(
         "过闸门①②（等前向窗口确认）：" + ("、".join(advancing) if advancing else "无")
     )
+    return "\n".join(lines)
+
+
+def format_forward_window(
+    benchmark: pd.Series,
+    verdicts: list[screen.Verdict],
+    candidates: dict[str, pd.Series],
+    *,
+    horizons: tuple[int, ...],
+) -> str:
+    """第 ③ 道闸门的进度：什么时候才可能判，以及已经能判的候选复核成了什么。
+
+    这一节的存在是为了防止一种漂移：闸门①②当场就能给出漂亮结论，于是没人再等
+    新数据。把「还差多少个交易日」印在报告里，等与不等就都是一个可见的决定。
+    """
+    lines = [
+        "",
+        "## 第 ③ 道闸门（前向窗口）",
+        "",
+        f"窗口起点 {screen.FORWARD_WINDOW_START.isoformat()}（第二轮结论写进 spec 的那天）。"
+        "起点之前的样本都已被翻看并汇报过，拿它们「确认」结论等于事后挑参数，"
+        f"所以只有起点之后新增的观测才算证据（下限 {screen.MIN_FORWARD_BETS} 次独立下注）。",
+        "",
+        "| 尺度 | 窗口内观测 | 独立下注 | 需要 | 可判 | 还差(交易日) |",
+        "|---|---|---|---|---|---|",
+    ]
+
+    def num(value: Optional[float], spec: str = ".2f") -> str:
+        return "-" if value is None else format(value, spec)
+
+    decidable: dict[int, bool] = {}
+    for horizon in horizons:
+        item = screen.forward_window_readiness(benchmark, horizon)
+        decidable[horizon] = bool(item["decidable"])
+        lines.append(
+            f"| {horizon} | {item['observations']} | {item['independent_bets']} "
+            f"| {item['required_bets']} | {'是' if item['decidable'] else '否'} "
+            f"| {item['approx_trading_days_needed']} |"
+        )
+
+    awaiting = [verdict for verdict in verdicts if verdict.status == screen.STATUS_AWAIT]
+    if not awaiting:
+        lines += ["", "过闸门 ①② 的候选：无 —— 第 ③ 道闸门本轮无需复核。"]
+        return "\n".join(lines)
+
+    checks: list[str] = []
+    for verdict in awaiting:
+        for result in verdict.results:
+            if not decidable.get(result.horizon):
+                continue
+            check = screen.confirm_on_forward_window(
+                verdict.name,
+                candidates[verdict.name],
+                benchmark,
+                result.horizon,
+                development_t=result.t_stat,
+            )
+            checks.append(
+                f"- {verdict.name} @ {result.horizon} 日：{check['verdict']} "
+                f"（开发期 t={num(result.t_stat)}，前向 t={num(check['forward_t'])}）—— "
+                f"{check['reason']}"
+            )
+    if checks:  # 一条结论都不许在窗口攒够之前提前给出
+        lines += ["", "已可判尺度上的前向复核："] + checks
+    pending_scales = sorted(h for h, ok in decidable.items() if not ok)
+    if pending_scales:
+        days = "、".join(str(h) for h in pending_scales)
+        lines.append(f"其余尺度（{days} 日）等到窗口攒够样本后再判，本轮不预判。")
     return "\n".join(lines)
 
 
@@ -152,7 +222,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     verdicts = screen.screen_round(candidates, benchmark, horizons=horizons, mask=mask)
     rows = screen.summary_rows(verdicts)
-    markdown = format_markdown(rows, horizons=horizons)
+    markdown = format_markdown(rows, horizons=horizons) + "\n" + format_forward_window(
+        benchmark, verdicts, candidates, horizons=horizons
+    )
     print(markdown)
 
     if args.out:
