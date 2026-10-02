@@ -1,5 +1,5 @@
 """定时任务调度器"""
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
@@ -7,6 +7,14 @@ from app.config import settings
 from app.utils import timeutil
 
 scheduler = AsyncIOScheduler(timezone=settings.SCHEDULER_TIMEZONE)
+
+# 全部任务共用：错过窗口自动补跑（coalesce = 积压只跑一次）、允许迟到的宽限、
+# 同一任务绝不并发两份（2.0.2 调度自愈）。
+JOB_DEFAULTS = {"coalesce": True, "misfire_grace_time": 3600, "max_instances": 1}
+# 启动补差延迟：等建表 / 迁移与启动引导先跑起来，再补一轮增量数据。
+STARTUP_CATCHUP_SECONDS = 20
+# 每日自动备份 + 数据体检：北京时间凌晨 4 点（早于 6:30 的行情任务）。
+DAILY_MAINTENANCE_CRON = "0 4 * * *"
 
 
 def scheduler_now() -> datetime:
@@ -43,6 +51,27 @@ def parse_source_date(value) -> date | None:
     return None
 
 
+async def daily_maintenance_job():
+    """每日自动备份 + 数据体检（耗时 IO 放线程池，不阻塞调度器）。"""
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(None, _run_daily_maintenance_sync)
+        logger.info(
+            f"[维护] 每日任务完成：备份 {result['backup']['status']}，"
+            f"体检 {result['sanity']['status']}"
+        )
+    except Exception as e:
+        logger.error(f"[维护] 每日任务失败: {e}")
+
+
+def _run_daily_maintenance_sync():
+    from app.services import maintenance
+
+    return maintenance.daily_maintenance()
+
+
 def init_scheduler():
     logger.info(f"[调度器] SCHEDULER_ENABLED={settings.SCHEDULER_ENABLED}, 时区={settings.SCHEDULER_TIMEZONE}")
     
@@ -56,7 +85,8 @@ def init_scheduler():
             CronTrigger.from_crontab(settings.UPDATE_PRICE_CRON),
             id='update_prices',
             name='更新黄金价格数据',
-            replace_existing=True
+            replace_existing=True,
+            **JOB_DEFAULTS,
         )
         logger.info(f"[调度器] 已添加任务: update_prices ({settings.UPDATE_PRICE_CRON})")
         
@@ -66,7 +96,8 @@ def init_scheduler():
             CronTrigger.from_crontab(settings.UPDATE_PRICE_CRON),
             id='update_dollar_index',
             name='更新美元指数数据',
-            replace_existing=True
+            replace_existing=True,
+            **JOB_DEFAULTS,
         )
         logger.info(f"[调度器] 已添加任务: update_dollar_index")
         
@@ -75,7 +106,8 @@ def init_scheduler():
             CronTrigger.from_crontab(settings.UPDATE_NEWS_CRON),
             id='update_news',
             name='更新新闻资讯',
-            replace_existing=True
+            replace_existing=True,
+            **JOB_DEFAULTS,
         )
         logger.info(f"[调度器] 已添加任务: update_news ({settings.UPDATE_NEWS_CRON})")
 
@@ -85,7 +117,8 @@ def init_scheduler():
             CronTrigger.from_crontab(settings.UPDATE_NEWS_DIGEST_CRON),
             id='update_news_digest',
             name='抓取高权威黄金消息',
-            replace_existing=True
+            replace_existing=True,
+            **JOB_DEFAULTS,
         )
         logger.info(f"[调度器] 已添加任务: update_news_digest ({settings.UPDATE_NEWS_DIGEST_CRON})")
         
@@ -96,7 +129,8 @@ def init_scheduler():
             CronTrigger.from_crontab(settings.UPDATE_AI_ANALYSIS_CRON),
             id='update_ai_analysis',
             name='后台更新AI分析（看涨/看跌/机构/建议）',
-            replace_existing=True
+            replace_existing=True,
+            **JOB_DEFAULTS,
         )
         logger.info(f"[调度器] 已添加任务: update_ai_analysis ({settings.UPDATE_AI_ANALYSIS_CRON})")
 
@@ -107,7 +141,8 @@ def init_scheduler():
                 CronTrigger.from_crontab(settings.UPDATE_FACTORS_CRON),
                 id='update_factors',
                 name='同步量化因子数据',
-                replace_existing=True
+                replace_existing=True,
+                **JOB_DEFAULTS,
             )
             logger.info(f"[调度器] 已添加任务: update_factors ({settings.UPDATE_FACTORS_CRON})")
 
@@ -116,12 +151,44 @@ def init_scheduler():
                 CronTrigger.from_crontab(settings.UPDATE_QUANT_CRON),
                 id='update_quant_prediction',
                 name='重算量化预测与回测',
-                replace_existing=True
+                replace_existing=True,
+                **JOB_DEFAULTS,
             )
             logger.info(f"[调度器] 已添加任务: update_quant_prediction ({settings.UPDATE_QUANT_CRON})")
         else:
             logger.info("[调度器] QUANT_ENABLED=false，跳过量化任务")
-        
+
+        # 启动补差：不等 cron，先跑一轮增量数据任务（历史回填与首轮分析由
+        # 启动引导负责；这里补的是「最新收盘 / 最近新闻」这类增量）。
+        catchup_at = scheduler_now() + timedelta(seconds=STARTUP_CATCHUP_SECONDS)
+        for job, job_id, name in (
+            (update_prices_job, 'startup_prices', '启动补差：金价'),
+            (update_dollar_index_job, 'startup_dollar', '启动补差：美元指数'),
+            (update_news_job, 'startup_news', '启动补差：新闻'),
+            (update_news_digest_job, 'startup_news_digest', '启动补差：消息板块'),
+        ):
+            scheduler.add_job(
+                job,
+                trigger='date',
+                run_date=catchup_at,
+                id=job_id,
+                name=name,
+                replace_existing=True,
+                **JOB_DEFAULTS,
+            )
+        logger.info(f"[调度器] 已排入启动补差任务（{STARTUP_CATCHUP_SECONDS} 秒后执行一次）")
+
+        # 每日运维：自动备份 + 数据体检（先备份后修复；AUTO_BACKUP=false 只读）。
+        scheduler.add_job(
+            daily_maintenance_job,
+            CronTrigger.from_crontab(DAILY_MAINTENANCE_CRON),
+            id='daily_maintenance',
+            name='每日自动备份与数据体检',
+            replace_existing=True,
+            **JOB_DEFAULTS,
+        )
+        logger.info(f"[调度器] 已添加任务: daily_maintenance ({DAILY_MAINTENANCE_CRON})")
+
         scheduler.start()
         logger.info(f"[调度器] 定时任务调度器已启动，当前时间: {timeutil.now()}")
         
