@@ -32,6 +32,14 @@ def _perfect_lead(benchmark: pd.Series) -> pd.Series:
     return ((benchmark.shift(-5) / benchmark - 1.0) * 8.0).fillna(0.0)
 
 
+def _anti_lead(benchmark: pd.Series) -> pd.Series:
+    """反向的完美前瞻信号（混入噪声，好让 t 落在「显著但别太夸张」的区间）。"""
+    rng = np.random.default_rng(11)
+    anti = -(benchmark.shift(-20) / benchmark - 1.0)
+    clean = (anti / anti.std()).fillna(0.0).to_numpy()
+    return pd.Series(clean * 0.3 + rng.normal(0.0, 1.0, len(benchmark)), index=benchmark.index)
+
+
 @pytest.mark.unit
 def test_report_shows_gate_three_progress_for_every_horizon():
     """窗口还没到：每个尺度都要摊开「差多少」，并且一条结论都不许下。"""
@@ -77,6 +85,30 @@ def test_report_rechecks_candidates_once_the_window_has_data():
     assert "开发期 t=" in section and "前向 t=" in section
     # 每个已可判的尺度都要留下一行结论，不许只报进度表
     assert section.count("- lead @ ") == len(HORIZONS)
+
+
+@pytest.mark.unit
+def test_report_registers_reversed_hypotheses_and_rechecks_them():
+    """反向显著的候选必须在报告里单独成行，并且同样进前向复核队列。
+
+    变异验证：把 `format_forward_window` 的 ``watched`` 收回成只含 ``STATUS_AWAIT``，
+    本测试后半（前向复核那一段）红；把 `format_markdown` 里登记反向假设那行删掉，前半红。
+    """
+    calendar = pd.date_range("2022-01-03", WINDOW_START + pd.tseries.offsets.BDay(700), freq="B")
+    benchmark = _market(calendar)
+    anti = _anti_lead(benchmark)
+    verdicts = screen.screen_round({"anti": anti}, benchmark, horizons=HORIZONS)
+    rows = screen.summary_rows(verdicts)
+    assert [verdict.status for verdict in verdicts] == [screen.STATUS_REVERSED]
+
+    summary = screen_factors.format_markdown(rows, horizons=HORIZONS)
+    section = screen_factors.format_forward_window(
+        benchmark, verdicts, {"anti": anti}, horizons=HORIZONS
+    )
+
+    assert "反向假设" in summary and "anti @ 5日" in summary, summary
+    assert "前向复核" in section and "（反向假设）" in section
+    assert screen.STATUS_FORWARD_AGREE in section, "反向假设在新窗口里成立，报告必须说出来"
 
 
 @pytest.mark.unit

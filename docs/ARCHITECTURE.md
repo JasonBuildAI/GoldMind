@@ -323,7 +323,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 数据源 | `sources/*.py` | 全部免费、无需密钥（含财政部 DTS 的 TGA、纽约联储 RRP、CFTC 未平仓量、Yahoo 的 USDCNY）；HTTP 客户端可注入，测试永不真出网 |
 | 派生 | `derive.py` | 原始序列 → 因子值，单位与口径只在这一层固定 |
 | 落库 | `storage.py` | `factor_observations`，唯一约束 `(factor_key, obs_date)`，幂等；每次首见或回修同时向 `factor_observation_revisions` 追加一行（值没变不追加） |
-| 候选闸门 | `screen.py` + `scripts/screen_factors.py` | 新信息要进因子集必须过三道事先写死的检验：① 去均值后的 `z × h 日前瞻收益` 协方差做 Newey–West 单尾检验（滞后 h−1）且 p < α/整轮检验数、\|t\| ≥ 3；② ≥2 个尺度同号；③ 结论公布日之后的前向窗口确认。本模块**没有采纳权**，最好只能给出「待前向确认」 |
+| 候选闸门 | `screen.py` + `scripts/screen_factors.py` | 新信息要进因子集必须过三道事先写死的检验：① 去均值后的 `z × h 日前瞻收益` 协方差做 Newey–West 单尾检验（滞后 h−1）且 p < α/整轮检验数、\|t\| ≥ 3；② ≥2 个尺度同号；③ 结论公布日之后的前向窗口确认。本模块**没有采纳权**：正向过线只能给「待前向确认」，反向显著（同一条 \|t\| 下限＋双侧 p）只登记成「反向假设」等闸门 ③，**不许当场翻号** |
 | 同步 | `sync.py` | 按源节流（6h ~ 24h）、增量抓取、逐源降级并写入同步报告 |
 | 信号 | `engine.py` | 滚动 z → 方向对齐 → 按尺度取权重（`definitions.horizon_weights`）合成 → 一份校准分布给出期望收益、不确定度、上行概率、目标价与区间 |
 | 公允价 | `decompose.py` | 走查式扩展窗口 OLS（`log 金价 ~ 实际利率 + log 美元指数 + log 央行储备 + VIX`）把金价拆成 宏观锚＋需求溢价＋风险溢价＋情绪残差；偏离度 = 市场价 / 公允价 − 1 |

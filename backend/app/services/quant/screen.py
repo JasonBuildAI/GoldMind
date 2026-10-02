@@ -14,6 +14,11 @@
    所以本模块永远不会返回 ``adopted``：它只能把候选推进到
    ``awaiting_forward_window``（等未来数据）或 ``reject``。
 
+反向出口：闸门 ① 承诺的方向是「正」（``greater``），所以反向显著的 t **不能**当场入选 ——
+那正是事后翻号。但 26 年面板里唯一反复出现的模式就是反向的（短尺度反转），把它和噪声
+一起扔进 reject 等于把最有验证价值的发现丢掉。因此有 ``reversed_hypothesis``：
+效应量与同号两条硬要求照用，只是换出口 —— 登记名字与尺度，交给闸门 ③ 的前向窗口判。
+
 刻意不做的事：不代替预注册文档（规则写进 spec 才算数）、不改因子权重、
 不因为「p 差一点」就放宽阈值 —— 阈值是被观测之前定下的，动它就等于事后挑参数。
 """
@@ -43,6 +48,15 @@ SCREEN_HORIZONS: tuple[int, ...] = (1, 5, 20, 60, 250)
 STATUS_REJECT = "reject"
 STATUS_AWAIT = "awaiting_forward_window"
 STATUS_INSUFFICIENT = "insufficient_data"
+# 反向假设登记：闸门 ① 事先承诺的方向是 ``greater``，所以反向的 t 无论多大都不构成
+# 「入选」—— 那是事后翻号。但它也不该和 255 行噪声一起被扔掉：26 年面板里唯一反复
+# 出现的模式（短尺度反转）就是反向的。折中办法是给它一个**只登记、不采纳**的状态，
+# 与前向窗口（闸门 ③）绑在一起等验证。
+# 这里的 p 下限用名义 0.05、不叠 Bonferroni：Bonferroni 保护的是「当场据此改模型」，
+# 而登记没有任何当场效果；名单在窗口打开之前就固定下来，本身就是预注册的形式。
+# 效应量下限 |t| ≥ 3 与「≥2 个尺度同号」两条一律照用，所以这不是放宽，只是换个出口。
+REVERSED_ALPHA = 0.05
+STATUS_REVERSED = "reversed_hypothesis"
 
 
 @dataclass(frozen=True)
@@ -56,6 +70,7 @@ class HorizonResult:
     p_value: Optional[float]
     t_stat_iid: Optional[float]
     hit_rate: Optional[float]
+    p_value_two_sided: Optional[float] = None
 
     @property
     def usable(self) -> bool:
@@ -68,6 +83,7 @@ class HorizonResult:
             "mean_alignment": self.mean_alignment,
             "t_stat": self.t_stat,
             "p_value": self.p_value,
+            "p_value_two_sided": self.p_value_two_sided,
             "t_stat_iid": self.t_stat_iid,
             "hit_rate": self.hit_rate,
         }
@@ -75,7 +91,7 @@ class HorizonResult:
 
 @dataclass(frozen=True)
 class Verdict:
-    """候选的闸门结论。``status`` 只可能是拒绝、待前向确认、数据不足三种。"""
+    """候选的闸门结论。``status`` 只可能是拒绝、待前向确认、反向假设、数据不足四种。"""
 
     name: str
     status: str
@@ -84,6 +100,7 @@ class Verdict:
     bonferroni_alpha: float
     passed_significance: tuple[int, ...]
     sign_consistent: bool
+    reversed_significant: tuple[int, ...] = ()
 
     @property
     def adopted(self) -> bool:  # 故意恒为 False：本模块没有采纳权
@@ -96,6 +113,7 @@ class Verdict:
             "reason": self.reason,
             "bonferroni_alpha": self.bonferroni_alpha,
             "passed_significance": list(self.passed_significance),
+            "reversed_significant": list(self.reversed_significant),
             "sign_consistent": self.sign_consistent,
             "adopted": self.adopted,
             "results": [item.to_dict() for item in self.results],
@@ -210,7 +228,7 @@ def test_one(
         usable = usable & mask.reindex(usable.index).fillna(False)
     count = int(usable.sum())
     if count < MIN_SCREEN_SAMPLES:
-        return HorizonResult(horizon, count, None, None, None, None, None)
+        return HorizonResult(horizon, count, None, None, None, None, None, None)
 
     z_values = z[usable].to_numpy(dtype="float64")
     r_values = forward[usable].to_numpy(dtype="float64")
@@ -220,6 +238,7 @@ def test_one(
     alignment = (z_values - z_values.mean()) * (r_values - r_values.mean())
     lags = horizon - 1 if horizon > 1 else None
     hac = stats.hac_t_statistic(alignment, lags=lags, alternative="greater")
+    two_sided = stats.hac_t_statistic(alignment, lags=lags, alternative="two-sided")
     iid = stats.hac_t_statistic(alignment, lags=0, alternative="greater")
     direction_match = np.sign(z[usable].to_numpy(dtype="float64")) == np.sign(
         forward[usable].to_numpy(dtype="float64")
@@ -232,6 +251,7 @@ def test_one(
         p_value=_finite(hac["p_value"]),
         t_stat_iid=_finite(iid["statistic"]),
         hit_rate=_finite(float(direction_match.mean())),
+        p_value_two_sided=_finite(two_sided["p_value"]),
     )
 
 
@@ -272,6 +292,15 @@ def screen_candidate(
         for item in usable
         if item.p_value < bonferroni and item.t_stat >= MIN_T_TO_PASS
     )
+    # 反向出口：同一条效应量下限，只是方向相反。闸门 ① 事先承诺的是 ``greater``，
+    # 所以这些格子**不能**算过线（那等于看到数据再翻号），只能登记成假设等闸门 ③。
+    reversed_pass = tuple(
+        item.horizon
+        for item in usable
+        if item.t_stat <= -MIN_T_TO_PASS
+        and item.p_value_two_sided is not None
+        and item.p_value_two_sided < REVERSED_ALPHA
+    )
     signs = [int(np.sign(item.t_stat)) for item in usable if abs(item.t_stat) >= MIN_T_FOR_DIRECTION]
     sign_consistent = bool(signs) and (len(set(signs)) == 1) and len(signs) >= 2
 
@@ -290,6 +319,22 @@ def screen_candidate(
         )
     if not passed:
         best = min(usable, key=lambda item: item.p_value)
+        if reversed_pass:
+            scales = "、".join(str(h) for h in reversed_pass)
+            return Verdict(
+                name=name,
+                status=STATUS_REVERSED,
+                reason=(
+                    f"{scales} 日反向显著（|t| ≥ {MIN_T_TO_PASS:g}、双侧 p < {REVERSED_ALPHA:g}，"
+                    f"且各尺度同号）。闸门 ① 事先承诺的方向是「正」，因此**不许当场翻号**当信号用；"
+                    "登记为假设，交给闸门 ③ 的前向窗口验证 —— 本模块没有采纳权"
+                ),
+                results=results,
+                bonferroni_alpha=bonferroni,
+                passed_significance=(),
+                sign_consistent=True,
+                reversed_significant=reversed_pass,
+            )
         return Verdict(
             name=name,
             status=STATUS_REJECT,
@@ -354,9 +399,11 @@ def summary_rows(verdicts: Iterable[Verdict]) -> list[dict]:
                     "samples": item.samples,
                     "t_stat": item.t_stat,
                     "p_value": item.p_value,
+                    "p_value_two_sided": item.p_value_two_sided,
                     "t_stat_iid": item.t_stat_iid,
                     "hit_rate": item.hit_rate,
                     "bonferroni_alpha": verdict.bonferroni_alpha,
+                    "reversed_significant": item.horizon in verdict.reversed_significant,
                     "reason": verdict.reason,
                 }
             )
@@ -375,8 +422,10 @@ __all__ = [
     "MIN_SCREEN_SAMPLES",
     "SCREEN_HORIZONS",
     "MIN_T_FOR_DIRECTION",
+    "REVERSED_ALPHA",
     "STATUS_AWAIT",
     "STATUS_INSUFFICIENT",
+    "STATUS_REVERSED",
     "STATUS_REJECT",
     "Verdict",
     "screen_candidate",

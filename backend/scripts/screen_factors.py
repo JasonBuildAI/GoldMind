@@ -95,6 +95,15 @@ def format_markdown(rows: list[dict], *, horizons: tuple[int, ...]) -> str:
     lines.append(
         "过闸门①②（等前向窗口确认）：" + ("、".join(advancing) if advancing else "无")
     )
+    # 反向显著的候选不能和噪声一起扔掉，但也不许当场翻号当信号用 —— 只登记名字与尺度
+    registered = sorted(
+        f"{row['candidate']} @ {row['horizon_days']}日"
+        for row in rows
+        if row["status"] == screen.STATUS_REVERSED and row.get("reversed_significant")
+    )
+    lines.append(
+        f"反向假设（登记、不采纳，等闸门③验证）：" + ("、".join(registered) if registered else "无")
+    )
     return "\n".join(lines)
 
 
@@ -135,16 +144,25 @@ def format_forward_window(
             f"| {item['approx_trading_days_needed']} |"
         )
 
-    awaiting = [verdict for verdict in verdicts if verdict.status == screen.STATUS_AWAIT]
-    if not awaiting:
+    watched = [
+        verdict
+        for verdict in verdicts
+        if verdict.status in {screen.STATUS_AWAIT, screen.STATUS_REVERSED}
+    ]
+    if not watched:
         lines += ["", "过闸门 ①② 的候选：无 —— 第 ③ 道闸门本轮无需复核。"]
         return "\n".join(lines)
 
     checks: list[str] = []
-    for verdict in awaiting:
+    for verdict in watched:
         for result in verdict.results:
             if not decidable.get(result.horizon):
                 continue
+            if (
+                verdict.status == screen.STATUS_REVERSED
+                and result.horizon not in verdict.reversed_significant
+            ):
+                continue  # 反向假设只登记那些真正显著的反向尺度
             check = screen.confirm_on_forward_window(
                 verdict.name,
                 candidates[verdict.name],
@@ -153,7 +171,9 @@ def format_forward_window(
                 development_t=result.t_stat,
             )
             checks.append(
-                f"- {verdict.name} @ {result.horizon} 日：{check['verdict']} "
+                f"- {verdict.name} @ {result.horizon} 日"
+                f"（{'反向假设' if verdict.status == screen.STATUS_REVERSED else '正向'}）："
+                f"{check['verdict']} "
                 f"（开发期 t={num(result.t_stat)}，前向 t={num(check['forward_t'])}）—— "
                 f"{check['reason']}"
             )

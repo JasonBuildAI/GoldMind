@@ -41,6 +41,20 @@ def _true_lead(benchmark: pd.Series) -> pd.Series:
     return pd.Series((benchmark.shift(-20) / benchmark - 1.0) * 10.0, index=CALENDAR).fillna(0.0)
 
 
+def _anti_lead(benchmark: pd.Series, weight: float = 1.0) -> pd.Series:
+    """反向的完美前瞻信号：能预感「要跌」，方向与 ``_true_lead`` 相反。
+
+    ``weight`` 调的是**信噪比**，不是幅值 —— 滚动 z 会把幅值除掉，所以只有把噪声
+    混进去才能真正减弱关联。
+    """
+    rng = np.random.default_rng(11)
+    anti = -(benchmark.shift(-20) / benchmark - 1.0)
+    clean = (anti / anti.std()).fillna(0.0).to_numpy()
+    return pd.Series(
+        clean * weight + rng.normal(0.0, 1.0, len(CALENDAR)), index=CALENDAR
+    ).fillna(0.0)
+
+
 @pytest.mark.unit
 def test_a_pure_trend_is_not_a_signal():
     benchmark = _benchmark()
@@ -83,6 +97,43 @@ def test_a_real_lead_passes_gates_but_still_cannot_be_adopted():
     # 本模块没有采纳权：第三条闸门要等未来数据，所以 adopted 恒为 False
     assert verdict.adopted is False
     assert "前向" in verdict.reason or "本轮不得入选" in verdict.reason
+
+
+@pytest.mark.unit
+def test_a_reversed_signal_becomes_a_registered_hypothesis_not_a_reject():
+    """能稳定预感「要跌」的因子，是 26 年里唯一反复出现的信息 —— 不能一拒了之。
+
+    闸门按事先承诺的方向（``greater``）检验，所以反向的 t 再大也**不可能**当场入选；
+    但把它混进 255 行 reject 里丢掉，等于把唯一有待验证价值的发现扔了。
+    这里要的是：单独一个状态、单独一句理由，并且明写「不许当场翻号」。
+    """
+    benchmark = _benchmark()
+
+    verdict = screen.screen_candidate("反向", _anti_lead(benchmark, weight=0.3), benchmark, tests_in_round=15)
+
+    assert verdict.status == screen.STATUS_REVERSED
+    assert verdict.sign_consistent is True
+    assert verdict.passed_significance == ()  # 正向那道门一个格子都没过，翻号不翻号与此无关
+    assert verdict.reversed_significant, "反向显著格子没有被登记"
+    assert verdict.adopted is False  # 登记假设不等于采纳：本模块始终没有采纳权
+    assert "翻号" in verdict.reason and "前向" in verdict.reason
+
+
+@pytest.mark.unit
+def test_a_weak_reversal_is_still_just_a_reject():
+    """反向登记用的是同一条效应量下限：|t| 不够就是噪声，不许靠「反正有方向」捞一把。
+
+    变异验证：把 reversed 判定里的 ``MIN_T_TO_PASS`` 换成 0，本测试红（t 全为负、
+    双侧 p 也够小，会被误登记成假设）。
+    """
+    benchmark = _benchmark()
+
+    verdict = screen.screen_candidate(
+        "弱反向", _anti_lead(benchmark, weight=0.03), benchmark, tests_in_round=15
+    )
+
+    assert verdict.status == screen.STATUS_REJECT
+    assert verdict.reversed_significant == ()
 
 
 @pytest.mark.unit
