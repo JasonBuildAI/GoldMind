@@ -51,7 +51,7 @@ GoldMind/
 │   ├── ARCHITECTURE.md    this file
 │   └── API.md             API specification
 ├── app/                   frontend (light research brief; visual and copy rules in docs/20-前端设计规范.md)
-│   ├── src/sections/      six sections: market / bullish vs bearish / institutional views / investment strategy / quant prediction / conclusion
+│   ├── src/sections/      seven sections: market / bullish vs bearish / institutional views / messages / investment strategy / quant prediction / conclusion
 │   ├── src/layout/        header (wordmark, anchor navigation, data sources) and footer
 │   ├── src/components/    in-section primitives (Section / StateBlock / tables / quotes ...)
 │   ├── src/styles/        design tokens and base typography
