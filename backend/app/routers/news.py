@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.utils.refresh_auth import require_refresh_token
 from app.services import news_events
 from app.services.news_service import NewsService
 from app.services.news_digest import NewsDigestService, build_digest_payload
@@ -75,7 +76,11 @@ async def get_news_digest(db: Session = Depends(get_db)):
     return build_digest_payload(db)
 
 
-@router.post("/news/digest/refresh", response_model=DigestRefreshResponse)
+@router.post(
+    "/news/digest/refresh",
+    response_model=DigestRefreshResponse,
+    dependencies=[Depends(require_refresh_token)],
+)
 async def refresh_news_digest(db: Session = Depends(get_db)):
     """立即抓取一轮全部来源并落库，返回本次抓取报告。
 

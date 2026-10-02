@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.utils.refresh_auth import require_refresh_token
 from app.schemas.analysis import FactorResponse, InstitutionResponse
 from app.schemas.analysis_ai import (
     BearishFactorsAIResponse,
@@ -177,7 +178,7 @@ async def get_bullish_factors_analysis(
     return result
 
 
-@router.post("/bullish-factors-ai/refresh")
+@router.post("/bullish-factors-ai/refresh", dependencies=[Depends(require_refresh_token)])
 async def refresh_bullish_factors(db: Session = Depends(get_db)):
     """
     手动刷新看涨因子分析
@@ -232,7 +233,7 @@ async def get_bearish_factors_analysis(
     return result
 
 
-@router.post("/bearish-factors-ai/refresh")
+@router.post("/bearish-factors-ai/refresh", dependencies=[Depends(require_refresh_token)])
 async def refresh_bearish_factors(db: Session = Depends(get_db)):
     """
     手动刷新看空因子分析
@@ -276,7 +277,7 @@ async def get_institution_predictions_analysis(
     return result
 
 
-@router.post("/institution-predictions-ai/refresh")
+@router.post("/institution-predictions-ai/refresh", dependencies=[Depends(require_refresh_token)])
 async def refresh_institution_predictions(db: Session = Depends(get_db)):
     """
     手动刷新机构预测分析
@@ -354,7 +355,7 @@ async def get_investment_advice_analysis(
     return result
 
 
-@router.post("/investment-advice-ai/refresh")
+@router.post("/investment-advice-ai/refresh", dependencies=[Depends(require_refresh_token)])
 async def refresh_investment_advice_analysis(db: Session = Depends(get_db)):
     """
     手动刷新投资建议分析
@@ -466,7 +467,7 @@ async def get_market_summary_analysis(
     return result
 
 
-@router.post("/market-summary-ai/refresh")
+@router.post("/market-summary-ai/refresh", dependencies=[Depends(require_refresh_token)])
 async def refresh_market_summary_analysis(db: Session = Depends(get_db)):
     """
     手动刷新黄金市场综合分析

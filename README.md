@@ -694,6 +694,11 @@ LLM_MODEL=deepseek-chat
 > 想确认自己的环境是否干净，跑 `python scripts/verify_setup.py`（只读、不连库、不出网）。
 > 其它可选配置（定时任务、限流、量化回填年数、联网搜索开关）都在
 > `backend/.env.example` 里逐项注释，**默认值即可直接使用**。
+>
+> 公开部署建议设 `REFRESH_TOKEN=<一段随机串>`：七个 `POST .../refresh` 接口此后
+> 必须携带 `X-Refresh-Token` 请求头才执行（缺失/不匹配返回 401，且在任何副作用之前
+> 拒绝）；不设则保持旧行为。开启后调用方（如 `curl`、部署脚本）要自行带上该头，
+> 详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 第九节。
 
 #### 4. 初始化数据库（SQLite，零配置）
 

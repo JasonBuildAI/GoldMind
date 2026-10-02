@@ -771,6 +771,12 @@ Common providers (pick one; the endpoint must speak the OpenAI protocol):
 > environment, run `python scripts/verify_setup.py` (read-only, no DB, no network).
 > Every other optional setting (scheduler, rate limits, quant backfill years, web-search switch)
 > is commented in `backend/.env.example`; **the defaults just work**.
+>
+> For a public deployment, set `REFRESH_TOKEN=<random string>`: the seven
+> `POST .../refresh` routes then require the `X-Refresh-Token` header (missing or wrong
+> returns 401 before any side effect runs). Unset keeps the old open behaviour. Callers
+> (curl, deploy scripts, the page) must send the header once it is enabled — see
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 9.
 
 #### 4. Initialise the database (SQLite, zero config)
 

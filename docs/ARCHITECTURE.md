@@ -325,8 +325,11 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
   - 同一 URL 的在飞 GET 合并成一个请求（StrictMode 双挂载、轮询与手动刷新撞车不再
     翻倍请求量）；看板轮询 30 秒一档、`document.hidden` 时暂停、恢复立即补一次。
 
-> 本项目**没有鉴权**。若要公开部署，请在反向代理层加访问控制，
-> 否则任何人都能触发会消耗 LLM 额度的 `/refresh` 接口。
+> 本项目**没有通用鉴权**，只有一个可选的刷新门（2.0.2 第 20 条）：设
+> `REFRESH_TOKEN` 后，七个 `POST .../refresh` 必须携带 `X-Refresh-Token` 请求头
+> （实现 `app/utils/refresh_auth.py`，`secrets.compare_digest` 比较，缺/错一律
+> 401 且在副作用之前拒绝）；不设则保持旧行为。其余接口仍应靠反向代理层加访问
+> 控制 —— 这个门只保护「会花钱 / 会抓外网」的刷新入口。
 
 ---
 

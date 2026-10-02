@@ -11,6 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.utils.refresh_auth import require_refresh_token
 from app.schemas.quant import (
     AccuracyResponse,
     FactorDashboardResponse,
@@ -77,7 +78,11 @@ async def get_quant_research(db: Session = Depends(get_db)):
     return await run_in_threadpool(service.research_report, db)
 
 
-@router.post("/quant/refresh", response_model=RefreshResponse)
+@router.post(
+    "/quant/refresh",
+    response_model=RefreshResponse,
+    dependencies=[Depends(require_refresh_token)],
+)
 async def refresh_quant(db: Session = Depends(get_db)):
     """立即抓取因子、重算预测并追加一次回测（耗时数十秒，已按付费档限流）。"""
     return await run_in_threadpool(service.full_refresh, db)
