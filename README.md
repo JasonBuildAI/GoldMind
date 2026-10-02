@@ -1147,7 +1147,7 @@ LLM 调用**：彼此不通信、不共享状态，仅通过缓存与数据库�
 | RAG / 向量检索 | 没有向量库、没有 embedding、没有检索步骤。历史价格与新闻是直接拼进 prompt 的上下文 |
 | ReAct 推理循环 | 未实现，没有 Thought / Action / Observation 循环 |
 | 实时联网搜索 | 默认关闭（`LLM_SEARCH_ENABLED=false`）。它用的是 MiMo 插件式 `web_search`，不是通用 OpenAI 能力；端点未开通时返回 `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`，此时回退到 RSS 新闻窗口 |
-| 情感分析 | `sentiment` 字段恒为 `NEUTRAL`，只为接口形状稳定，页面不展示情感结论 |
+| 情感分析 | 不做情感分析：2.0.2 起 `/news` 响应里的死字段与 `/news/sentiment/summary` 端点已移除（DB 列留存历史数据、过滤参数保留），页面不展示情感结论 |
 | Redis / 消息总线 / WebSocket / K8s / WAF / 认证中间件 | 都没有。缓存是内存 + JSON 文件两级 |
 | 交易执行 | 不接券商、不下单、不托管资金 |
 | 量化预测有统计优势 | **前向窗口尚不可判**（1 日 1/20 注，其余尺度 0/20）。历史留出期方向与「永远看多」逐日一致（+0.0pp）、Brier 技能分为负；页面与研究页如实展示，不替模型吹牛 |

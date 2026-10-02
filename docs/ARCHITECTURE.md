@@ -524,7 +524,8 @@ URL 去重合并（消息板块优先），进入看涨/看跌因子、机构观
 Redis、消息总线、WebSocket 推送、K8s / Istio、WAF、CSRF Token、
 认证/鉴权中间件、日志追踪中间件、RAG（向量库 / embedding / 检索）、
 ReAct 推理循环、多 Agent 协作、TF-IDF / NER、
-新闻情感分析（`sentiment` 字段恒为 `NEUTRAL`，只为接口形状稳定）。
+新闻情感分析（2.0.2 起 `/news` 响应字段与 `/news/sentiment/summary` 端点已移除，
+`gold_news.sentiment` 列留存历史数据，过滤参数继续可用、大小写不敏感）。
 
 `app/agents/` 包（`BaseAgent` / `MarketAnalyzerAgent` / `NewsAnalyzerAgent`）
 从未被任何地方实例化，已删除。

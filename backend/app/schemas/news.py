@@ -18,7 +18,6 @@ class NewsResponse(BaseModel):
     source: Optional[str] = None
     url: Optional[str] = None
     published_at: Optional[datetime] = None
-    sentiment: SentimentEnum
     keywords: Optional[str] = None
     created_at: datetime
     # 确定性事件标注（见 app/services/news_events.py）：id + 中文标签。

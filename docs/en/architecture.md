@@ -553,8 +553,9 @@ The following appeared in earlier documents but is not in the code:
 
 Redis, message bus, WebSocket push, K8s / Istio, WAF, CSRF token, authentication/authorization
 middleware, log tracing middleware, RAG (vector store / embedding / retrieval), ReAct reasoning
-loops, multi-agent collaboration, TF-IDF / NER, news sentiment analysis (the `sentiment` field is
-always `NEUTRAL`, only to keep the API shape stable).
+loops, multi-agent collaboration, TF-IDF / NER, news sentiment analysis (2.0.2 removed the
+`sentiment` response field and the `/news/sentiment/summary` endpoint; the `gold_news.sentiment`
+column stays for history and its filter keeps working).
 
 The `app/agents/` package (`BaseAgent` / `MarketAnalyzerAgent` / `NewsAnalyzerAgent`) was never
 instantiated anywhere and has been deleted.

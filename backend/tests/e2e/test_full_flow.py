@@ -245,8 +245,10 @@ def test_full_user_journey(client, seed_gold_prices, seed_news, smart_llm):
     assert len(news) == 3
     assert news[0]["title"].startswith("测试新闻")
 
-    sentiment = client.get("/api/gold/news/sentiment/summary").json()
-    assert sentiment["neutral"] == 3
+    # 2.0.2 破坏性变更：死字段与情感汇总端点都已移除 —— 响应里不再有 sentiment，
+    # 端点现在是 404（列本身留存历史数据，不做删列迁移）。
+    assert "sentiment" not in news[0]
+    assert client.get("/api/gold/news/sentiment/summary").status_code == 404
 
     # --- 4. 分析接口：先看「无缓存」行为，再触发真实分析 ---
     # 4a. 缓存为空时 GET 返回内置默认因子，且不调用 LLM

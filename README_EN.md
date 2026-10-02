@@ -1252,7 +1252,7 @@ capabilities **do not exist**; please do not read the project as if they did:
 | RAG / vector search | no vector store, no embeddings, no retrieval step. Prices and news are pasted into the prompt context |
 | ReAct reasoning loop | not implemented; no Thought / Action / Observation cycle |
 | Live web search | off by default (`LLM_SEARCH_ENABLED=false`). It uses MiMo's plugin-style `web_search`, not a generic OpenAI feature; with the plugin disabled the endpoint returns `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`, and the service falls back to the RSS news window |
-| Sentiment analysis | `sentiment` is always `NEUTRAL`, kept only for response-shape stability; the page shows no sentiment conclusions |
+| Sentiment analysis | none: 2.0.2 removed the dead `sentiment` field from `/news` responses and dropped the `/news/sentiment/summary` endpoint (the DB column and its filter stay for history); the page shows no sentiment conclusions |
 | Redis / message bus / WebSocket / K8s / WAF / auth middleware | none. Caching is in-memory + JSON files |
 | Trade execution | no broker, no orders, no custody |
 | A quant forecast with a statistical edge | **the forward window is not decidable yet** (1/20 bets at 1d, 0/20 elsewhere). In the historical holdout the direction matched "always long" day by day (+0.0pp) with a negative Brier skill score; the page and the research page report this as-is instead of overselling the model |

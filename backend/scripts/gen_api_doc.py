@@ -98,7 +98,9 @@ SUMMARY_EN: dict[str, str] = {
     "GET /api/gold/market-summary-ai": "AI-generated gold market summary.",
     "POST /api/gold/market-summary-ai/refresh": "Refresh the market summary.",
     "GET /api/gold/news": (
-        "News list, filterable by source and sentiment (no pagination; first `limit` rows only)."
+        "News list, filterable by source and the retained historical sentiment column "
+        "(no pagination; first `limit` rows only). The response itself no longer carries the "
+        "dead `sentiment` field (2.0.2)."
     ),
     "GET /api/gold/news/digest": (
         "Message board: high-authority gold headlines ranked by importance and confidence, "
@@ -108,11 +110,6 @@ SUMMARY_EN: dict[str, str] = {
     "POST /api/gold/news/digest/refresh": (
         "Crawl every configured source now and store new items, returning the fetch report "
         "(sources ok/failed, new items, skipped entries). No LLM calls."
-    ),
-    "GET /api/gold/news/sentiment/summary": (
-        "News sentiment distribution. Note: rows are always stored as NEUTRAL — this project "
-        "does no sentiment analysis, so this is always all-neutral; the field exists only to "
-        "keep the response shape stable."
     ),
     "GET /api/gold/news/{news_id}": "Single news item.",
     "GET /api/gold/predictions": (

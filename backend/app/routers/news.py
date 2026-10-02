@@ -7,7 +7,7 @@ from app.database import get_db
 from app.services import news_events
 from app.services.news_service import NewsService
 from app.services.news_digest import NewsDigestService, build_digest_payload
-from app.schemas.news import NewsResponse, SentimentEnum
+from app.schemas.news import NewsResponse
 from app.schemas.news_digest import DigestRefreshResponse, DigestResponse
 
 router = APIRouter()
@@ -17,13 +17,21 @@ router = APIRouter()
 async def get_news(
     limit: int = Query(default=20, ge=1, le=100),
     source: Optional[str] = None,
-    # 用枚举而不是裸 str：取值与 schema / 响应体保持一致（小写），
-    # 传了不认识的值 FastAPI 直接 422，而不是静默返回空列表。
-    sentiment: Optional[SentimentEnum] = None,
+    # 过滤库里的历史情感列：2.0.2 起响应不再带该字段（死字段已移除），
+    # 但列留存历史数据，过滤参数继续可用。取值统一按 enum_values.resolve_enum
+    # 解析（大小写不敏感）；认不出的取值 422，而不是静默返回空列表。
+    sentiment: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """获取新闻列表，可按来源与情感过滤（无分页，只取前 limit 条）。"""
+    """获取新闻列表，可按来源与（历史）情感列过滤（无分页，只取前 limit 条）。"""
     service = NewsService(db)
+    if sentiment:
+        member = NewsService.as_sentiment(sentiment)
+        if member is None:
+            # 旧实现把参数声明成 schema 枚举，FastAPI 按值（小写）校验，
+            # 于是 `?sentiment=POSITIVE` 直接 422 —— 大小写不敏感从未生效。
+            raise HTTPException(status_code=422, detail=f"无法识别的 sentiment：{sentiment}")
+        sentiment = member
     news = service.get_news(limit, source, sentiment)
     
     return [_news_response(n) for n in news]
@@ -43,7 +51,6 @@ def _news_response(n) -> NewsResponse:
         source=n.source,
         url=n.url,
         published_at=n.published_at,
-        sentiment=n.sentiment,
         keywords=n.keywords,
         created_at=n.created_at,
         event_tags=tags,
@@ -97,15 +104,5 @@ async def get_news_detail(news_id: int, db: Session = Depends(get_db)):
         "source": news.source,
         "url": news.url,
         "published_at": news.published_at,
-        "sentiment": news.sentiment,
         "keywords": news.keywords
     }
-
-
-@router.get("/news/sentiment/summary")
-async def get_sentiment_summary(db: Session = Depends(get_db)):
-    """新闻情感分布统计。注：入库时 sentiment 一律为 NEUTRAL，本项目没有做情感分析，这里恒为全中性，保留字段只为接口形状稳定。"""
-    service = NewsService(db)
-    summary = service.get_sentiment_summary()
-    
-    return summary or {"positive": 0, "neutral": 0, "negative": 0}

@@ -226,33 +226,6 @@ def test_get_recent_news_filters_by_hours(db_session):
     assert [n.title for n in recent] == ["刚发布"]
 
 
-@pytest.mark.unit
-def test_get_sentiment_summary_handles_null_sentiment(db_session):
-    """sentiment 为 NULL 的历史数据不能让统计抛异常。"""
-    from sqlalchemy import text
-
-    db_session.add_all(
-        [
-            GoldNews(title="正面", sentiment=SentimentType.POSITIVE),
-            GoldNews(title="中性", sentiment=SentimentType.NEUTRAL),
-        ]
-    )
-    db_session.commit()
-
-    # GoldNews.sentiment 有 Python 侧 default，ORM 无法插入 NULL（default 在值为
-    # None 时同样生效），所以用原生 SQL 造这条历史脏数据。
-    db_session.execute(
-        text("INSERT INTO gold_news (title, sentiment) VALUES ('无标注', NULL)")
-    )
-    db_session.commit()
-
-    summary = NewsService(db_session).get_sentiment_summary()
-
-    assert summary["positive"] == 1
-    assert summary["neutral"] == 1
-    assert summary["negative"] == 0
-
-
 # --------------------------------------------------------------------------- #
 # 源配置
 # --------------------------------------------------------------------------- #

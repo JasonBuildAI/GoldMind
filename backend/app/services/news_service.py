@@ -5,7 +5,6 @@ from html import unescape
 from typing import Dict, List, Optional
 
 import feedparser
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -217,12 +216,14 @@ class NewsService:
         """把接口收到的情感值解析成枚举成员。
 
         列类型是 `Enum(SentimentType)`，SQLAlchemy 存的是**枚举名**
-        （POSITIVE / NEGATIVE / NEUTRAL），而接口对外一律用小写 ——
-        响应体里就是 `"sentiment": "positive"`。
+        （POSITIVE / NEGATIVE / NEUTRAL），而接口对外一律用小写。
 
         原实现直接把收到的字符串丢给过滤条件，于是
         `GET /news?sentiment=positive` 一条都匹配不到，
         只有 `?sentiment=POSITIVE` 才有结果 —— **接口自己的输出不能当作输入用**。
+
+        2.0.2 起响应体不再带 `sentiment` 死字段、汇总端点已删除，
+        但列与过滤参数保留（历史数据仍在），大小写不敏感的契约不变。
 
         解析逻辑统一在 `app/utils/enum_values.py`（因子类型有同样的毛病）。
         """
@@ -265,19 +266,6 @@ class NewsService:
             .order_by(GoldNews.published_at.desc())
             .all()
         )
-
-    def get_sentiment_summary(self) -> Dict[str, int]:
-        """情感分布统计。sentiment 为 NULL 的历史数据不会让统计崩掉。"""
-        stats = self.db.query(
-            GoldNews.sentiment, func.count(GoldNews.id)
-        ).group_by(GoldNews.sentiment).all()
-
-        summary = {"positive": 0, "neutral": 0, "negative": 0}
-        for sentiment, count in stats:
-            key = sentiment.value if isinstance(sentiment, SentimentType) else str(sentiment)
-            if key in summary:
-                summary[key] = count
-        return summary
 
     # ------------------------------------------------------------------ #
     # 抓取

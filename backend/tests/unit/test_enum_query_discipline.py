@@ -172,7 +172,12 @@ def test_factor_type_filter_accepts_both_cases(client, db_session):
 
 @pytest.mark.integration
 def test_news_sentiment_filter_accepts_both_cases(client, db_session):
-    """新闻情感过滤同样不该受大小写影响。"""
+    """新闻情感过滤同样不该受大小写影响。
+
+    2.0.2 修掉了这条测试的假绿：旧断言只数响应体的键，而 422 的
+    `{"detail": [...]}` 恰好也是 1 个键 —— 大小写不敏感**从未被真正验证过**。
+    现在先断言 200，再数列表长度。
+    """
     from app.models.news import GoldNews
 
     db_session.add(
@@ -182,5 +187,6 @@ def test_news_sentiment_filter_accepts_both_cases(client, db_session):
     db_session.commit()
 
     for value in ("neutral", "NEUTRAL", "Neutral"):
-        body = client.get(f"/api/gold/news?sentiment={value}").json()
-        assert len(body) == 1, f"sentiment={value} 没匹配到"
+        response = client.get(f"/api/gold/news?sentiment={value}")
+        assert response.status_code == 200, f"sentiment={value} 被拒了：{response.text}"
+        assert len(response.json()) == 1, f"sentiment={value} 没匹配到"

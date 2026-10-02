@@ -7,6 +7,10 @@
 - `/prices/daily` 传非法日期会抛 ValueError 冒到中间件，客户端拿到 500（应当是 422）
 - `/news?sentiment=positive` 一条都匹配不到：列类型 `Enum(SentimentType)` 在库里存的是
   枚举名（POSITIVE），而接口对外用小写。**接口自己的输出不能当作输入用**
+
+2.0.2 起 `/news` 响应不再携带 `sentiment` 死字段、情感汇总端点删除
+（列与过滤参数保留）；本文件的用例守住这两件事，以及过滤参数仍按历史列、
+大小写不敏感地工作。
 """
 from __future__ import annotations
 
@@ -161,23 +165,19 @@ def test_news_rejects_out_of_range_limit(seeded, value):
 
 
 @pytest.mark.integration
-def test_news_sentiment_filter_matches_the_value_it_returns(seeded):
-    """**核心不变量**：接口返回的情感值必须能直接当过滤条件用。
+def test_news_response_drops_the_dead_sentiment_field(seeded):
+    """2.0.2：响应不再带 `sentiment` 死字段（列与过滤参数保留）。
 
-    回归：`/news` 返回 `"sentiment": "positive"`，但
-    `?sentiment=positive` 一条都匹配不到（库里存的是枚举名 POSITIVE），
-    只有 `?sentiment=POSITIVE` 才有结果 —— 接口自己的输出不能当输入用。
+    旧的「返回值必须能当过滤条件用」不变量随字段移除作废；取代它的是：
+    响应里找不到该字段，而过滤参数仍按库里留存的历史值、大小写不敏感地工作。
     """
     first = seeded.get("/api/gold/news?limit=1").json()[0]
-    returned = first["sentiment"]
-    assert returned, "响应里应当带 sentiment"
+    assert "sentiment" not in first, "死字段又回来了"
 
-    filtered = seeded.get(f"/api/gold/news?sentiment={returned}")
-
-    assert filtered.status_code == 200, f"把自己返回的 {returned!r} 当过滤条件竟然失败"
-    assert len(filtered.json()) > 0, (
-        f"接口返回 sentiment={returned!r}，用它过滤却得到空结果"
-    )
+    for value in ("positive", "POSITIVE", "Positive"):
+        filtered = seeded.get(f"/api/gold/news?sentiment={value}")
+        assert filtered.status_code == 200
+        assert len(filtered.json()) == 2, f"sentiment={value} 没匹配到历史值"
 
 
 @pytest.mark.integration
@@ -187,8 +187,9 @@ def test_news_sentiment_filter_counts_are_right(seeded):
 
     assert len(positives) == 2
     assert len(negatives) == 4
-    assert all(n["sentiment"] == "positive" for n in positives)
-    assert all(n["sentiment"] == "negative" for n in negatives)
+    # 响应不再带情感字段：用标题集合确认命中的确实是那几条历史行。
+    assert {n["title"] for n in positives} == {"新闻0", "新闻3"}
+    assert {n["title"] for n in negatives} == {"新闻1", "新闻2", "新闻4", "新闻5"}
 
 
 @pytest.mark.integration
