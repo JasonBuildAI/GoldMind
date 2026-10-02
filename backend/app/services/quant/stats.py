@@ -253,6 +253,21 @@ def reliability_bins(
     return rows
 
 
+def nonoverlapping(values: Sequence[float], stride: int) -> np.ndarray:
+    """从**末尾**往回每 ``stride`` 个取一个，得到近似不共享信息的样本。
+
+    h 日前瞻收益每天取一个，相邻样本共享 h−1 天的信息；``stride = h`` 时取出来的
+    窗口互不重叠。保留最后一个观测（最近的表现最要紧），所以锚点在尾部而不是头部。
+
+    这不是「替代」重叠样本 —— 重叠样本才是模型每天真实面对的那串预测；
+    它回答的是另一个问题：「把这些年当成 k 次独立下注，成绩还有多可信」。
+    """
+    array = _clean(values)
+    if stride <= 1 or len(array) == 0:
+        return array
+    return array[::-stride][::-1]
+
+
 def effective_sample_size(count: int, horizon: int) -> float:
     """重叠样本的保守折算：n/h（h ≤ 1 时就是 n）。"""
     if horizon <= 1:
@@ -268,5 +283,6 @@ __all__ = [
     "effective_sample_size",
     "hac_t_statistic",
     "newey_west_se",
+    "nonoverlapping",
     "reliability_bins",
 ]

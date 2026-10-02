@@ -142,3 +142,28 @@ def test_one_sided_alternative_halves_the_tail():
     assert greater["p_value"] == pytest.approx(two_sided["p_value"] / 2.0, rel=0.02)
     with pytest.raises(ValueError):
         stats.hac_t_statistic(values, alternative="sideways")
+
+
+def test_nonoverlapping_keeps_the_latest_point_and_drops_the_overlap():
+    """stride = h 时相邻样本不再共享信息，且锚点在尾部（最近的下注必须留下）。
+
+    11 个样本 / stride 3：尾锚取 [1,4,7,10]，头锚取 [0,3,6,9] —— 用 len 不是 stride
+    整数倍的长度，才能把「锚在头部」这种变异打红（10 个样本时两种锚法结果相同）。
+    """
+    values = list(range(11))
+
+    picked = stats.nonoverlapping(values, 3)
+
+    assert list(picked) == [1, 4, 7, 10]
+    assert stats.nonoverlapping(values, 1).tolist() == values
+    assert list(stats.nonoverlapping([1.0, np.nan, 2.0, 3.0], 2)) == [1.0, 3.0]
+    # 空输入不炸
+    assert list(stats.nonoverlapping([], 5)) == []
+
+
+def test_nonoverlapping_shrinks_a_long_horizon_sample_to_the_honest_size():
+    """250 日尺度：506 个重叠样本只等于 2 次独立下注 —— 非重叠口径必须这么小。"""
+    values = np.arange(506, dtype="float64")
+
+    assert len(stats.nonoverlapping(values, 250)) == 3
+    assert stats.effective_sample_size(506, 250) == pytest.approx(2.024)

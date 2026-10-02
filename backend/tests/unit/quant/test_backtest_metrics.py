@@ -199,3 +199,28 @@ def test_backtest_coverage_uses_the_calibrated_bounds(make_panel):
 
     assert evaluation.metrics["interval_coverage_80"] == pytest.approx(calibrated)
     assert calibrated != pytest.approx(symmetric), "两者必须不同，否则守卫对「换回正态区间」的变异不敏感"
+
+
+def test_long_horizon_reports_how_many_independent_bets_it_really_is(make_panel):
+    """非重叠口径：长尺度独立样本不足时只报样本数、不报成绩。
+
+    这正是 250 日「覆盖率 24.1% 未达标」那条结论的问题所在：506 个重叠样本
+    折算下来是 2 次独立下注，任何校准方案都无法在这个尺度上被验证。
+    变异验证：把 stride 写成 1（永远不抽稀）→ 第二条断言红；
+    把门槛从 30 改成 1 → 第一条断言红（会给出一个由 2 个观测算出的「成绩」）。
+    """
+    calendar = pd.date_range("2008-01-01", "2026-09-30", freq="B")
+    factors, close = make_panel(calendar)
+
+    long_run = backtest.evaluate_horizon(factors, close, horizon=250)
+    short_run = backtest.evaluate_horizon(factors, close, horizon=1)
+
+    metrics = long_run.metrics
+    assert metrics["nonoverlapping_stride"] == 250
+    assert metrics["nonoverlapping_samples"] < backtest.MIN_NONOVERLAPPING_SAMPLES
+    assert metrics["accuracy_nonoverlapping"] is None
+    assert metrics["interval_coverage_80_nonoverlapping"] is None
+    assert short_run.metrics["nonoverlapping_samples"] == short_run.sample_size
+    assert short_run.metrics["accuracy_nonoverlapping"] == pytest.approx(
+        short_run.accuracy, rel=1e-12
+    )

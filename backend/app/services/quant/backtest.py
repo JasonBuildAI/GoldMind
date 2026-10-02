@@ -31,6 +31,9 @@ from app.services.quant.definitions import FACTORS, HOLDOUT_START, HORIZONS, fac
 MIN_EVALUATION_SAMPLES = 30
 # 逐因子命中率 / IC 的最低样本数
 MIN_FACTOR_SAMPLES = 60
+# 非重叠口径的最低独立下注次数：低于它就只报样本数、不报成绩
+# （11 次的命中率 ±15pp，当成结论就是把噪声读成能力）
+MIN_NONOVERLAPPING_SAMPLES = 30
 # 动量基准的回看长度（交易日）
 MOMENTUM_LOOKBACK = 60
 # 80% 名义区间的双侧分位点：区间 = 期望收益 ± z·不确定度（口径定义在 engine 一处）
@@ -280,6 +283,25 @@ def _evaluate(
             coverage_indicator, block=max(1, horizon), n=BOOTSTRAP_DRAWS
         )
 
+    # 非重叠口径（stride = h）：重叠样本回答「模型每天面对的那串预测成绩如何」，
+    # 这一列回答「把这些年当成互不相干的 k 次下注，成绩还剩多少可信度」。
+    # 长尺度上两者差别巨大（250 日留出期 506 个重叠样本 = 2 次独立下注），
+    # 所以这里宁可返回 None 并如实给出样本数，也不把 2 个观测的覆盖率当结论。
+    nonoverlap_correct = stats.nonoverlapping(correct.astype("float64"), horizon)
+    nonoverlap_coverage = (
+        stats.nonoverlapping(coverage_indicator, horizon) if coverage_indicator is not None else None
+    )
+    accuracy_nonoverlapping = (
+        float(nonoverlap_correct.mean())
+        if len(nonoverlap_correct) >= MIN_NONOVERLAPPING_SAMPLES
+        else None
+    )
+    coverage_nonoverlapping = (
+        float(nonoverlap_coverage.mean())
+        if nonoverlap_coverage is not None and len(nonoverlap_coverage) >= MIN_NONOVERLAPPING_SAMPLES
+        else None
+    )
+
     metrics = {
         "coin_flip_accuracy": 0.5,
         "horizon_days": horizon,
@@ -289,6 +311,11 @@ def _evaluate(
         "p_value_vs_up": vs_up["p_value"],
         "p_value_vs_momentum": p_value_vs_momentum,
         "effective_sample_size": stats.effective_sample_size(samples, horizon),
+        "nonoverlapping_stride": horizon,
+        "nonoverlapping_samples": int(len(nonoverlap_correct)),
+        "accuracy_nonoverlapping": accuracy_nonoverlapping,
+        "interval_coverage_80_nonoverlapping": coverage_nonoverlapping,
+        "nonoverlapping_min_samples": MIN_NONOVERLAPPING_SAMPLES,
         "hac_lags": lags,
         "brier_skill_score": brier_skill,
         "brier_skill_p_value": brier_skill_p_value,
