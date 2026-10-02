@@ -292,6 +292,35 @@ def test_alignment_only_fills_forward_but_not_past_freshness(calendar):
     assert unrestricted.iloc[200] == 1.0
 
 
+def test_observation_on_a_non_trading_day_is_not_dropped(calendar):
+    """日期不在金价日历里的观测必须落到**下一个**交易日，不能被静默丢掉。
+
+    真实 26 年面板上有 2414 条观测的日期不在 COMEX 日历内（周频 CFTC 按报告日
+    +4 BDay 推、月度储备按「月末 +8 天」推、BTC 有周末报价）。旧实现用
+    ``series.reindex(calendar)``：label 不匹配就整条消失，引擎只好继续用更老的一条，
+    而 ``factor_states`` 读的是**原始序列** —— 页面显示 2.43（09-07），引擎吃进去
+    2.42（更早那条），「展示 ≠ 计算」正是上一轮刚修好的那类分裂。
+
+    变异验证：把 ``align_series`` 改回 ``series.reindex(calendar)`` 本测试必红。
+    """
+    saturday = next(
+        day
+        for day in pd.date_range(calendar[0], calendar[-1], freq="D")
+        if day.dayofweek == 5
+    )
+    assert saturday not in calendar
+    series = pd.Series([9.0], index=[saturday])
+
+    aligned = engine.align_factors({"gold_close": series}, calendar)["gold_close"]
+
+    after = calendar[calendar > saturday][0]
+    assert aligned.loc[after] == 9.0, "非交易日观测被丢掉了，引擎用了更老的值"
+    # 只向前填充：观测之前的日子仍是空的，不许把它回填到过去
+    before = calendar[calendar < saturday]
+    assert before.size > 0
+    assert aligned.loc[before].isna().all()
+
+
 def test_stale_data_is_marked_and_excluded(panel, calendar):
     factors, close = panel
     # VIX 的更新周期是 7 天：把最后 60 天的数据删掉，它就该被判为陈旧

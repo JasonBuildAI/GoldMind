@@ -193,12 +193,21 @@ def align_series(
        「陈旧」必须同时意味着「不参与合成」：历史上 ``max_age_days`` 只进了
        ``factor_states`` 的展示分支，于是月频因子断更两个月后，页面写着「陈旧」、
        得分却继续按它最高档的权重贡献 —— 显示层与计算层说的是两件事。
+    3. **日期不在价格日历里的观测不许丢**。周频 CFTC 按「报告日 +4 BDay」推可用日、
+       月度储备按「月末 +8 天」推、BTC 有周末报价 —— 这些日期常常不是 COMEX 交易日。
+       先在「日历 ∪ 观测日」的并集上向前填充、再切回日历（等价于
+       ``merge_asof(direction="backward")``），否则 ``reindex(calendar)`` 会因为
+       label 不匹配把整条观测丢掉，引擎只好继续用更老的一条，而 ``factor_states``
+       读的是原始序列 —— 页面显示的那条与实际吃进去的那条不是同一个数。
     """
-    reindexed = series.reindex(calendar)
-    aligned = reindexed.ffill()
+    # 并集上落位 → 向前填充 → 切回日历；``union`` 已排序去重。
+    union = series.index.union(calendar)
+    raw = series.reindex(union)
+    aligned = raw.ffill().reindex(calendar)
     if max_age_days is None:
         return aligned
-    last_real = pd.Series(calendar, index=calendar).where(reindexed.notna()).ffill()
+    # 新鲜度看的是**真实观测**（未填充的那份），所以用并集上的 notna 定位最近一条
+    last_real = pd.Series(union, index=union).where(raw.notna()).ffill().reindex(calendar)
     age_days = (pd.Series(calendar, index=calendar) - last_real).dt.days
     return aligned.mask(age_days > max_age_days)
 
