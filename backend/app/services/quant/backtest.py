@@ -359,7 +359,7 @@ def _evaluate(
         "interval_nominal_80": INTERVAL_NOMINAL_80,
         "interval_coverage_80": interval_coverage,
         "regimes": regimes,
-        "per_factor": _per_factor_metrics(signals, forward, mask),
+        "per_factor": _per_factor_metrics(signals, forward, mask, horizon=horizon),
     }
 
     return HorizonEvaluation(
@@ -379,13 +379,21 @@ def _per_factor_metrics(
     signals: pd.DataFrame,
     forward: pd.Series,
     mask: pd.Series,
+    *,
+    horizon: int,
 ) -> dict:
-    """逐因子：单独命中率与 IC（Pearson + Spearman）。
+    """逐因子：单独命中率、IC，以及**带 HAC 标准误的对齐 t 值**。
 
     这是「权重是否失效」的唯一证据来源：某个因子长期命中率低于 0.5，
     说明它的方向先验与实际相反，页面照实展示，不藏。
+
+    为什么光有 IC 不够：h 日前瞻收益每天取一个，相邻样本共享 h−1 天的信息，
+    把 IC 除以朴素标准误会得到虚高的 t 值 —— 看起来「显著」的 0.03 其实可能是噪声。
+    `alignment` 是逐日 `signed_z × 前瞻收益` 的均值（信号与收益同向即为正），
+    其标准误用 Newey–West（滞后 = h−1），与概率、命中率那一套口径一致。
     """
     result = {}
+    lags = horizon - 1 if horizon > 1 else None
     for key in signals.columns:
         definition = factor_by_key.get(key)
         if definition is None:
@@ -403,10 +411,20 @@ def _per_factor_metrics(
                 "hit_rate": None,
                 "ic": None,
                 "rank_ic": None,
+                "alignment": None,
+                "alignment_t": None,
+                "alignment_p_value": None,
+                "alignment_naive_t": None,
+                "alignment_naive_p_value": None,
+                "hac_lags": lags,
             }
             continue
         direction = np.sign(column[usable])
         hit_rate = float((direction == np.sign(forward[usable])).mean())
+        product = (column[usable] * forward[usable]).to_numpy(dtype="float64")
+        alignment = stats.hac_t_statistic(product, lags=lags, alternative="greater")
+        # 同一个检验、滞后设 0 = 把重叠样本当 iid 看待：两者的差就是「虚高了多少」
+        naive = stats.hac_t_statistic(product, lags=0, alternative="greater")
         result[key] = {
             "name": definition.name,
             "category": definition.category,
@@ -416,6 +434,13 @@ def _per_factor_metrics(
             "hit_rate": hit_rate,
             "ic": _safe_corr(column[usable], forward[usable]),
             "rank_ic": _safe_corr(column[usable], forward[usable], method="spearman"),
+            "alignment": float(product.mean()),
+            "alignment_t": alignment["statistic"],
+            "alignment_p_value": alignment["p_value"],
+            # 朴素（iid）t 值一并给出：两者之差就是「重叠样本把显著性抬高了多少」
+            "alignment_naive_t": naive["statistic"],
+            "alignment_naive_p_value": naive["p_value"],
+            "hac_lags": lags,
         }
     return result
 

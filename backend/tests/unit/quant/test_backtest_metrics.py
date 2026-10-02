@@ -294,3 +294,36 @@ def test_a_market_that_never_called_down_reports_no_bets_not_a_perfect_score(mak
         assert metrics["up_share"] > 0.9, f"h={horizon}"
         # 幅度那一侧仍然有账可算：预测趋势优于预测「原地不动」
         assert 0.0 < metrics["magnitude_skill_vs_flat"] < 1.0, f"h={horizon}"
+
+def test_per_factor_alignment_uses_hac_not_the_naive_standard_error(make_panel):
+    """重叠前瞻样本会抬高逐因子 t 值：表里给的是 HAC 那一个，并露出被抬高了多久。
+
+    构造「完全预知」的因子：z 就等于 h 日前瞻收益本身。此时
+    `z × forward = forward²` 均值为正、且因相邻窗口共享 59 天信息而强自相关，
+    理论上 HAC 标准误必须大于 iid 标准误，于是 |t_HAC| < |t_naive|。
+    变异验证：把 `_per_factor_metrics` 里的 `lags=lags` 改成 `lags=0`，第二条断言必红；
+    把 `alternative` 从 greater 改成 two-sided，第三条断言必红（p 值翻倍）。
+    """
+    calendar = pd.date_range("2015-01-01", "2026-09-30", freq="B")
+    rng = np.random.default_rng(7)
+    daily = pd.Series(rng.normal(0.0002, 0.006, len(calendar)), index=calendar)
+    forward = daily.rolling(60).sum().shift(-60).dropna()
+    horizon = 60
+
+    perfect = backtest._per_factor_metrics(
+        pd.DataFrame({"vix": forward}, index=forward.index),
+        forward,
+        pd.Series(True, index=forward.index),
+        horizon=horizon,
+    )["vix"]
+    assert perfect["alignment"] > 0
+    assert perfect["alignment_t"] < perfect["alignment_naive_t"], "HAC 没有把重叠样本的虚高压下去"
+    assert perfect["alignment_p_value"] < 0.5 * perfect["alignment_naive_p_value"] + 1e-9
+
+    # 真实面板上的字段契约：滞后 = h−1，缺样本的因子给 None 而不是 0
+    evaluation = backtest.evaluate_horizon(*make_panel(calendar), horizon=horizon)
+    rows = evaluation.metrics["per_factor"]
+    for name, row in rows.items():
+        assert row["hac_lags"] == horizon - 1, name
+        if row["alignment"] is None:
+            assert row["alignment_t"] is None and row["alignment_naive_t"] is None, name

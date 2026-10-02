@@ -448,6 +448,11 @@ def _research_factors(evaluation: backtest.HorizonEvaluation) -> list[dict]:
                 "hit_rate": preregistered.finite(item.get("hit_rate")),
                 "ic": preregistered.finite(item.get("ic")),
                 "rank_ic": preregistered.finite(item.get("rank_ic")),
+                # 对齐幅度与它的显著性（HAC）；naive_t 一并给出，差值就是重叠样本的虚高量
+                "alignment": preregistered.finite(item.get("alignment")),
+                "alignment_t": preregistered.finite(item.get("alignment_t")),
+                "alignment_p_value": preregistered.finite(item.get("alignment_p_value")),
+                "alignment_naive_t": preregistered.finite(item.get("alignment_naive_t")),
             }
         )
     rows.sort(key=lambda row: row["weight"], reverse=True)
