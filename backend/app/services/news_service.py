@@ -1,5 +1,7 @@
 """新闻服务"""
+import re
 from datetime import datetime
+from html import unescape
 from typing import Dict, List, Optional
 
 import feedparser
@@ -30,6 +32,28 @@ DEFAULT_RSS_SOURCES = (
 # （正文固定为 "The request was rejected because it was considered high risk"），
 # 10 条实测可通过 —— 语料里的冲突类内容越多，越容易触发。
 NEWS_PROMPT_LIMIT = 10
+
+
+# 摘要进 prompt 的字符上限。
+#
+# 只给标题时，模型只能从一句话猜事件性质；补一段摘要能显著提高判断依据。
+# 但 prompt 体积必须克制（条数上限的由来见上），所以摘要清洗后截断。
+NEWS_PROMPT_SUMMARY_CHARS = 120
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def clean_summary_for_prompt(raw) -> str:
+    """把 RSS 摘要 / 正文清成一行纯文本：去 HTML、解实体、压空白、限长。"""
+    if raw is None:
+        return ""
+    text = _HTML_TAG_RE.sub(" ", str(raw))
+    text = unescape(text)
+    text = _WHITESPACE_RE.sub(" ", text).strip()
+    if len(text) > NEWS_PROMPT_SUMMARY_CHARS:
+        return text[:NEWS_PROMPT_SUMMARY_CHARS] + "…"
+    return text
 
 
 def to_local_naive(parsed) -> Optional[datetime]:
@@ -70,7 +94,10 @@ def format_news_for_prompt(news_list, limit: int = NEWS_PROMPT_LIMIT) -> str:
 
     时间缺失时依次回退 `created_at` → 「时间未知」，不猜。
 
-    接受 ORM 对象与 dict 两种形状（联网搜索拿到的是 dict）。
+    接受 ORM 对象与 dict 两种形状（联网搜索与消息板块拿到的是 dict）。
+
+    2026-10-02 起标题之外补一段截断摘要（`clean_summary_for_prompt`）：
+    只给标题时模型对事件性质的判断余地太大；摘要去 HTML、压空白、限长。
     """
     if not news_list:
         return "暂无新闻数据"
@@ -87,6 +114,11 @@ def format_news_for_prompt(news_list, limit: int = NEWS_PROMPT_LIMIT) -> str:
         published = field(item, "published_at") or field(item, "created_at")
         stamp = published.strftime("%Y-%m-%d %H:%M") if published else "时间未知"
         lines.append(f"- [{stamp}] [{source}] {title}")
+        summary = clean_summary_for_prompt(
+            field(item, "summary") or field(item, "content")
+        )
+        if summary:
+            lines.append(f"  摘要：{summary}")
 
     return "\n".join(lines) if lines else "暂无新闻数据"
 

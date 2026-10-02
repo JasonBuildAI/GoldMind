@@ -80,7 +80,7 @@ GoldMind/
 LLM call and do not communicate with each other:
 
 ```
-SQLite(gold_news, gold_prices)
+SQLite(gold_news, news_digest_items, gold_prices)
         │
         ▼
   assemble prompt ──► llm.invoke() ──► parse JSON ──► two-level cache ──► HTTP response
@@ -170,7 +170,7 @@ are **not committed** (`.gitignore` ignores them).
 | `gold_prices` | gold price OHLC, `date` unique |
 | `dollar_index` | dollar index, `date` unique |
 | `gold_news` | news; `published_at` is indexed |
-| `news_digest_items` | high-authority message-board items (fully isolated from `gold_news`); `url` is `TEXT` (Google News links exceed 500 chars, and `VARCHAR(500)` makes MySQL reject the whole batch — upgrade old databases with `scripts/migrate_news_digest_url.py`), deduplicated via prefix index 191, `published_at` is indexed |
+| `news_digest_items` | high-authority message-board items (storage-isolated from `gold_news`); `url` is `TEXT` (Google News links exceed 500 chars, and `VARCHAR(500)` makes MySQL reject the whole batch — upgrade old databases with `scripts/migrate_news_digest_url.py`), deduplicated via prefix index 191, `published_at` is indexed |
 | `market_factors` | bullish/bearish factors (separated by `type`) |
 | `institution_views` | institutional views; `as_of_date` / `source` record the date each prediction was last verified and where the lead came from (`web_search` / `news_scan` / `legacy`); upgrading an old database goes through `scripts/migrate_institution_views.py` (adds columns / backfills data only, never deletes rows) |
 | `predictions` | written on every refresh by the quant engine (`services/quant/service.py`): direction, horizon, base price, target price, score, expected return, uncertainty and model version |
@@ -486,9 +486,12 @@ Guard: `backend/tests/unit/quant/test_monitor.py`.
 
 ## 12. Message board (high-authority news digest)
 
-The "Messages" section of the dashboard is **fully isolated** from the LLM pipeline: its own
-table, its own fetch cadence, and it never enters a prompt (implementation:
-`services/news_digest.py`).
+The "Messages" section has its own table and fetch cadence (storage-isolated from `gold_news`).
+Since 2026-10-02 its high-authority items also serve as analysis input: `services/analysis_input.py`
+merges them with `gold_news`, deduplicating by normalised URL (message-board items win), and feeds
+the bullish/bearish factors, institutional views, investment advice and market summary prompts with
+a title plus a cleaned, truncated summary per item (implementation: `services/news_digest.py`,
+`services/analysis_input.py`).
 
 - **Source pool**: 13 built-in, verified-working sources across four categories — central
   banks (Federal Reserve / ECB official RSS), wire services and industry bodies (Reuters / AP /

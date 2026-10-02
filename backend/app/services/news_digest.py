@@ -2,8 +2,9 @@
 
 设计约定（规约见 `docs/specs/2026-10-02-消息板块.md`）：
 
-- 消息与既有 `gold_news` **完全隔离**（独立表、独立抓取节奏），不进入任何 LLM
-  prompt 窗口 —— 既有分析行为不受影响。
+- 消息与既有 `gold_news` **存储隔离**（独立表、独立抓取节奏）。2026-10-02 起
+  它还作为高权威条目进入分析输入（`load_recent_entries` +
+  `services/analysis_input.py`）—— 央行 / 通讯社的消息此前对模型不可见。
 - 评分**完全确定性**：重要性 / 置信度由来源权威、黄金相关度、同题覆盖与时效算出，
   不调用 LLM。抓不到就如实为空：无链接或无发布时间的条目跳过并计入报告；
   空库返回 `has_data=False` 与原因，页面显示「不可用」。
@@ -599,6 +600,41 @@ def _unavailable_reason(last_fetch: Optional[Dict[str, Any]]) -> str:
     if ok_sources == 0:
         return f"上次抓取（{stamp}）全部 {total_sources} 个来源均失败，请稍后点击「抓取最新消息」重试。"
     return "上次抓取成功，但最近 30 天内没有符合「高权威 + 黄金相关」条件的消息。"
+
+
+def load_recent_entries(
+    db: Session, *, hours: int = 24, limit: int = 50
+) -> List[Dict[str, Any]]:
+    """最近 N 小时的高权威条目（标题 + 摘要 + 来源 + 时间 + 链接）。
+
+    消息板块的来源池本身就是高权威白名单（tier 1/2）；这里不做聚类与评分 ——
+    那是展示层的口径，分析输入只需要「最近真实发生了什么」。按发布时间倒序
+    取窗口内的条目；无发布时间的行不取（没有时间就无从排序与入窗）。
+    """
+    now = timeutil.now_naive()
+    since = now - timedelta(hours=hours)
+    rows = (
+        db.query(NewsDigestItem)
+        .filter(
+            NewsDigestItem.published_at >= since,
+            NewsDigestItem.published_at <= now,
+        )
+        .order_by(NewsDigestItem.published_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "title": (row.title or "").strip(),
+            "summary": (row.summary or "").strip(),
+            "source": (row.source or "").strip() or "未知来源",
+            "published_at": row.published_at,
+            "url": (row.url or "").strip(),
+            "tier": int(row.authority_tier or 2),
+        }
+        for row in rows
+        if row.title and row.published_at
+    ]
 
 
 def build_digest_payload(db: Session, *, now: Optional[datetime] = None) -> Dict[str, Any]:

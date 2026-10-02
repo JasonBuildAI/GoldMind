@@ -53,7 +53,7 @@ def test_window_is_measured_from_publication_time(db_session):
          created_at=now - timedelta(days=1))
     db_session.commit()
 
-    titles = {n.title for n in InvestmentAdviceAnalyzer()._fetch_recent_news(db_session, hours=24)}
+    titles = {n["title"] for n in InvestmentAdviceAnalyzer()._fetch_recent_news(db_session, hours=24)}
 
     assert "两小时前发布但昨天抓到" in titles, "按入库时刻过滤，把真正新的新闻漏掉了"
     assert "三天前发布但刚抓到" not in titles, "按入库时刻过滤，把三天前的旧闻算成新的"
@@ -73,7 +73,7 @@ def test_order_is_by_publication_time_not_insert_batch(db_session):
 
     result = InvestmentAdviceAnalyzer()._fetch_recent_news(db_session, hours=24)
 
-    assert [n.title for n in result] == ["最新发布", "中间发布", "较早发布"]
+    assert [n["title"] for n in result] == ["最新发布", "中间发布", "较早发布"]
 
 
 @pytest.mark.integration

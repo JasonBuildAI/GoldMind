@@ -26,19 +26,18 @@
 """
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 import asyncio
 import json
 
 from loguru import logger
-from sqlalchemy import and_, desc
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.analysis import InstitutionView
-from app.models.news import GoldNews
 from app.services.ai_payload import with_last_updated
+from app.services.analysis_input import load_analysis_news
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.llm_provider import (
     describe_completion,
@@ -391,24 +390,17 @@ class InstitutionPredictionAnalyzer:
         except (TypeError, ValueError):
             return 30
 
-    def fetch_recent_news(self, db: Session, days: Optional[int] = None) -> List[GoldNews]:
-        """获取扫描窗口内的新闻（默认 INSTITUTION_NEWS_LOOKBACK_DAYS 天）。"""
+    def fetch_recent_news(self, db: Session, days: Optional[int] = None) -> List[Dict[str, Any]]:
+        """扫描窗口内的分析新闻输入（消息板块高权威条目 + gold_news，去重合并）。"""
         window_days = self.lookback_days if days is None else max(1, int(days))
-        now = timeutil.now_naive()
-        since = now - timedelta(days=window_days)
-        return db.query(GoldNews).filter(
-            and_(
-                GoldNews.published_at >= since,
-                GoldNews.published_at <= now,
-            )
-        ).order_by(desc(GoldNews.published_at)).all()
+        return load_analysis_news(db, hours=window_days * 24)
 
     def _select_news_for_institutions(
         self,
-        news: List[GoldNews],
+        news: List[Dict[str, Any]],
         recent_limit: int = 15,
         keyword_limit: int = 15,
-    ) -> List[GoldNews]:
+    ) -> List[Dict[str, Any]]:
         """最近 15 条 + 最多 15 条命中机构名/目标价关键词的较早条目。
 
         窗口从 24 小时放宽到 30 天后，条目可能上百条。全喂给模型既贵又容易
@@ -419,22 +411,18 @@ class InstitutionPredictionAnalyzer:
             return []
 
         ordered = sorted(
-            news, key=lambda item: item.published_at or datetime.min, reverse=True
+            news, key=lambda item: item.get("published_at") or datetime.min, reverse=True
         )
-        selected: List[GoldNews] = list(ordered[:recent_limit])
-        seen = {id(item) for item in selected}
+        selected: List[Dict[str, Any]] = list(ordered[:recent_limit])
 
         extra = 0
         for item in ordered[recent_limit:]:
             if extra >= keyword_limit:
                 break
-            text = f"{item.title or ''} {item.content or ''}".lower()
+            text = f"{item.get('title') or ''} {item.get('summary') or ''}".lower()
             if not any(keyword in text for keyword in _INSTITUTION_KEYWORDS):
                 continue
-            if id(item) in seen:
-                continue
             selected.append(item)
-            seen.add(id(item))
             extra += 1
 
         return selected
@@ -579,7 +567,11 @@ class InstitutionPredictionAnalyzer:
     def _latest_news_date(self, db: Session) -> Optional[date]:
         """窗口内最新一条新闻的日期；没有新闻返回 None。"""
         news = self.fetch_recent_news(db)
-        dates = [item.published_at.date() for item in news if item.published_at]
+        dates = [
+            item["published_at"].date()
+            for item in news
+            if item.get("published_at")
+        ]
         return max(dates) if dates else None
 
     def _resolve_as_of(self, inst_data: Dict[str, Any], fallback: Optional[date]) -> date:

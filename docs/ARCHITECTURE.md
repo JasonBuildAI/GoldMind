@@ -76,7 +76,7 @@ GoldMind/
 **这不是多 Agent 系统。** 五个服务各自独立完成一次单轮 LLM 调用，彼此不通信：
 
 ```
-SQLite(gold_news, gold_prices)
+SQLite(gold_news, news_digest_items, gold_prices)
         │
         ▼
   拼装 prompt ──► llm.invoke() ──► 解析 JSON ──► 两级缓存 ──► HTTP 响应
@@ -160,7 +160,7 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | `gold_prices` | 金价 OHLC，`date` 唯一 |
 | `dollar_index` | 美元指数，`date` 唯一 |
 | `gold_news` | 新闻；`published_at` 有索引 |
-| `news_digest_items` | 消息板块的高权威条目（与 `gold_news` 完全隔离）；`url` 为 `TEXT`（Google News 链接实测超 500 字符，`VARCHAR(500)` 在 MySQL 下整批落库失败，老库升级走 `scripts/migrate_news_digest_url.py`）、去重靠前缀索引 191、`published_at` 有索引 |
+| `news_digest_items` | 消息板块的高权威条目（与 `gold_news` 存储隔离）；`url` 为 `TEXT`（Google News 链接实测超 500 字符，`VARCHAR(500)` 在 MySQL 下整批落库失败，老库升级走 `scripts/migrate_news_digest_url.py`）、去重靠前缀索引 191、`published_at` 有索引 |
 | `market_factors` | 多空因子（`type` 区分） |
 | `institution_views` | 机构观点；`as_of_date` / `source` 记录每条预测最近一次被核实的日期与线索来源（`web_search` / `news_scan` / `legacy`），老库升级走 `scripts/migrate_institution_views.py`（只加列/补数据，不删行） |
 | `predictions` | 量化引擎（`services/quant/service.py`）每次刷新写入：方向、周期、基准价、目标价、得分、期望收益、不确定度与模型版本 |
@@ -470,8 +470,10 @@ cftc_net_oi_ratio / gpr_daily 是监控专用序列，与因子同表（`factor_
 
 ## 十二、消息板块（高权威消息精选）
 
-页面上的「消息」板块与 LLM 分析流水线**完全隔离**：独立表、独立抓取节奏，
-不进入任何 prompt 窗口（实现见 `services/news_digest.py`）。
+页面上的「消息」板块拥有独立表与独立抓取节奏（与 `gold_news` 存储隔离）；2026-10-02 起，
+其中的高权威条目同时作为分析输入：经 `services/analysis_input.py` 与 `gold_news` 按规范化
+URL 去重合并（消息板块优先），进入看涨/看跌因子、机构观点、投资建议与市场总结的 prompt，
+每条给「标题 + 清洗截断后的摘要」（实现见 `services/news_digest.py`、`services/analysis_input.py`）。
 
 - **来源池**：默认 13 个实测可用来源，覆盖央行 / 通讯社 / 行业机构 / 专业财经四类：
   美联储与欧洲央行官方 RSS；路透社 / 美联社 / 世界黄金协会 / 金融时报 / 华尔街日报 /

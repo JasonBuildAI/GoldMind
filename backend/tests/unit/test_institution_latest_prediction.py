@@ -48,11 +48,16 @@ def _seed_view(db_session, name: str, *, price=5400.0, as_of=None, source="legac
 
 
 def _news(title: str, days_ago: float = 0, content: str = "", seconds_ago: float = 0):
-    item = GoldNews(title=title, content=content, source="测试源")
-    item.published_at = (
-        timeutil.now_naive() - timedelta(days=days_ago) - timedelta(seconds=seconds_ago)
-    )
-    return item
+    """构造分析输入形状的条目 —— `_select_news_for_institutions` 消费 dict。"""
+    return {
+        "title": title,
+        "summary": content,
+        "source": "测试源",
+        "published_at": (
+            timeutil.now_naive() - timedelta(days=days_ago) - timedelta(seconds=seconds_ago)
+        ),
+        "url": "",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -440,7 +445,7 @@ def test_lookback_window_comes_from_settings(db_session, monkeypatch):
     )
     db_session.commit()
 
-    titles = {item.title for item in InstitutionPredictionAnalyzer().fetch_recent_news(db_session)}
+    titles = {item["title"] for item in InstitutionPredictionAnalyzer().fetch_recent_news(db_session)}
     assert titles == {"窗口内"}
 
 

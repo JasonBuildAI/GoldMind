@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 from app.services.news_service import NEWS_PROMPT_LIMIT, format_news_for_prompt
+from app.services.analysis_input import load_analysis_news
 from app.utils import timeutil
-from app.models.news import GoldNews
 from app.models.gold_price import GoldPrice
 from app.config import settings
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
@@ -41,21 +41,16 @@ class InvestmentAdviceAnalyzer:
             self._llm = get_chat_llm(temperature=0.7)
         return self._llm
 
-    def _fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
-        """获取最近 N 小时**发布**的新闻。
+    def _fetch_recent_news(self, db: Session, hours: int = 24) -> List[Dict]:
+        """最近 N 小时的统一分析新闻输入（消息板块 + gold_news，去重合并）。
 
-        原实现按 `created_at`（入库时刻）过滤与排序：
-          - 过滤：一条三天前发布、刚刚抓到的新闻会被算进来，
-            而两小时前发布、昨天抓到的会被排除 —— 窗口没有意义；
-          - 排序：抓取是每 2 小时**批量**插入的，同一批的 `created_at` 几乎相同，
-            于是「最近 20 条」实际是这一批里的任意 20 条。
-        而且 `created_at` 是数据库生成的（库服务器时间），按红线也不该拿来比。
-
-        统一走 `NewsService.get_recent_news()` —— 其余四个服务用的就是它。
+        历史：原实现按 `created_at`（入库时刻）过滤与排序，窗口与顺序都不对；
+        后来统一走 `NewsService.get_recent_news()`（按发布时刻）。2026-10-02
+        起再进一步：与消息板块的高权威条目合并
+        （`analysis_input.load_analysis_news`），央行 / 通讯社的消息首次进入
+        这条链路。最多取 20 条，最终进 prompt 的条数由 NEWS_PROMPT_LIMIT 管。
         """
-        from app.services.news_service import NewsService
-
-        return NewsService(db).get_recent_news(hours=hours)[:20]
+        return load_analysis_news(db, hours=hours, limit=20)
 
     def _fetch_recent_prices(self, db: Session, days: int = 10) -> List[GoldPrice]:
         """获取最近N天的价格数据"""
@@ -91,7 +86,7 @@ class InvestmentAdviceAnalyzer:
             f"- 高低振幅: {window.amplitude_pct:.2f}%（(最高−最低)/最低，非波动率、非年化）"
         )
 
-    def _format_news(self, news_list: List[GoldNews]) -> str:
+    def _format_news(self, news_list: List[Dict]) -> str:
         """格式化新闻内容。
 
         统一走 `news_service.format_news_for_prompt` —— 这里原先自己拼一份，

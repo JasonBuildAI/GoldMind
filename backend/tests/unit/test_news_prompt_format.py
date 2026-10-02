@@ -110,7 +110,7 @@ def test_respects_the_limit():
 
     text = format_news_for_prompt(items, limit=5)
 
-    assert text.count("\n") == 4, "limit=5 应当只输出 5 行"
+    assert text.count("- [") == 5, "limit=5 应当只输出 5 条（每条可带一行摘要）"
     assert "新闻4" in text
     assert "新闻5" not in text
 

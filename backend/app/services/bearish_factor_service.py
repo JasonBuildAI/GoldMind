@@ -1,6 +1,5 @@
 """看空因子分析服务 - 优化版（联网搜索可选，默认走数据库 / RSS）"""
 from typing import List, Dict, Any, Optional
-from datetime import timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from concurrent.futures import ThreadPoolExecutor
@@ -9,9 +8,9 @@ import threading
 import asyncio
 from functools import partial
 
+from app.services.analysis_input import load_analysis_news
 from app.services.news_service import format_news_for_prompt
 from app.utils import timeutil
-from app.models.news import GoldNews
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
 from app.config import settings
 from app.services.ai_payload import with_last_updated
@@ -131,15 +130,9 @@ class BearishFactorAnalyzer:
             self._llm = get_chat_llm(temperature=0.7)
         return self._llm
 
-    def fetch_recent_news(self, db: Session, hours: int = 24) -> List[GoldNews]:
-        """获取最近24小时内的新闻"""
-        since = timeutil.now_naive() - timedelta(hours=hours)
-        return db.query(GoldNews).filter(
-            and_(
-                GoldNews.published_at >= since,
-                GoldNews.published_at <= timeutil.now_naive()
-            )
-        ).order_by(GoldNews.published_at.desc()).all()
+    def fetch_recent_news(self, db: Session, hours: int = 24) -> List[Dict[str, Any]]:
+        """最近 N 小时的分析新闻输入（消息板块高权威条目 + gold_news，去重合并）。"""
+        return load_analysis_news(db, hours=hours)
 
     def fetch_news_from_web(self) -> List[Dict[str, Any]]:
         """从网络获取最新新闻（当数据库为空时使用）"""

@@ -317,6 +317,7 @@ async def get_investment_advice_analysis(
     from app.services.bearish_factor_service import BearishFactorService
     from app.services.institution_prediction_service import InstitutionPredictionService
     from app.services.gold_service import GoldService, format_market_status
+    from app.services.analysis_input import load_analysis_news
 
     # 获取市场状态
     gold_service = GoldService(db)
@@ -427,6 +428,7 @@ async def get_market_summary_analysis(
     from app.services.bearish_factor_service import BearishFactorService
     from app.services.institution_prediction_service import InstitutionPredictionService
     from app.services.gold_service import GoldService, format_market_status
+    from app.services.analysis_input import load_analysis_news
 
     # 获取市场状态
     gold_service = GoldService(db)
@@ -457,6 +459,7 @@ async def get_market_summary_analysis(
         bullish_factors=bullish_factors,
         bearish_factors=bearish_factors,
         institution_predictions=institution_predictions,
+        recent_news=load_analysis_news(db),
         use_cache=not refresh
     )
 
@@ -475,6 +478,7 @@ async def refresh_market_summary_analysis(db: Session = Depends(get_db)):
     from app.services.bearish_factor_service import BearishFactorService
     from app.services.institution_prediction_service import InstitutionPredictionService
     from app.services.gold_service import GoldService, format_market_status
+    from app.services.analysis_input import load_analysis_news
 
     # 获取市场状态
     gold_service = GoldService(db)
@@ -505,6 +509,7 @@ async def refresh_market_summary_analysis(db: Session = Depends(get_db)):
         bullish_factors=bullish_factors,
         bearish_factors=bearish_factors,
         institution_predictions=institution_predictions,
+        recent_news=load_analysis_news(db),
         use_cache=False
     )
 
