@@ -5,10 +5,11 @@ import time
 import asyncio
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.utils import timeutil
 from app.config import settings
@@ -89,7 +90,16 @@ async def lifespan(app: FastAPI):
     logger.info("启动黄金市场分析系统...")
     
     Base.metadata.create_all(bind=engine)
-    logger.info("数据库表创建完成")
+    # 启动自检：create_all 只建「模型已经被导入」的表；漏建任何一张，
+    # 相关接口都会在运行时变成 1146 缺表错误。这里把它在启动时就点名。
+    missing_tables = _missing_metadata_tables()
+    if missing_tables:
+        logger.error(
+            f"[启动自检] 数据库缺少 {len(missing_tables)} 张表："
+            f"{'、'.join(missing_tables)}。{_MISSING_SCHEMA_HINT}"
+        )
+    else:
+        logger.info("数据库表创建完成")
     
     if settings.SCHEDULER_ENABLED:
         init_scheduler()
@@ -109,6 +119,62 @@ app = FastAPI(
     version="2.0.1",
     lifespan=lifespan
 )
+
+
+# --------------------------------------------------------------------------- #
+# 缺表 → 503（而不是裸 500）
+# --------------------------------------------------------------------------- #
+# 2026-10-02 的真实故障：开发库的表被一次误跑的测试删光，此后每个读库接口都是
+# `ProgrammingError(1146, "Table ... doesn't exist")` → 裸 500，页面上整片
+# 「暂不可用」—— 而且刷新永远不会好，因为这不是瞬态错误。缺表不是程序崩了，
+# 是数据库没初始化：按 503（暂时不可用）返回，并把「怎么修」写进 detail，
+# 前端可以原样展示给用户/运维。
+_MISSING_SCHEMA_HINT = (
+    "数据表缺失：数据库未初始化或已被重置。"
+    "请在 backend/ 目录运行 `python init_db.py` 重建表结构；"
+    "需要历史数据再运行 `python scripts/backfill_quant.py --apply --years 20`。"
+)
+
+# MySQL / MariaDB 错误码：1146 表不存在、1049 库不存在。
+# SQLite 没有错误码，靠消息里的 "no such table" / "unknown database" 识别。
+_MISSING_SCHEMA_MYSQL_CODES = frozenset({1049, 1146})
+
+
+def _is_missing_schema_error(exc: Exception) -> bool:
+    """只认「缺库/缺表」，别把列名写错之类的 SQL 错误也翻译成「去建表」。"""
+    orig = getattr(exc, "orig", None) or exc
+    args = getattr(orig, "args", ()) or ()
+    if args and args[0] in _MISSING_SCHEMA_MYSQL_CODES:
+        return True
+    message = str(orig).lower()
+    if "no such table" in message or "unknown database" in message:
+        return True
+    # PostgreSQL: relation "x" does not exist（列不存在的措辞是 column ... does not exist）
+    return "relation" in message and "does not exist" in message
+
+
+def _missing_metadata_tables() -> list[str]:
+    """metadata 里登记了、但库里查不到的表（启动自检用，不硬编码表名）。"""
+    from sqlalchemy import inspect
+
+    existing = set(inspect(engine).get_table_names())
+    return sorted(name for name in Base.metadata.tables if name not in existing)
+
+
+async def _missing_schema_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not _is_missing_schema_error(exc):
+        # 其余 SQL 错误（如 Unknown column）仍然走默认 500：它们不是
+        # 「跑一次 init_db.py 就好」的问题，不能被这条指引掩盖。
+        raise exc
+    logger.error(f"[数据库] {request.method} {request.url.path} 命中缺表/缺库错误：{exc}")
+    return JSONResponse(
+        status_code=503,
+        content={"error": "database_not_initialized", "detail": _MISSING_SCHEMA_HINT},
+    )
+
+
+app.add_exception_handler(ProgrammingError, _missing_schema_handler)
+app.add_exception_handler(OperationalError, _missing_schema_handler)
 
 # --------------------------------------------------------------------------- #
 # 限流
