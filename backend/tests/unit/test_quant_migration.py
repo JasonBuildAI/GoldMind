@@ -113,7 +113,11 @@ def test_drop_removes_only_quant_tables(migration, old_engine):
     migration.apply_migration(old_engine)
     dropped = migration.drop_quant_tables(old_engine)
 
-    assert set(dropped) == {"factor_observations", "model_evaluations"}
+    assert set(dropped) == {
+        "factor_observations",
+        "factor_observation_revisions",
+        "model_evaluations",
+    }
     inspector = inspect(old_engine)
     assert "predictions" in set(inspector.get_table_names())
     with old_engine.connect() as conn:

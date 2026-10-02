@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Optional
 
 import pandas as pd
@@ -43,9 +43,16 @@ RESEARCH_CACHE_KEY = "quant_research"
 RESEARCH_PERIOD_LABELS = {"development": "开发期", "holdout": "留出期", "full": "全样本"}
 
 
-def load_panel(db: Session) -> tuple[dict[str, pd.Series], pd.Series]:
-    """把因子面板与基准价格从库里读出来（不访问网络）。"""
-    series = storage.load_all(db)
+def load_panel(
+    db: Session, *, as_of: Optional[date] = None
+) -> tuple[dict[str, pd.Series], pd.Series]:
+    """把因子面板与基准价格从库里读出来（不访问网络）。
+
+    ``as_of`` 给定时读的是**修订流水**，即「那一天看到的值」：回填与数据源回修都会
+    改掉 `factor_observations` 里的当前值，所以不带这个入口的话，
+    「按上次的输入重跑一遍预注册」在物理上做不到（回填一轮就修订过 26,445 行）。
+    """
+    series = storage.load_all(db) if as_of is None else storage.load_series_as_of(db, as_of)
     close = series.pop(BENCHMARK_KEY, None)
     if close is None:
         close = pd.Series(dtype="float64", name=BENCHMARK_KEY)

@@ -23,6 +23,7 @@ import csv
 import math
 import sys
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -32,7 +33,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.services.quant import backtest, engine, preregistered  # noqa: E402
+from app.services.quant import backtest, engine, preregistered, storage  # noqa: E402
 from app.services.quant.definitions import (  # noqa: E402
     CATEGORY_MONETARY,
     CATEGORY_RISK,
@@ -497,8 +498,21 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--horizons", default=None, help="逗号分隔的尺度；默认 " + ",".join(map(str, HORIZONS)))
     parser.add_argument("--group", action="append", default=None, help="只跑某一组候选（可重复）")
     parser.add_argument("--from-db", action="store_true", help="从项目数据库读取（默认行为，显式写法）")
+    parser.add_argument(
+        "--as-of",
+        default=None,
+        help="按修订流水重建成那一天看到的面板（YYYY-MM-DD），用于复现历史裁决",
+    )
     parser.add_argument("--holdout-start", default=HOLDOUT_START.isoformat())
     args = parser.parse_args(argv)
+
+    panel_as_of = None
+    if args.as_of:
+        try:
+            panel_as_of = date.fromisoformat(args.as_of)
+        except ValueError:
+            print(f"--as-of 需要 YYYY-MM-DD，收到的是：{args.as_of}", file=sys.stderr)
+            return 2
 
     try:
         horizons = _parse_horizons(args.horizons)
@@ -519,10 +533,18 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     try:
         with SessionLocal() as db:
-            factors, close = load_panel(db)
+            factors, close = load_panel(db, as_of=panel_as_of)
+            revisions = storage.revision_count(db)
     except Exception as error:  # 数据库不可用 → 如实报告，不退回合成数据
         print(f"数据不可用：{error}", file=sys.stderr)
         return 2
+    if panel_as_of is not None:
+        print(
+            f"面板时点：{panel_as_of.isoformat()}（修订流水共 {revisions} 行；"
+            "不带 --as-of 时读的是当前值）",
+            file=sys.stderr,
+            flush=True,
+        )
     if close is None or close.empty:
         print("数据不可用：库里没有黄金价格序列（先同步数据，再跑研究台）", file=sys.stderr)
         return 2

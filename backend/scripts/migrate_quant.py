@@ -4,17 +4,17 @@
 对已经存在的 `predictions` 表是一个空操作，新增的列不会自己出现。
 本脚本补上这一段：
 
-1. 建出模型里有、库里没有的表（`factor_observations`、`model_evaluations`，
-   以及未来任何新增的表）；
+1. 建出模型里有、库里没有的表（`factor_observations`、`factor_observation_revisions`、
+   `model_evaluations`，以及未来任何新增的表）；
 2. 给已存在的表补上模型里有、库里没有的**列**（当前是 `predictions` 的量化列）。
 
 用法：
 
     python scripts/migrate_quant.py --dry-run   # 只打印将要执行的语句
     python scripts/migrate_quant.py             # 执行
-    python scripts/migrate_quant.py --drop --yes  # 回滚：删除量化新增的两张表
+    python scripts/migrate_quant.py --drop --yes  # 回滚：删除量化新增的三张表
 
-`--drop` 只删 `factor_observations` 与 `model_evaluations` 两张**本轮新增**的表；
+`--drop` 只删量化自己建的三张表（含修订流水 `factor_observation_revisions`）；
 `predictions` 上新增的列全部可空，保留不影响旧代码读取，因此不删。
 
 核心逻辑都是纯函数（吃一个 engine），便于用临时库测试，不依赖全局连接。
@@ -36,7 +36,11 @@ import app.models  # noqa: F401,E402  确保所有模型都已注册到 metadata
 from app.database import Base, engine as default_engine  # noqa: E402
 
 
-QUANT_TABLES = ("factor_observations", "model_evaluations")
+QUANT_TABLES = (
+    "factor_observations",
+    "factor_observation_revisions",
+    "model_evaluations",
+)
 
 
 def missing_columns(bind: Engine, table_name: str) -> list[tuple[str, str]]:
@@ -87,7 +91,10 @@ def apply_migration(bind: Engine, dry_run: bool = False) -> list[str]:
 
 
 def drop_quant_tables(bind: Engine) -> list[str]:
-    """删除量化新增的两张表；不动既有表与数据。"""
+    """删除量化新增的表；不动既有表与数据。
+
+    修订流水也在其中：它是回滚单位的一部分，留着它等于回滚不干净。
+    """
     existing_tables = set(inspect(bind).get_table_names())
     dropped: list[str] = []
     with bind.begin() as conn:
@@ -101,14 +108,15 @@ def drop_quant_tables(bind: Engine) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="量化引擎数据库迁移（幂等，只加不删）")
     parser.add_argument("--dry-run", action="store_true", help="只打印将要执行的语句")
-    parser.add_argument("--drop", action="store_true", help="回滚：删除量化新增的两张表")
+    parser.add_argument("--drop", action="store_true", help="回滚：删除量化新增的表")
     parser.add_argument("--yes", action="store_true", help="与 --drop 搭配，确认执行删除")
     args = parser.parse_args(argv)
 
     if args.drop:
         if not args.yes:
             logger.error(
-                "--drop 会删除 factor_observations 与 model_evaluations 两张表及其数据。"
+                "--drop 会删除 factor_observations、factor_observation_revisions、"
+                "model_evaluations 三张表及其数据。"
                 "确认后请加 --yes 重跑。"
             )
             return 2

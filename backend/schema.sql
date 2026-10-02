@@ -129,6 +129,22 @@ CREATE TABLE IF NOT EXISTS factor_observations (
     INDEX ix_factor_observations_obs_date (obs_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 因子观测的追加式修订流水：一行 = 一次写入（首见或回修），永不改写。
+-- 有它才能按「当时可见的输入」重建回测面板（storage.load_series_as_of），
+-- 预注册裁决才是可复现的第二次实验，而不是被后续回填悄悄改掉结论的历史快照。
+CREATE TABLE IF NOT EXISTS factor_observation_revisions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    factor_key VARCHAR(64) NOT NULL,
+    obs_date DATE NOT NULL,
+    value DOUBLE NOT NULL,
+    source VARCHAR(120),
+    meta JSON,
+    recorded_at DATETIME NOT NULL,
+    INDEX ix_factor_observation_revisions_factor_key (factor_key),
+    INDEX ix_factor_observation_revisions_obs_date (obs_date),
+    INDEX ix_factor_observation_revisions_recorded_at (recorded_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 走查式回测结果：每次评估追加一行，形成准确率的时间序列。
 CREATE TABLE IF NOT EXISTS model_evaluations (
     id INT AUTO_INCREMENT PRIMARY KEY,

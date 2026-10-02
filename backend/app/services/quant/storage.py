@@ -1,7 +1,14 @@
-"""factor_observations 的读写（方言中立、幂等）。"""
+"""factor_observations 的读写（方言中立、幂等）。
+
+两张表各司其职：
+
+- `factor_observations` 是**当前值**，重复抓取幂等（唯一键 factor_key + obs_date）；
+- `factor_observation_revisions` 是**追加式流水**，每次写入留一行，永不改写。
+  有了它才能回答「某次回测当时看到的输入是什么」—— 见 `load_series_as_of()`。
+"""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Iterable, Optional
 
 import statistics
@@ -9,7 +16,8 @@ import statistics
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models.analysis import FactorObservation
+from app.models.analysis import FactorObservation, FactorObservationRevision
+from app.utils import timeutil
 
 
 def upsert_series(
@@ -20,12 +28,16 @@ def upsert_series(
     source: str,
     meta: Optional[dict] = None,
     commit: bool = True,
+    recorded_at: Optional[datetime] = None,
 ) -> tuple[int, int]:
     """写入一条序列，返回 (新增行数, 更新行数)。
 
     不用方言特有的 upsert 语法（MySQL 的 ON DUPLICATE KEY 与 SQLite 的
     ON CONFLICT 写法不同）：先查出区间内已有行，再逐条判断新增或修订。
     修订（值变化）也会被记录，因为数据源确实会回修历史（CFTC 就回修过）。
+
+    首见与回修都会往 `factor_observation_revisions` 追加一行（值没变则不追加），
+    `recorded_at` 默认取项目时区的当前时间，测试可注入以构造可复核的历史。
     """
     if series is None or series.empty:
         return 0, 0
@@ -40,6 +52,7 @@ def upsert_series(
 
     prepared.sort(key=lambda item: item[0])
     dates = [item[0] for item in prepared]
+    stamp = recorded_at or timeutil.now_naive()
 
     existing_rows = (
         db.query(FactorObservation)
@@ -54,6 +67,7 @@ def upsert_series(
 
     inserted = 0
     updated = 0
+    revisions: list[FactorObservationRevision] = []
     for obs_date, value in prepared:
         row = existing.get(obs_date)
         if row is None:
@@ -67,17 +81,72 @@ def upsert_series(
                 )
             )
             inserted += 1
-            continue
-
-        if abs((row.value or 0.0) - value) > 1e-12 or row.source != source:
+        elif abs((row.value or 0.0) - value) > 1e-12 or row.source != source:
             row.value = value
             row.source = source
             row.meta = meta
             updated += 1
+        else:
+            continue  # 值与来源都没变：幂等重跑不产生流水行
+        revisions.append(
+            FactorObservationRevision(
+                factor_key=factor_key,
+                obs_date=obs_date,
+                value=value,
+                source=source,
+                meta=meta,
+                recorded_at=stamp,
+            )
+        )
+    db.add_all(revisions)
 
     if commit:
         db.commit()
     return inserted, updated
+
+
+def load_series_as_of(
+    db: Session,
+    as_of: date,
+    keys: Optional[Iterable[str]] = None,
+) -> dict[str, pd.Series]:
+    """按**当时可见**的输入重建因子面板（point-in-time）。
+
+    每个 (factor_key, obs_date) 取 `recorded_at <= as_of` 的最后一条流水 —— 也就是
+    「那天的人看到的值」，可能是后来被回修掉的旧值。`as_of` 之前完全没有写入的
+    观测一律不出现，所以这条序列不会把未来才补抓的历史漏进过去的面板。
+    """
+    query = (
+        db.query(
+            FactorObservationRevision.factor_key,
+            FactorObservationRevision.obs_date,
+            FactorObservationRevision.value,
+            FactorObservationRevision.recorded_at,
+        )
+        .filter(FactorObservationRevision.recorded_at <= datetime(as_of.year, as_of.month, as_of.day, 23, 59, 59))
+        .order_by(
+            FactorObservationRevision.factor_key,
+            FactorObservationRevision.obs_date,
+            FactorObservationRevision.recorded_at,
+        )
+    )
+    if keys is not None:
+        query = query.filter(FactorObservationRevision.factor_key.in_(list(keys)))
+
+    collected: dict[str, dict] = {}
+    for factor_key, obs_date, value, _recorded_at in query.all():
+        # 同一 (key, 日) 后写覆盖先写：按 recorded_at 升序遍历，直接赋值即可
+        collected.setdefault(factor_key, {})[pd.Timestamp(obs_date)] = float(value)
+
+    return {
+        factor_key: pd.Series(values, name=factor_key).astype("float64").sort_index()
+        for factor_key, values in collected.items()
+    }
+
+
+def revision_count(db: Session) -> int:
+    """流水行数（回填报告与「这次重跑还是不是同一次实验」的核对用）。"""
+    return int(db.query(FactorObservationRevision).count())
 
 
 def load_series(db: Session, factor_key: str) -> pd.Series:

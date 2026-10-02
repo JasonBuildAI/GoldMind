@@ -164,6 +164,7 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | `institution_views` | 机构观点；`as_of_date` / `source` 记录每条预测最近一次被核实的日期与线索来源（`web_search` / `news_scan` / `legacy`），老库升级走 `scripts/migrate_institution_views.py`（只加列/补数据，不删行） |
 | `predictions` | 量化引擎（`services/quant/service.py`）每次刷新写入：方向、周期、基准价、目标价、得分、期望收益、不确定度与模型版本 |
 | `factor_observations` | 量化因子观测，`(factor_key, obs_date)` 唯一；只存成功观测，失败在同步报告里说明 |
+| `factor_observation_revisions` | 因子观测的**追加式修订流水**：每次写入（首见或回修）留一行，带 `recorded_at`（项目时区）。有它才能按「当时可见的输入」重建面板（`storage.load_series_as_of`，研究台 `--as-of`），预注册裁决才可复现 |
 | `model_evaluations` | 走查式回测结果（命中率 / 基准对照 / Brier / 逐因子指标），每次评估追加一行 |
 
 > `update_logs` 已删除：没有任何写入方、读取方或接口，产品方向里也没把它列为目标，
@@ -321,7 +322,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 |---|---|---|
 | 数据源 | `sources/*.py` | 全部免费、无需密钥（含财政部 DTS 的 TGA、纽约联储 RRP、CFTC 未平仓量、Yahoo 的 USDCNY）；HTTP 客户端可注入，测试永不真出网 |
 | 派生 | `derive.py` | 原始序列 → 因子值，单位与口径只在这一层固定 |
-| 落库 | `storage.py` | `factor_observations`，唯一约束 `(factor_key, obs_date)`，幂等 |
+| 落库 | `storage.py` | `factor_observations`，唯一约束 `(factor_key, obs_date)`，幂等；每次首见或回修同时向 `factor_observation_revisions` 追加一行（值没变不追加） |
 | 同步 | `sync.py` | 按源节流（6h ~ 24h）、增量抓取、逐源降级并写入同步报告 |
 | 信号 | `engine.py` | 滚动 z → 方向对齐 → 按尺度取权重（`definitions.horizon_weights`）合成 → 一份校准分布给出期望收益、不确定度、上行概率、目标价与区间 |
 | 公允价 | `decompose.py` | 走查式扩展窗口 OLS（`log 金价 ~ 实际利率 + log 美元指数 + log 央行储备 + VIX`）把金价拆成 宏观锚＋需求溢价＋风险溢价＋情绪残差；偏离度 = 市场价 / 公允价 − 1 |

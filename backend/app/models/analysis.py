@@ -113,6 +113,31 @@ class FactorObservation(Base):
     )
 
 
+class FactorObservationRevision(Base):
+    """因子观测的**追加式**修订流水：每次写入（首见或回修）留一行，永不改写。
+
+    为什么需要它：`factor_observations` 是「当前最好的值」，值变了就地覆盖，
+    于是「2026-10-02 那天回测看到的输入」再也拼不回来 —— 而回填一轮就修订过
+    26,445 行（`docs/specs/2026-10-02-回填报告.md`）。预注册裁决要求「规则先写死、
+    成绩事后不许动」，可如果输入本身会被悄悄改掉，事后重跑就不是同一次实验。
+
+    `recorded_at` 是**这条值进入本系统的时间**（项目时区，见 `app/utils/timeutil.py`），
+    不是 `obs_date`（后者是「该值可用的交易日」）。按日粒度重建当时的面板用
+    `storage.load_series_as_of()`。
+    """
+
+    __tablename__ = "factor_observation_revisions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    factor_key = Column(String(64), nullable=False, index=True)
+    obs_date = Column(Date, nullable=False, index=True)
+    value = Column(Float, nullable=False)
+    source = Column(String(120))
+    # 与 factor_observations 同一个字段口径，便于对照「谁在什么时点看到的是哪个值」
+    meta = Column(JSON)
+    recorded_at = Column(DateTime, nullable=False, index=True)
+
+
 class ModelEvaluation(Base):
     """一次走查式回测的结果。每次评估追加一行，形成准确率的时间序列。"""
 
