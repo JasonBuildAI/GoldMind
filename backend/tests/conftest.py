@@ -20,6 +20,8 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from tests.safety import assert_safe_test_database  # noqa: E402
+
 # --------------------------------------------------------------------------- #
 # 必须在导入任何 app.* 之前执行
 # --------------------------------------------------------------------------- #
@@ -45,6 +47,11 @@ for _var in (
 #       python -m pytest
 #
 # 注意必须指向**独立的测试库**：用例会清空所有表。
+#
+# 护栏（实现与事故复现见 tests/safety.py）：测试会 DROP / DELETE 它连上的
+# 所有表。2026-10-02 的事故就是把这里指到了开发库 `gold_analysis`，
+# 会话结束时 drop_all 把 9 张业务表删光。名字不像测试库就拒跑。
+assert_safe_test_database(os.environ.get("GOLDMIND_TEST_DATABASE_URL"))
 os.environ["DATABASE_URL"] = os.environ.get("GOLDMIND_TEST_DATABASE_URL", "sqlite://")
 os.environ["SCHEDULER_ENABLED"] = "false"
 os.environ.setdefault("LLM_API_KEY", "test-key-not-real")
@@ -282,6 +289,10 @@ def _prepare_database():
     import app.models  # noqa: F401  确保所有模型注册到 metadata
     from app.database import Base, engine
 
+    # 纵深防御：上面按 GOLDMIND_TEST_DATABASE_URL 拒过一次，这里再对
+    # **实际生效**的 engine 验一次 —— 无论 URL 从哪条路径进来，只要它不是
+    # 测试库，create_all / drop_all 一步都不许执行。
+    assert_safe_test_database(str(engine.url))
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
