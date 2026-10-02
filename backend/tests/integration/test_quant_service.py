@@ -189,3 +189,30 @@ def test_research_verdict_separates_undecidable_scales_from_failures():
     assert "1 日命中" in verdict["detail"]
     assert "仅约 753" not in verdict["detail"]
 
+def test_stored_prediction_carries_its_own_skill_verdict(db_session, seed_quant_panel):
+    """落库的 reasoning 必须自带「有没有可核实技能」的结论，而不是只把胜率留给研究页。
+
+    变异验证：把 `_reasoning` 里追加 `skill_note` 的那一行删掉，第二条断言必红；
+    把 `_skill_note` 在缺评估时改成返回空串，第一条断言必红。
+    """
+    empty_note = service._skill_note(db_session, 20)
+    assert "尚无该尺度的回测记录" in empty_note, "没有回测时必须明说没有背书，而不是沉默"
+
+    seed_quant_panel()
+    service.refresh_predictions(db_session, force_backtest=True)
+    rows = (
+        db_session.query(Prediction)
+        .filter(Prediction.model_version == MODEL_VERSION)
+        .order_by(Prediction.horizon_days)
+        .all()
+    )
+    assert rows, "刷新后没有任何预测落库"
+    for row in rows:
+        assert "技能状态" in (row.reasoning or ""), f"h={row.horizon_days} 的 reasoning 没有技能结论"
+        assert ("无法判定" in row.reasoning) or ("未跑赢朴素基准" in row.reasoning) or (
+            "有可核实优势" in row.reasoning
+        ), row.reasoning
+    # 合成面板只有几百个交易日：长尺度必然落在「独立下注不足」这一支
+    long_row = next(row for row in rows if row.horizon_days == max(HORIZONS))
+    assert "无法判定" in long_row.reasoning or "独立下注" in long_row.reasoning
+

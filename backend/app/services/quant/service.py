@@ -536,15 +536,8 @@ def refresh_predictions(
             "evaluations": [],
         }
 
-    predictions = []
-    for horizon in horizons:
-        snapshot = engine.build_snapshot(factors, close, horizon=horizon)
-        payload = _prediction_payload(snapshot, close)
-        if snapshot.status == engine.STATUS_OK:
-            _store_prediction(db, snapshot)
-        predictions.append(payload)
-    db.commit()
-
+    # 回测在前、预测在后：落库的 reasoning 会引用「本尺度最近一次回测」的技能结论，
+    # 先写预测的话，技能句永远停留在「尚无回测记录」上（这条顺序由测试钉住）。
     evaluations = []
     for horizon in horizons:
         if not force_backtest and not _backtest_due(db, horizon):
@@ -555,6 +548,15 @@ def refresh_predictions(
             continue
         _store_evaluation(db, evaluation)
         evaluations.append(evaluation.to_dict())
+    db.commit()
+
+    predictions = []
+    for horizon in horizons:
+        snapshot = engine.build_snapshot(factors, close, horizon=horizon)
+        payload = _prediction_payload(snapshot, close)
+        if snapshot.status == engine.STATUS_OK:
+            _store_prediction(db, snapshot)
+        predictions.append(payload)
     db.commit()
 
     logger.info(
@@ -611,7 +613,7 @@ def _store_prediction(db: Session, snapshot: engine.SignalSnapshot) -> None:
             target_price=snapshot.target_price,
             confidence=snapshot.probability_up,
             timeframe=f"{snapshot.horizon_days}D",
-            reasoning=_reasoning(snapshot),
+            reasoning=_reasoning(snapshot, _skill_note(db, snapshot.horizon_days)),
             factors=[
                 {
                     "key": state.key,
@@ -634,7 +636,55 @@ def _store_prediction(db: Session, snapshot: engine.SignalSnapshot) -> None:
     )
 
 
-def _reasoning(snapshot: engine.SignalSnapshot) -> str:
+def _skill_note(db: Session, horizon: int) -> str:
+    """这个尺度上模型到底有没有可核实技能 —— 一句话，跟着预测一起落库。
+
+    为什么必须有：页面与历史接口展示的是「方向 + 目标价」，而回测早就知道
+    「方向与永远看多逐日一致、幅度不优于预测不动」。技能结论只写在研究页里，
+    看预测的人拿不到它，就等于把噪声包装成判断（红线一的另一条入口）。
+    评估缺失或样本不足时**如实说不确定**，不许编一个「仅供参考」之类的软话。
+    """
+    row = (
+        db.query(ModelEvaluation)
+        .filter(
+            ModelEvaluation.model_version == MODEL_VERSION,
+            ModelEvaluation.horizon_days == horizon,
+        )
+        .order_by(ModelEvaluation.evaluated_at.desc(), ModelEvaluation.id.desc())
+        .first()
+    )
+    if row is None:
+        return "技能状态：尚无该尺度的回测记录，这条预测没有可核实的胜率背书"
+    metrics = row.metrics or {}
+    effective = preregistered.finite(metrics.get("effective_sample_size"))
+    if effective is None or effective < preregistered.MIN_EFFECTIVE_SAMPLES:
+        count = "-" if effective is None else f"{effective:g}"
+        return (
+            f"技能状态：该尺度只有约 {count} 次独立下注"
+            f"（低于判定下限 {preregistered.MIN_EFFECTIVE_SAMPLES}），无法判定有无技能"
+        )
+    accuracy = preregistered.finite(row.accuracy)
+    up = preregistered.finite(row.baseline_up_accuracy)
+    difference = preregistered.finite(metrics.get("accuracy_diff_vs_up"))
+    magnitude = preregistered.finite(metrics.get("magnitude_skill_vs_flat"))
+    down_calls = metrics.get("down_calls")
+    pieces = []
+    if accuracy is not None and up is not None and difference is not None:
+        pieces.append(f"方向 {accuracy * 100:.1f}% 对永远看多 {up * 100:.1f}%（{difference * 100:+.1f}pp）")
+    if magnitude is not None:
+        pieces.append(f"幅度{'优于' if magnitude > 0 else '不优于'}预测不动（{magnitude:+.3f}）")
+    if down_calls is not None:
+        pieces.append(f"回测期内喊跌 {down_calls} 次")
+    verdict = (
+        "有可核实优势"
+        if (difference is not None and difference > 0 and (magnitude or 0) > 0)
+        else "未跑赢朴素基准"
+    )
+    stamp = row.evaluated_at.date().isoformat() if row.evaluated_at else "未知时间"
+    return f"技能状态（{stamp} 回测，独立下注约 {effective:g} 次）：{verdict}；" + "；".join(pieces)
+
+
+def _reasoning(snapshot: engine.SignalSnapshot, skill_note: str) -> str:
     parts = [
         f"合成得分 {snapshot.score:+.2f}",
         f"可用因子 {snapshot.available_factors}/{len(snapshot.states)}",
@@ -648,6 +698,7 @@ def _reasoning(snapshot: engine.SignalSnapshot) -> str:
         parts.append("主要贡献：" + "、".join(f"{state.name} {state.contribution:+.2f}" for state in top))
     if snapshot.expected_return is not None:
         parts.append(f"{snapshot.horizon_days} 个交易日期望收益 {snapshot.expected_return * 100:+.2f}%")
+    parts.append(skill_note)
     if snapshot.probability_up is not None:
         parts.append(f"上行概率 {snapshot.probability_up * 100:.0f}%")
     return "；".join(parts) + "。"
