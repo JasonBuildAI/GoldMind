@@ -45,6 +45,8 @@ backend/scripts/smoke_llm_result.json
 *.db
 *.sqlite
 *.sqlite3
+# 备份产物：含全库数据，只留在本机（scripts/backup_db.py 的默认输出目录）
+backend/backups/
 
 # Cache
 .cache/

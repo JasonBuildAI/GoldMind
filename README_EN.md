@@ -836,6 +836,9 @@ people who need them, with **no guarantee they work out of the box at this versi
 - Local MySQL: set
   `DATABASE_URL=mysql+pymysql://user:password@localhost:3306/gold_analysis` in `backend/.env`,
   then `python init_db.py` (the MySQL path creates the database first, then runs `schema.sql`).
+- Backups: `python scripts/backup_db.py` does **not** run mysqldump for MySQL — it prints a
+  command template and exits 2 (`-p` prompts for the password; it never enters shell history
+  or the script). The SQLite path is backed up directly with per-table row-count verification.
 
 > ⚠️ These paths **have not run the same gates** as the default SQLite path; known behavioural
 > differences exist (ENUM storage, case-sensitive string comparison, transaction semantics).
@@ -859,6 +862,12 @@ pip install -r requirements.txt -r requirements-dev.txt
 
 # config-level self-check (read-only: no DB, no network; failures print the fix, exit code 0/1)
 python scripts/verify_setup.py
+
+# back up the database: SQLite is copied via the backup API with per-table row-count
+# verification (default output backend/backups/, gitignored); MySQL is not run here —
+# the script prints a mysqldump template and exits 2 instead of pretending success
+python scripts/backup_db.py
+python scripts/backup_db.py --out D:/goldmind-backups
 
 # tests — the full gate
 python -m pytest

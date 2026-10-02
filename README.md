@@ -759,6 +759,9 @@ npm run dev
 - 改用本机 MySQL：在 `backend/.env` 里写
   `DATABASE_URL=mysql+pymysql://user:password@localhost:3306/gold_analysis`，
   然后 `python init_db.py`（MySQL 路径会先建库、再执行 `schema.sql`）。
+- 备份：`python scripts/backup_db.py` 对 MySQL **不代跑** —— 只打印 `mysqldump`
+  命令模板并退出码 2（`-p` 回车后再输密码，密码不进命令历史、不进脚本）。
+  SQLite 路径会直接备份并逐表校验行数。
 
 > ⚠️ 这两条路径与本轮的 SQLite 默认路径**没有跑过同一套闸门**，行为差异（ENUM 存储、
 > 字符串比较大小写、事务语义）已知存在。用之前请先跑一遍
@@ -781,6 +784,11 @@ pip install -r requirements.txt -r requirements-dev.txt
 
 # 配置级自检（只读：不连库、不出网；失败项会给出修复命令，退出码 0/1）
 python scripts/verify_setup.py
+
+# 备份数据库：SQLite 用 backup API 全量复制并逐表校验行数（默认 backend/backups/，已进 .gitignore）
+# MySQL 路径不代跑：打印 mysqldump 命令模板并以退出码 2 提示人工执行（失败不会装成成功）
+python scripts/backup_db.py
+python scripts/backup_db.py --out D:/goldmind-backups
 
 # 测试 —— 全档闸门
 python -m pytest
