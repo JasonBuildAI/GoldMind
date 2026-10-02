@@ -31,6 +31,7 @@ from app.services.quant.sources import (
     gpr,
     news_geo,
     nyfed,
+    sge,
     sina_macro,
     treasury,
     treasury_fiscal,
@@ -39,7 +40,17 @@ from app.services.quant.sources import (
 from app.services.quant.sources.base import SourceError
 from app.utils import timeutil
 
-SOURCE_ORDER = ("treasury", "treasury_fiscal", "nyfed", "cftc", "gpr", "sina_macro", "yahoo", "news_geo")
+SOURCE_ORDER = (
+    "treasury",
+    "treasury_fiscal",
+    "nyfed",
+    "cftc",
+    "gpr",
+    "sina_macro",
+    "sge",
+    "yahoo",
+    "news_geo",
+)
 
 # 每个原始序列由哪个源抓 —— 与 `_fetch_source` 的分支、`yahoo.SYMBOLS` 一一对应。
 # 用途只有一个：把「因子缺失」归因到真正喂它的源（见 `_missing_reason`）。
@@ -71,6 +82,7 @@ RAW_KEY_SOURCES: dict[str, str] = {
     "gld_close": "yahoo",
     # 不是外部源：由本库消息板块（news_digest_items）计数而来
     "digest_gold_count": "news_digest",
+    "sge_gold": "sge",
 }
 
 # 本地源：不由 _fetch_source 抓取，而是在 run_sync 里从本库现成数据派生
@@ -86,6 +98,7 @@ SOURCE_LABELS = {
     "cftc": "CFTC 持仓报告",
     "gpr": "GPR 官方日度地缘风险指数（Iacoviello & Papaioannou .xls）",
     "sina_macro": "新浪财经宏观数据（央行储备）",
+    "sge": "上海黄金交易所（Au99.99 公开日线）",
     "yahoo": "Yahoo Finance 行情",
     "news_geo": "本系统新闻语料",
     "news_digest": "消息板块（本库高权威消息计数）",
@@ -99,6 +112,7 @@ SOURCE_MIN_INTERVALS: Dict[str, timedelta] = {
     "cftc": timedelta(hours=24),
     "gpr": timedelta(hours=24),
     "sina_macro": timedelta(hours=24),
+    "sge": timedelta(hours=12),
     "yahoo": timedelta(hours=2),
     "news_geo": timedelta(hours=2),
 }
@@ -228,6 +242,8 @@ def _fetch_source(
         return gpr.fetch()
     if name == "sina_macro":
         return sina_macro.fetch()
+    if name == "sge":
+        return sge.fetch()
     if name == "yahoo":
         # 所有日线序列（金价、GVZ、金银比、铜金比）的历史都不短于请求窗口的
         # 90% 才退化成 3 个月增量；否则按窗口回填 —— 回填与增量共用同一路径。

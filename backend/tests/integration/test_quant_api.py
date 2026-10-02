@@ -162,8 +162,9 @@ def test_monitor_endpoint_lists_rows_with_value_or_reason(client, db_session, se
             assert row["signal"] is None
     rows = {row["key"]: row for row in body["rows"]}
     assert rows["ma200"]["status"] == "ok"
+    # 空库时上海金溢价没有两条源序列，必须如实标不可用并给原因。
     assert rows["shanghai_premium"]["status"] == "unavailable"
-    assert "不编数" in rows["shanghai_premium"]["reason"]
+    assert rows["shanghai_premium"]["reason"]
 
 
 @pytest.mark.integration

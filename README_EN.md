@@ -588,7 +588,7 @@ this is not one uniform refresh:
 | 5 | Central-bank gold reserves | M | 10k oz | Sina Finance (official reserves) | MoM increase bullish, decrease bearish |
 | 6 | Gold ETF shares (GLD) | D | shares | Yahoo Finance | last two observations: increase bullish (subscription), decrease bearish |
 | 7 | CFTC net long (crowding) | W | contracts | CFTC positioning report | net z ≥ +1.5 bearish, ≤ −1.5 bullish |
-| 8 | Shanghai gold premium | D | CNY/g | SGE AU9999 | **measured unavailable**: reason shown, no invented number |
+| 8 | Shanghai gold premium | D | CNY/g | SGE Au99.99 (measured reachable) | information row: SGE close minus the converted international price (gold x USDCNY / 31.1035); the premium has not passed pre-registered gates, so no direction |
 | 9 | VIX | D | pts | Yahoo Finance (^VIX) | ≥ 25 bullish, ≤ 15 bearish |
 | 10 | Credit appetite (HYG/IEF 20d change) | D | % | Yahoo Finance | ≥ +2 bearish, ≤ −2 bullish |
 | 11 | Gold vs 200-day MA | D | USD | own price series | deviation ≥ +0.5% bullish, ≤ −0.5% bearish |
@@ -617,7 +617,8 @@ this is not one uniform refresh:
 - **All free, no keys**: US Treasury yield curve and Fiscal Data (TGA), NY Fed RRP and EFFR,
   CFTC positioning reports, Yahoo Finance (DXY / GC=F / SI=F / HG=F / GLD / SPY / BTC-USD /
   ^VIX / ^GVZ / HYG / IEF / CNY=X), Iacoviello & Papaioannou's official daily GPR series,
-  Sina Finance (central-bank reserves), and this system's own RSS corpus.
+  Sina Finance (central-bank reserves), the Shanghai Gold Exchange Au99.99 daily series, and this
+  system's own RSS corpus.
 - **Per-source throttling**: the sync engine gives each source its own 6–24h window and fetches
   increments; one source failing does not affect the others, and the failure reason is written
   into the sync report. The page keeps per-source status (ok / not due / unavailable) in a folded
@@ -656,8 +657,12 @@ this is not one uniform refresh:
 3. **No directional edge in the historical holdout.** Across the five horizons direction matched
    "always long" day by day (+0.0pp) and the Brier skill score was negative — that record cannot
    serve as a selection basis.
-4. **The Shanghai gold premium is unavailable.** SGE AU9999 has no public key-free interface; the
-   row says "unavailable + reason" and invents nothing.
+4. **The Shanghai gold premium is now wired up, but it is a level, not a signal.** SGE Au99.99's
+   public `Dailyhq` endpoint was measured reachable (2026-10-03) and returns daily quotes from
+   2016-12-19; the row value is the SGE close minus the converted international price
+   (gold x USDCNY / 31.1035). The premium itself has not passed pre-registered gates, so it is
+   shown without direction and stays out of signal composition; if the SGE source is temporarily
+   unreachable the row honestly falls back to "unavailable + reason".
 5. **Web search is off by default.** It uses MiMo's plugin-style `web_search`, not a generic
    OpenAI capability; with the plugin disabled the endpoint returns `HTTP 400 · web search tool
    found in the request body, but webSearchEnabled is false` (reproducible). To enable it:

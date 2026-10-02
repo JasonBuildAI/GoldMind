@@ -41,6 +41,8 @@ def _raw_bundle(periods: int = 850) -> dict:
         "silver_close": pd.Series(30 + steps * 0.01, index=index),
         "copper_close": pd.Series(4 + steps * 0.001, index=index),
         "gpr_daily": pd.Series(120 + np.cos(steps / 40), index=index),
+        # 上海金 Au99.99（元/克）：与折算价 cny_gold 一起支撑上海金溢价一行
+        "sge_gold": pd.Series(600 + steps * 0.1, index=index),
     }
 
 
@@ -63,6 +65,8 @@ def _fetchers(*, failing: tuple[str, ...] = ()) -> dict:
                 return {"gpr_daily": bundle["gpr_daily"]}
             if name == "sina_macro":
                 return {"cb_gold_reserves": bundle["cb_gold_reserves"]}
+            if name == "sge":
+                return {"sge_gold": bundle["sge_gold"]}
             if name == "yahoo":
                 return {
                     key: bundle[key]

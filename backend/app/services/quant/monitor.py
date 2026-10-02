@@ -3,7 +3,8 @@
 每行一个指标：频率、来源、当前值、信号（看涨 / 看跌 / 中性 / 信息）、数据截至时间。
 信号规则是确定性阈值，集中在 ``_rule`` 一处；汇率、未平仓量是信息型指标
 （``signal=None``），不硬套多空。取不到数据或历史不足的行返回「不可用 + 原因」，
-不编数字 —— 上海金溢价就是如实标不可用的例子。
+不编数字 —— 上海金溢价曾长期没有数据源，本轮接入 SGE 日线后按「SGE 收盘 − 折算价」现算，
+两条序列缺任何一条都如实标不可用。
 """
 from __future__ import annotations
 
@@ -42,6 +43,8 @@ MIN_MA_SAMPLES = 120
 CROWDING_WINDOW = 156
 CROWDING_MIN_SAMPLES = 52
 CROWDING_Z = 1.5
+# 上海金溢价的变化窗口：5 个交易日（与其它日频行一致）
+PREMIUM_CHANGE_LOOKBACK = 5
 # TGA 的 500 亿美元、RRP 的 50 亿美元（各自单位见行定义）
 TGA_FLOW_THRESHOLD = 50_000.0  # 百万美元
 RRP_FLOW_THRESHOLD = 50.0  # 亿美元
@@ -93,8 +96,8 @@ ROW_SPECS: tuple[RowSpec, ...] = (
         "净头寸 z ≥ +1.5 看跌（多头拥挤）、≤ −1.5 看涨（空头拥挤）",
     ),
     RowSpec(
-        "shanghai_premium", "上海金溢价", "日", "上海黄金交易所 AU9999", "元/克",
-        "公开无密钥接口实测不可用：如实标不可用，不编数",
+        "shanghai_premium", "上海金溢价", "日", "上海黄金交易所 Au99.99", "元/克",
+        "SGE 收盘 − 国际金价折算（黄金 × USDCNY ÷ 31.1035）；正值 = 亚洲实物溢价",
     ),
     RowSpec(
         "vix", "VIX 恐慌指数", "日", "Yahoo Finance（^VIX）", "点",
@@ -357,6 +360,50 @@ def _rule(key: str, series: pd.Series) -> tuple[Optional[str], Optional[float]]:
     raise AssertionError(f"没有为 {key} 定义信号规则")
 
 
+def _shanghai_premium_row(spec: RowSpec, panel: dict) -> MonitorRow:
+    """上海金溢价 = SGE 收盘 − 国际金价折算价（元/克）。
+
+    两条序列都在库里才算得出来；缺任何一条就如实标不可用，
+    不许拿其中一条冒充溢价（红线一）。信号保持信息行：溢价本身
+    还没有经过预注册检验，先展示水位，不参与合成。
+    """
+    sge_series = panel.get("sge_gold")
+    derived = panel.get("cny_gold")
+    if sge_series is None or derived is None or len(sge_series) == 0 or len(derived) == 0:
+        return _unavailable(spec, "缺少上海金（SGE）或折算价序列，源未同步")
+
+    joined = pd.concat(
+        [sge_series.rename("sge"), derived.rename("derived")], axis=1
+    ).dropna()
+    if joined.empty:
+        return _unavailable(spec, "上海金与折算价没有重合的交易日")
+
+    premium = float(joined.iloc[-1]["sge"] - joined.iloc[-1]["derived"])
+    change = None
+    if len(joined) > PREMIUM_CHANGE_LOOKBACK:
+        previous = float(
+            joined.iloc[-1 - PREMIUM_CHANGE_LOOKBACK]["sge"]
+            - joined.iloc[-1 - PREMIUM_CHANGE_LOOKBACK]["derived"]
+        )
+        change = premium - previous
+
+    return MonitorRow(
+        key=spec.key,
+        name=spec.name,
+        frequency=spec.frequency,
+        source=spec.source,
+        value=round(premium, 2),
+        unit=spec.unit,
+        change=None if change is None else round(change, 2),
+        obs_date=joined.index[-1].date(),
+        signal=None,
+        signal_label="仅供参考",
+        note=spec.note,
+        status="ok",
+        reason=None,
+    )
+
+
 def _unavailable(spec: RowSpec, reason: str) -> MonitorRow:
     return MonitorRow(
         key=spec.key,
@@ -379,12 +426,10 @@ def _build_row(
     spec: RowSpec,
     series: Optional[pd.Series],
     close: Optional[pd.Series],
+    panel: Optional[dict] = None,
 ) -> MonitorRow:
     if spec.key == "shanghai_premium":
-        return _unavailable(
-            spec,
-            "公开无密钥接口（上海黄金交易所 AU9999）实测返回空，不编数",
-        )
+        return _shanghai_premium_row(spec, panel or {})
 
     if spec.key == "ma200":
         latest = _latest(close)
@@ -477,7 +522,8 @@ def build_monitor(db) -> dict:
     series = storage.load_all(db)
     close = series.get(BENCHMARK_KEY)
     rows = [
-        _scaled(spec, _build_row(spec, series.get(spec.key), close)) for spec in ROW_SPECS
+        _scaled(spec, _build_row(spec, series.get(spec.key), close, series))
+        for spec in ROW_SPECS
     ]
     as_of = max((row.obs_date for row in rows if row.obs_date), default=None)
     return {"as_of": as_of, "rows": [row.to_dict() for row in rows]}

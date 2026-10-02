@@ -368,6 +368,7 @@ class ExtraSeries:
 EXTRA_SERIES: tuple[ExtraSeries, ...] = (
     ExtraSeries("usdcny", "美元兑人民币（USDCNY）", "Yahoo Finance（CNY=X）", "日"),
     ExtraSeries("cny_gold", "人民币金价参考", "黄金收盘 × USDCNY ÷ 31.1035", "日"),
+    ExtraSeries("sge_gold", "上海金 Au99.99", "上海黄金交易所（公开日线）", "日"),
     ExtraSeries("tga", "美国财政部 TGA 余额", "美国财政部 Fiscal Data（每日报表）", "日"),
     ExtraSeries("rrp", "纽约联储逆回购（RRP）", "纽约联储公开市场操作结果", "日"),
     ExtraSeries("cftc_oi", "COMEX 黄金未平仓合约", "CFTC 持仓报告", "周"),

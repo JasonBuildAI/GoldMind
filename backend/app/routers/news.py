@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.services import news_events
 from app.services.news_service import NewsService
 from app.services.news_digest import NewsDigestService, build_digest_payload
 from app.schemas.news import NewsResponse, SentimentEnum
@@ -25,20 +26,30 @@ async def get_news(
     service = NewsService(db)
     news = service.get_news(limit, source, sentiment)
     
-    return [
-        NewsResponse(
-            id=n.id,
-            title=n.title,
-            content=n.content,
-            source=n.source,
-            url=n.url,
-            published_at=n.published_at,
-            sentiment=n.sentiment,
-            keywords=n.keywords,
-            created_at=n.created_at
-        )
-        for n in news
-    ]
+    return [_news_response(n) for n in news]
+
+
+def _news_response(n) -> NewsResponse:
+    """ORM 行 → 响应：事件标签与聚合标记都现算（确定性，不入库）。
+
+    现算而不是落库：规则改了之后历史条目立刻跟着改口径，
+    界面与 prompt 永远用同一套规则，也不会因为补历史而写错数据。
+    """
+    tags = news_events.tag_events(n.title, n.content)
+    return NewsResponse(
+        id=n.id,
+        title=n.title,
+        content=n.content,
+        source=n.source,
+        url=n.url,
+        published_at=n.published_at,
+        sentiment=n.sentiment,
+        keywords=n.keywords,
+        created_at=n.created_at,
+        event_tags=tags,
+        event_labels=news_events.event_labels(tags),
+        via_aggregator=news_events.is_aggregator_url(n.url),
+    )
 
 
 # --------------------------------------------------------------------------- #

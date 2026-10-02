@@ -481,7 +481,8 @@ cftc_oi 与第二轮接入的 gvz / gold_silver_ratio / copper_gold_ratio /
 cftc_net_oi_ratio / gpr_daily、第四轮的 gld_close 与 2.0.2 的 digest_intensity
 是监控专用序列，与因子同表（`factor_observations`）
 存储但不参与信号合成 —— 顺序、数量与 `monitor.ROW_SPECS` 逐行对齐。
-上海金溢价的公开接口实测不可用，行内如实显示「不可用 + 原因」。
+上海金溢价 = SGE Au99.99 收盘 − 国际金价折算（`sources/sge.py` 抓取，实测 2026-10-03 可达，
+回看至 2016-12-19）；两条序列缺任何一条就如实显示「不可用 + 原因」，不拿单边冒充溢价。
 守卫：`backend/tests/unit/quant/test_monitor.py`。
 
 ---

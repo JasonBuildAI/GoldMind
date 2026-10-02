@@ -35,6 +35,10 @@ class DigestItem(BaseModel):
     importance: float
     confidence: float
     signals: List[str]
+    # 确定性事件标注（id + 中文标签）与聚合入口标记，见 services/news_events.py。
+    event_tags: List[str] = []
+    event_labels: List[str] = []
+    via_aggregator: bool = False
     coverage_count: int
     related: List[DigestRelatedItem]
 

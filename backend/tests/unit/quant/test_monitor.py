@@ -100,12 +100,37 @@ def test_empty_database_marks_every_row_unavailable_with_reason(db_session):
         assert row["signal_label"] == "不可用"
 
 
-def test_shanghai_premium_is_honestly_unavailable(db_session):
+def test_shanghai_premium_is_honestly_unavailable_without_its_two_series(db_session):
+    """缺上海金或缺折算价时必须标不可用 —— 不许拿单边序列冒充溢价。"""
     result = monitor.build_monitor(db_session)
 
     row = next(item for item in result["rows"] if item["key"] == "shanghai_premium")
     assert row["status"] == "unavailable"
-    assert "不编数" in row["reason"]
+    assert "缺少" in row["reason"]
+
+
+def test_shanghai_premium_is_computed_from_sge_and_the_converted_price(db_session):
+    """SGE 收盘 − 折算价（元/克）：两条序列都在时才给值，且只作信息行。"""
+    from app.services.quant import storage
+
+    index = pd.date_range(end="2026-10-02", periods=30, freq="B")
+    storage.upsert_series(
+        db_session, "sge_gold", pd.Series(610.0, index=index), source="测试夹具", commit=False
+    )
+    storage.upsert_series(
+        db_session, "cny_gold", pd.Series(600.0, index=index), source="测试夹具", commit=False
+    )
+    db_session.commit()
+
+    row = next(
+        item for item in monitor.build_monitor(db_session)["rows"]
+        if item["key"] == "shanghai_premium"
+    )
+    assert row["status"] == "ok"
+    assert row["value"] == 10.0
+    assert row["obs_date"] == "2026-10-02"
+    # 信息行：有水位、没有多空方向（溢价尚未通过预注册检验）。
+    assert row["signal"] is None
 
 
 def test_ma200_without_enough_history_is_unavailable(db_session):
@@ -220,10 +245,12 @@ def test_monitor_rows_only_reference_series_the_data_layer_actually_defines():
     """
     from app.services.quant.definitions import EXTRA_SERIES, FACTORS
 
-    computed = {"ma200", "cny_gold"}  # 由本模块自己算，不是入库序列
+    # 由本模块自己算、不是入库序列的行：ma200 读基准价，cny_gold 是折算价，
+    # shanghai_premium 由 sge_gold 与 cny_gold 两条序列现算。
+    computed = {"ma200", "cny_gold", "shanghai_premium"}
     defined = {factor.key for factor in FACTORS} | {item.key for item in EXTRA_SERIES}
 
-    orphans = {spec.key for spec in monitor.ROW_SPECS} - defined - computed - {"shanghai_premium"}
+    orphans = {spec.key for spec in monitor.ROW_SPECS} - defined - computed
     assert not orphans, f"这些监控行的 key 在数据层没有定义：{sorted(orphans)}"
 
 

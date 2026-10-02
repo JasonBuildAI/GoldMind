@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.utils import timeutil
 from app.models.news import GoldNews, SentimentType
-from app.services import source_status
+from app.services import news_events, source_status
 from app.utils.enum_values import resolve_enum
 from loguru import logger
 
@@ -114,10 +114,16 @@ def format_news_for_prompt(news_list, limit: int = NEWS_PROMPT_LIMIT) -> str:
         source = field(item, "source") or "未知来源"
         published = field(item, "published_at") or field(item, "created_at")
         stamp = published.strftime("%Y-%m-%d %H:%M") if published else "时间未知"
-        lines.append(f"- [{stamp}] [{source}] {title}")
         summary = clean_summary_for_prompt(
             field(item, "summary") or field(item, "content")
         )
+        # 事件标签与聚合标记一起进 prompt：模型据此知道「发生了什么事件」
+        # 以及「这条是聚合入口的转述而不是媒体直发」（2.0.2 第 4、5 条）。
+        tags = field(item, "event_tags") or news_events.tag_events(title, summary)
+        marker = "（经聚合入口）" if news_events.is_aggregator_url(field(item, "url")) else ""
+        lines.append(f"- [{stamp}] [{source}]{marker} {title}")
+        if tags:
+            lines.append(f"  事件：{news_events.describe_events(tags)}")
         if summary:
             lines.append(f"  摘要：{summary}")
 

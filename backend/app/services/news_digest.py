@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.news_digest import NewsDigestItem
-from app.services import source_status
+from app.services import news_events, source_status
 from app.services.cache_manager import CacheManager
 from app.services.news_service import normalize_url, to_local_naive
 from app.utils import timeutil
@@ -580,6 +580,7 @@ def _item_payload(
     coverage: int,
     related: Sequence[DigestRecord],
 ) -> Dict[str, Any]:
+    tags = news_events.tag_events(record.title, record.summary)
     return {
         "rank": rank,
         "id": record.id,
@@ -594,6 +595,9 @@ def _item_payload(
         "importance": record.importance,
         "confidence": record.confidence,
         "signals": list(record.signals),
+        "event_tags": tags,
+        "event_labels": news_events.event_labels(tags),
+        "via_aggregator": news_events.is_aggregator_url(record.url),
         "coverage_count": coverage,
         "related": [
             {
@@ -647,6 +651,8 @@ def load_recent_entries(
             "published_at": row.published_at,
             "url": (row.url or "").strip(),
             "tier": int(row.authority_tier or 2),
+            # 供分析 prompt 使用的事件标签（确定性，见 news_events）。
+            "event_tags": news_events.tag_events(row.title, row.summary),
         }
         for row in rows
         if row.title and row.published_at
