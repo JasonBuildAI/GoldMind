@@ -318,6 +318,13 @@ EXTRA_SERIES: tuple[ExtraSeries, ...] = (
     ExtraSeries("tga", "美国财政部 TGA 余额", "美国财政部 Fiscal Data（每日报表）", "日"),
     ExtraSeries("rrp", "纽约联储逆回购（RRP）", "纽约联储公开市场操作结果", "日"),
     ExtraSeries("cftc_oi", "COMEX 黄金未平仓合约", "CFTC 持仓报告", "周"),
+    # 2026-10-02 起入库的下一轮候选信息源：只存储、只积累覆盖，不参与信号合成；
+    # 是否进因子集由下一轮预注册决定（spec：量化策略提升路线图，第五节）。
+    ExtraSeries("gvz", "黄金波动率指数（GVZ）", "Yahoo Finance（^GVZ）", "日"),
+    ExtraSeries("gold_silver_ratio", "金银比（金价 ÷ 银价）", "Yahoo Finance（GC=F ÷ SI=F）", "日"),
+    ExtraSeries("copper_gold_ratio", "铜金比（铜价 ÷ 金价）", "Yahoo Finance（HG=F ÷ GC=F）", "日"),
+    ExtraSeries("cftc_net_oi_ratio", "CFTC 净头寸占未平仓比", "CFTC 持仓报告（净头寸 ÷ 未平仓）", "周"),
+    ExtraSeries("gpr_daily", "GPR 官方日度地缘风险指数", "Iacoviello & Papaioannou GPR（官方 .xls）", "日"),
 )
 
 extra_series_by_key = {item.key: item for item in EXTRA_SERIES}

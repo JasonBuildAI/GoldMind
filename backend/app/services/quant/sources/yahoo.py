@@ -25,6 +25,11 @@ SYMBOLS = {
     "BTC-USD": "btc",
     "SPY": "spy",
     "CNY=X": "usdcny",
+    # 下一轮预测的候选信息源：本轮只入库积累覆盖，不进因子集
+    # （是否采用由下一轮预注册决定，见 docs/specs/2026-10-02-量化策略提升路线图.md）。
+    "^GVZ": "gvz",
+    "SI=F": "silver_close",
+    "HG=F": "copper_close",
 }
 
 ETF_SHARES_SYMBOL = "GLD"

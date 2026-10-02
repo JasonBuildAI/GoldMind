@@ -35,6 +35,10 @@ def _raw_bundle(periods: int = 850) -> dict:
         "tga": pd.Series(900_000 + steps * 100, index=index),
         "rrp": pd.Series(300 + np.sin(steps / 5), index=index),
         "cftc_oi": pd.Series(500_000 + steps[::5] * 2, index=index[::5]),
+        "gvz": pd.Series(15 + np.sin(steps / 30), index=index),
+        "silver_close": pd.Series(30 + steps * 0.01, index=index),
+        "copper_close": pd.Series(4 + steps * 0.001, index=index),
+        "gpr_daily": pd.Series(120 + np.cos(steps / 40), index=index),
     }
 
 
@@ -53,6 +57,8 @@ def _fetchers(*, failing: tuple[str, ...] = ()) -> dict:
                 return {"effr": bundle["effr"], "rrp": bundle["rrp"]}
             if name == "cftc":
                 return {"cftc_net": bundle["cftc_net"], "cftc_oi": bundle["cftc_oi"]}
+            if name == "gpr":
+                return {"gpr_daily": bundle["gpr_daily"]}
             if name == "sina_macro":
                 return {"cb_gold_reserves": bundle["cb_gold_reserves"]}
             if name == "yahoo":
@@ -68,6 +74,9 @@ def _fetchers(*, failing: tuple[str, ...] = ()) -> dict:
                         "spy",
                         "gld_shares",
                         "usdcny",
+                        "gvz",
+                        "silver_close",
+                        "copper_close",
                     )
                 }
             if name == "news_geo":
@@ -107,6 +116,11 @@ def test_sync_derives_and_stores_every_available_factor(db_session):
         "tga",
         "rrp",
         "cftc_oi",
+        "gvz",
+        "gold_silver_ratio",
+        "copper_gold_ratio",
+        "cftc_net_oi_ratio",
+        "gpr_daily",
     ):
         assert key in stored and not stored[key].empty, f"{key} 没有落库"
 
@@ -115,6 +129,19 @@ def test_sync_derives_and_stores_every_available_factor(db_session):
     usdcny = stored["usdcny"]
     expected_cny = gold.iloc[-1] * usdcny.iloc[-1] / 31.1035
     assert stored["cny_gold"].iloc[-1] == pytest.approx(expected_cny, rel=1e-9)
+
+    # 下一轮候选序列：比例口径必须与原始序列一致，且确实落库
+    bundle = _raw_bundle()
+    assert stored["gold_silver_ratio"].iloc[-1] == pytest.approx(
+        bundle["gold_close"].iloc[-1] / bundle["silver_close"].iloc[-1], rel=1e-9
+    )
+    assert stored["copper_gold_ratio"].iloc[-1] == pytest.approx(
+        bundle["copper_close"].iloc[-1] / bundle["gold_close"].iloc[-1], rel=1e-9
+    )
+    assert stored["cftc_net_oi_ratio"].iloc[-1] == pytest.approx(
+        bundle["cftc_net"].iloc[-1] / bundle["cftc_oi"].iloc[-1], rel=1e-9
+    )
+    assert stored["gpr_daily"].iloc[-1] == pytest.approx(bundle["gpr_daily"].iloc[-1])
 
     # 派生口径抽查：通胀预期 = 名义 10Y − 实际 10Y
     inflation = stored["inflation_expectation"]

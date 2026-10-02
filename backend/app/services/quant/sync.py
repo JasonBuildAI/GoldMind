@@ -25,6 +25,7 @@ from app.services.quant.definitions import BENCHMARK_KEY, EXTRA_SERIES, FACTORS
 from app.services.quant.derive import derive_factors
 from app.services.quant.sources import (
     cftc,
+    gpr,
     news_geo,
     nyfed,
     sina_macro,
@@ -35,13 +36,14 @@ from app.services.quant.sources import (
 from app.services.quant.sources.base import SourceError
 from app.utils import timeutil
 
-SOURCE_ORDER = ("treasury", "treasury_fiscal", "nyfed", "cftc", "sina_macro", "yahoo", "news_geo")
+SOURCE_ORDER = ("treasury", "treasury_fiscal", "nyfed", "cftc", "gpr", "sina_macro", "yahoo", "news_geo")
 
 SOURCE_LABELS = {
     "treasury": "美国财政部收益率曲线",
     "treasury_fiscal": "美国财政部 Fiscal Data（TGA 每日余额）",
     "nyfed": "纽约联储参考利率",
     "cftc": "CFTC 持仓报告",
+    "gpr": "GPR 官方日度地缘风险指数（Iacoviello & Papaioannou .xls）",
     "sina_macro": "新浪财经宏观数据（央行储备）",
     "yahoo": "Yahoo Finance 行情",
     "news_geo": "本系统新闻语料",
@@ -53,6 +55,7 @@ SOURCE_MIN_INTERVALS: Dict[str, timedelta] = {
     "treasury_fiscal": timedelta(hours=12),
     "nyfed": timedelta(hours=6),
     "cftc": timedelta(hours=24),
+    "gpr": timedelta(hours=24),
     "sina_macro": timedelta(hours=24),
     "yahoo": timedelta(hours=2),
     "news_geo": timedelta(hours=2),
@@ -64,6 +67,11 @@ REPORT_CACHE_KEY = "quant_sync_report"
 
 # 增量抓取时往前多取几天，覆盖数据源的历史回修与节假日
 INCREMENTAL_LOOKBACK_DAYS = 10
+
+# Yahoo 源「历史已铺满」的判据覆盖这些序列：任一序列历史不足，就按请求窗口
+# 重新拉长周期。新增序列（GVZ / 金银比 / 铜金比）上线时，老库因此能一次补齐
+# 长历史，而不是永远只积累最近 3 个月。
+YAHOO_COVERAGE_KEYS = (BENCHMARK_KEY, "gvz", "gold_silver_ratio", "copper_gold_ratio")
 
 
 def source_label(name: str) -> str:
@@ -164,18 +172,24 @@ def _fetch_source(
     if name == "cftc":
         start = _start_date(db, "cftc_positioning", today, history_years)
         return cftc.fetch(start=start)
+    if name == "gpr":
+        return gpr.fetch()
     if name == "sina_macro":
         return sina_macro.fetch()
     if name == "yahoo":
-        earliest = storage.earliest_date(db, BENCHMARK_KEY)
-        latest = storage.latest_date(db, BENCHMARK_KEY)
-        if earliest is None or latest is None:
-            period = f"{history_years}y"
-        else:
-            # 历史跨度不足请求窗口的 90%（新库，或早前只抓了 3 个月）时拉长周期，
-            # 否则只取最近 3 个月做增量 —— 回填与增量共用这一条路径。
-            long_enough = (latest - earliest).days >= int(history_years * 365 * 0.9)
-            period = "3mo" if long_enough else f"{history_years}y"
+        # 所有日线序列（金价、GVZ、金银比、铜金比）的历史都不短于请求窗口的
+        # 90% 才退化成 3 个月增量；否则按窗口回填 —— 回填与增量共用同一路径。
+        required_span = int(history_years * 365 * 0.9)
+        spans = []
+        for key in YAHOO_COVERAGE_KEYS:
+            earliest = storage.earliest_date(db, key)
+            latest = storage.latest_date(db, key)
+            if earliest is None or latest is None:
+                spans.append(None)
+            else:
+                spans.append((latest - earliest).days)
+        long_enough = all(span is not None and span >= required_span for span in spans)
+        period = "3mo" if long_enough else f"{history_years}y"
         return yahoo.fetch(period=period)
     if name == "news_geo":
         return news_geo.fetch(db)

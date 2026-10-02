@@ -13,6 +13,7 @@ import pytest
 from app.services.quant.derive import derive_factors, seasonal_expectation
 from app.services.quant.sources import (
     cftc,
+    gpr,
     news_geo,
     nyfed,
     sina_macro,
@@ -398,3 +399,106 @@ def test_derive_passes_monitor_extras_through():
     assert derived["tga"].iloc[-1] == pytest.approx(900_000.0)
     assert derived["rrp"].iloc[-1] == pytest.approx(300.0)
     assert derived["cftc_oi"].iloc[-1] == pytest.approx(500_000.0)
+
+
+
+@pytest.mark.unit
+def test_yahoo_maps_new_candidate_symbols():
+    assert yahoo.SYMBOLS["^GVZ"] == "gvz"
+    assert yahoo.SYMBOLS["SI=F"] == "silver_close"
+    assert yahoo.SYMBOLS["HG=F"] == "copper_close"
+
+
+@pytest.mark.unit
+def test_derive_new_candidate_series():
+    index = pd.date_range("2026-09-01", periods=5, freq="B")
+    raw = {
+        "gold_close": pd.Series([4000.0] * 5, index=index),
+        "silver_close": pd.Series([50.0] * 5, index=index),
+        "copper_close": pd.Series([5.0] * 5, index=index),
+        "cftc_net": pd.Series([200_000.0] * 5, index=index),
+        "cftc_oi": pd.Series([500_000.0] * 5, index=index),
+        "gvz": pd.Series([22.0] * 5, index=index),
+        "gpr_daily": pd.Series([150.0] * 5, index=index),
+    }
+
+    derived = derive_factors(raw)
+
+    assert derived["gold_silver_ratio"].iloc[-1] == pytest.approx(80.0)
+    assert derived["copper_gold_ratio"].iloc[-1] == pytest.approx(5.0 / 4000.0)
+    assert derived["cftc_net_oi_ratio"].iloc[-1] == pytest.approx(0.4)
+    assert derived["gvz"].iloc[-1] == pytest.approx(22.0)
+    assert derived["gpr_daily"].iloc[-1] == pytest.approx(150.0)
+
+    # 缺原始序列时对应比例不产出 —— 不补零、不用默认值
+    partial = derive_factors({"gold_close": raw["gold_close"]})
+    assert "gold_silver_ratio" not in partial
+    assert "copper_gold_ratio" not in partial
+    assert "cftc_net_oi_ratio" not in partial
+
+
+class _FakeSheet:
+    """xlrd sheet 的最小替身：只实现本模块用到的三个属性 / 方法。"""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self.nrows = len(rows)
+        self.ncols = len(rows[0]) if rows else 0
+
+    def cell_value(self, row, column):
+        return self._rows[row][column]
+
+
+def _gpr_sheet(values):
+    rows = [["DAY", "N10D", "GPRD"]]
+    rows.extend(values)
+    return _FakeSheet(rows)
+
+
+@pytest.mark.unit
+def test_gpr_parses_the_daily_index():
+    rows = [
+        {"DAY": "19850101", "GPRD": 230.039},
+        {"DAY": 19850102.0, "GPRD": 115.677},
+        {"DAY": "oops", "GPRD": 1.0},
+        {"DAY": "19850103", "GPRD": "not-a-number"},
+    ]
+
+    series = gpr.parse_rows(rows)
+
+    assert list(series.index) == [pd.Timestamp("1985-01-01"), pd.Timestamp("1985-01-02")]
+    assert series.iloc[-1] == pytest.approx(115.677)
+
+
+@pytest.mark.unit
+def test_gpr_sheet_maps_headers_and_requires_a_plausible_size():
+    values = [["19850101", 1.0, 100.0]] * gpr.MIN_DATA_ROWS
+    values[-1] = ["20260930", 1.0, 150.571]
+
+    series = gpr.parse_sheet(_gpr_sheet(values))
+
+    assert series.index[-1] == pd.Timestamp("2026-09-30")
+    assert series.iloc[-1] == pytest.approx(150.571)
+
+    with pytest.raises(SourceError):
+        gpr.parse_sheet(_gpr_sheet([["19850101", 1.0, 100.0]]))
+    with pytest.raises(SourceError):
+        gpr.parse_rows([])
+
+
+@pytest.mark.unit
+def test_gpr_fetch_returns_parsed_series_and_reports_http_errors(monkeypatch):
+    class _Response:
+        def __init__(self, status_code, content=b""):
+            self.status_code = status_code
+            self.content = content
+
+    parsed = pd.Series([150.571], index=[pd.Timestamp("2026-09-30")], name="gpr_daily")
+    monkeypatch.setattr(gpr, "parse_workbook", lambda content: parsed)
+
+    ok = gpr.fetch(get=lambda url, **kwargs: _Response(200, b"fake"))
+
+    assert ok["gpr_daily"] is parsed
+    with pytest.raises(SourceError):
+        gpr.fetch(get=lambda url, **kwargs: _Response(503))
+

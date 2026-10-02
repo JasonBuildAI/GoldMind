@@ -41,6 +41,10 @@ pydantic-settings==2.12.0
 yfinance==1.7.0
 requests==2.34.2
 feedparser==6.0.14
+# GPR official daily index is a legacy .xls workbook; xlrd 2.x reads exactly
+# that format (and nothing else), so it stays pinned alongside the other
+# external-data clients.
+xlrd==2.0.1
 
 # Scheduler
 apscheduler==3.11.3

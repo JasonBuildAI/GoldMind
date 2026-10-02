@@ -127,6 +127,24 @@ def derive_factors(raw: dict[str, pd.Series]) -> dict[str, pd.Series]:
     add("rrp", raw.get("rrp"))
     add("cftc_oi", raw.get("cftc_oi"))
 
+    # 下一轮候选信息源：与因子同表入库、只积累覆盖，本轮不参与信号合成。
+    add("gvz", raw.get("gvz"))
+    add("gpr_daily", raw.get("gpr_daily"))
+    if gold is not None:
+        silver = raw.get("silver_close")
+        if silver is not None:
+            gold_silver = gold.align(silver, join="inner")
+            add("gold_silver_ratio", gold_silver[0] / gold_silver[1])
+        copper = raw.get("copper_close")
+        if copper is not None:
+            copper_gold = gold.align(copper, join="inner")
+            add("copper_gold_ratio", copper_gold[1] / copper_gold[0])
+    cftc_net = raw.get("cftc_net")
+    cftc_oi = raw.get("cftc_oi")
+    if cftc_net is not None and cftc_oi is not None:
+        net_oi = cftc_net.align(cftc_oi, join="inner")
+        add("cftc_net_oi_ratio", net_oi[0] / net_oi[1])
+
     return derived
 
 
@@ -151,6 +169,10 @@ def required_raw_keys() -> set[str]:
         "tga",
         "rrp",
         "cftc_oi",
+        "gvz",
+        "silver_close",
+        "copper_close",
+        "gpr_daily",
         "btc",
         "spy",
     }

@@ -104,13 +104,32 @@ def test_yahoo_period_tracks_actual_history_span(db_session, monkeypatch):
     sync._fetch_source("yahoo", db_session, today=TODAY, history_years=HISTORY_YEARS)
     assert captured["period"] == "10y", "空库要按请求窗口回填"
 
-    _put_year(db_session, BENCHMARK_KEY, 2026, count=60)
+    for key in sync.YAHOO_COVERAGE_KEYS:
+        _put_year(db_session, key, 2026, count=60)
     sync._fetch_source("yahoo", db_session, today=TODAY, history_years=HISTORY_YEARS)
     assert captured["period"] == "10y", "只有三个月历史时不能退化成 3mo"
 
-    _put_year(db_session, BENCHMARK_KEY, 2016, count=250)
+    for key in sync.YAHOO_COVERAGE_KEYS:
+        _put_year(db_session, key, 2016, count=250)
     sync._fetch_source("yahoo", db_session, today=TODAY, history_years=HISTORY_YEARS)
     assert captured["period"] == "3mo", "跨度已够，增量只取最近三个月"
+
+
+def test_yahoo_period_extends_when_a_new_series_is_empty(db_session, monkeypatch):
+    captured: dict = {}
+
+    def fake_fetch(*, period="10y", **kwargs):
+        captured["period"] = period
+        return {}
+
+    monkeypatch.setattr(sync.yahoo, "fetch", fake_fetch)
+    for key in (BENCHMARK_KEY, "gold_silver_ratio", "copper_gold_ratio"):
+        _put_year(db_session, key, 2016, count=250)
+        _put_year(db_session, key, 2026, count=60)
+
+    sync._fetch_source("yahoo", db_session, today=TODAY, history_years=HISTORY_YEARS)
+
+    assert captured["period"] == "10y", "新序列还空着，就不能只抓 3 个月增量"
 
 
 def test_start_date_backfills_when_history_is_short(db_session):
