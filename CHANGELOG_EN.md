@@ -72,6 +72,7 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 - Missing database/tables now answer **503 + `python init_db.py` guidance** (was a bare 500); startup runs a schema self-check and logs an ERROR when tables are missing; other SQL errors still return 500
 - When the external quote source (Yahoo) is rate-limited or down, the quant engine falls back to the locally synced `gold_prices` / `dollar_index` tables for the benchmark and the dollar factor, labelled as such; no more whole-page "missing gold price series"
 - The frontend retries **429 / 5xx / network errors** with exponential backoff (429 honours `Retry-After`, at most 3 attempts); in-flight GETs for the same URL are merged into one request; `POST` and `?refresh=true` are never retried
+- Real-stack acceptance hit a 500 on the investment-advice endpoint: the post-retry model output omitted `disclaimer`, the cache kept serving the incomplete shape, and response validation failed. The analyzer parse path, the realtime exit and the cache-read exit now backfill missing contract keys with empty values (`core_principles=[]`, `disclaimer=""`, ...), normalising the shape without inventing content; only genuinely parsed rounds record the input fingerprint, so an empty shape still retries on the next round
 
 ### Documentation
 
