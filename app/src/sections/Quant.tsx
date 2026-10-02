@@ -212,19 +212,28 @@ const SIGNAL_TEXT: Record<string, string> = {
   neutral: '— 中性',
 }
 
+/**
+ * 按量级取舍小数位：800000 不该显示成 800000.00，
+ * 铜金比 0.0016 也不该显示成 0.00（两位小数会把非零的值压成零，等同丢数）。
+ */
+function formatMagnitude(abs: number): string {
+  if (abs > 0 && abs < 0.01) return abs.toPrecision(3)
+  return abs.toFixed(abs >= 100 ? 0 : 2)
+}
+
 /** 变化量按量级给小数位：0.12 -> +0.12；123456 -> +12.3 万。 */
 function formatChange(value: number): string {
   const sign = value > 0 ? '+' : value < 0 ? '\u2212' : ''
   const abs = Math.abs(value)
   if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)} 万`
-  return `${sign}${abs.toFixed(abs >= 100 ? 0 : 2)}`
+  return `${sign}${formatMagnitude(abs)}`
 }
 
-/** 仪表盘的值按量级取舍小数位：800000 百万美元不该显示成 800000.00。 */
+/** 仪表盘的值：正值不带符号，负值用真正的减号。 */
 function formatMonitorValue(value: number): string {
   const abs = Math.abs(value)
   if (abs >= 10000) return formatChange(value)
-  return value.toFixed(abs >= 100 ? 0 : 2)
+  return value < 0 ? `\u2212${formatMagnitude(abs)}` : formatMagnitude(abs)
 }
 
 function MonitorSignal({ row }: { row: QuantMonitorRow }) {

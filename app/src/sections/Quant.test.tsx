@@ -402,6 +402,21 @@ const MONITOR_RESPONSE: QuantMonitorResponse = {
       reason: null,
     },
     {
+      key: 'copper_gold_ratio',
+      name: '铜金比（铜价 ÷ 金价）',
+      frequency: '日',
+      source: 'Yahoo Finance（HG=F ÷ GC=F）',
+      value: 0.0015607,
+      unit: '倍',
+      change: -0.0000234,
+      obs_date: '2026-10-01',
+      signal: null,
+      signal_label: '信息',
+      note: '信息行：增长/通胀相对偏好，未过闸门',
+      status: 'ok',
+      reason: null,
+    },
+    {
       key: 'shanghai_premium',
       name: '上海金溢价',
       frequency: '日',
@@ -697,11 +712,14 @@ describe('Quant', () => {
     expect(screen.getByText('2026-09-29')).toBeInTheDocument()
     expect(screen.getAllByText('▲ 看涨').length).toBeGreaterThan(0)
     // 信息型指标不给方向，照实标「信息」
-    expect(screen.getByText('信息')).toBeInTheDocument()
+    expect(screen.getAllByText('信息').length).toBeGreaterThan(0)
     // 上海金溢价拿不到数据：只给原因，不编一个数
     expect(screen.getByText('上海金溢价')).toBeInTheDocument()
     expect(screen.getByTestId('quant-monitor-reason-shanghai_premium')).toBeInTheDocument()
     expect(screen.getByText(/AU9999）实测返回空，不编数/)).toBeInTheDocument()
+    // 量级很小的比值不能被两位小数压成 0.00（那是「有数但看不见」）
+    expect(screen.getByText('0.00156 倍')).toBeInTheDocument()
+    expect(screen.getByText('−0.0000234')).toBeInTheDocument()
   })
 
   it('接口失败时如实说不可用，不摆内置数字', async () => {
