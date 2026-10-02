@@ -760,10 +760,16 @@ def _asof_position(calendar: pd.DatetimeIndex, as_of: Optional[date]) -> int:
 
 
 def _clean(value) -> Optional[float]:
+    """NaN 与 ±Inf 都当「没有这个数字」。
+
+    Inf 不是「一个很大的数」：它的来源通常是除零或尺度估计退化，那是「算不出来」。
+    放它过去，响应会序列化出非法 JSON（`Infinity`）、页面会印出 `Infinity`；
+    落库那条路有 `stats.json_safe` 兜着，响应这条没有。
+    """
     if value is None:
         return None
     number = float(value)
-    return None if np.isnan(number) else number
+    return number if np.isfinite(number) else None
 
 
 def factor_states(

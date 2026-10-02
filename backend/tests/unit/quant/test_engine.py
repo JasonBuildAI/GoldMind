@@ -42,6 +42,22 @@ def _snapshot(*, score: float, expected_return: float,
     )
 
 
+def test_non_finite_values_are_treated_as_missing():
+    """NaN 与 ±Inf 都是「没有这个数字」，不是「一个很大的数」。
+
+    Inf 的来源通常是除零或尺度估计退化 —— 那是「算不出来」。放它过去，
+    API 会序列化出非法 JSON（`Infinity`），页面会印出 `Infinity`；
+    落库那条路已经有 `stats.json_safe` 兜着，响应这条没有。
+
+    变异验证：把 `np.isfinite` 改回 `np.isnan`，后两条断言必红。
+    """
+    assert engine._clean(None) is None
+    assert engine._clean(float("nan")) is None
+    assert engine._clean(float("inf")) is None
+    assert engine._clean(float("-inf")) is None
+    assert engine._clean(0.5) == 0.5
+
+
 def test_direction_follows_the_calibrated_mean_and_reports_the_median():
     """方向 = sign(μ)；分布中位数作为另一个统计量一并给出。
 
