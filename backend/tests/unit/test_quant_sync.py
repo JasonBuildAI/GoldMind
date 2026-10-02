@@ -93,6 +93,24 @@ def _fetchers(*, failing: tuple[str, ...] = ()) -> dict:
 
 @pytest.mark.unit
 def test_sync_derives_and_stores_every_available_factor(db_session):
+    # 高权威消息强度取自消息板块本库（不是外部源）：先造三条消息、跨两天
+    from datetime import datetime
+
+    from app.models.news_digest import NewsDigestItem
+
+    for stamp in ("2026-09-28 09:00:00", "2026-09-28 15:00:00", "2026-09-29 08:00:00"):
+        db_session.add(
+            NewsDigestItem(
+                title=f"消息 {stamp}",
+                source="测试源",
+                source_key="test",
+                authority_tier=1,
+                url=f"https://example.invalid/{stamp}",
+                published_at=datetime.fromisoformat(stamp),
+            )
+        )
+    db_session.commit()
+
     report = quant_sync.run_sync(db_session, force=True, fetchers=_fetchers())
 
     assert report.source_status["yahoo"]["status"] == "ok"
@@ -125,6 +143,7 @@ def test_sync_derives_and_stores_every_available_factor(db_session):
         "cftc_net_oi_ratio",
         "gpr_daily",
         "gld_close",
+        "digest_intensity",
     ):
         assert key in stored and not stored[key].empty, f"{key} 没有落库"
 
@@ -147,11 +166,42 @@ def test_sync_derives_and_stores_every_available_factor(db_session):
     )
     assert stored["gpr_daily"].iloc[-1] == pytest.approx(bundle["gpr_daily"].iloc[-1])
 
+    # 高权威消息强度 = 消息板块当日入库条数（同日聚合为 2、次日为 1）
+    assert stored["digest_intensity"].loc["2026-09-28"] == pytest.approx(2.0)
+    assert stored["digest_intensity"].loc["2026-09-29"] == pytest.approx(1.0)
+
     # 派生口径抽查：通胀预期 = 名义 10Y − 实际 10Y
     inflation = stored["inflation_expectation"]
     real = stored["real_yield_10y"]
     assert inflation.iloc[-1] == pytest.approx(3.8 - 1.5 + 0.0, abs=0.05)
     assert real.index[-1] == inflation.index[-1]
+
+
+@pytest.mark.unit
+def test_digest_count_series_aggregates_rows_by_day(db_session):
+    from datetime import date, datetime
+
+    from app.models.news_digest import NewsDigestItem
+
+    assert quant_sync._digest_count_series(db_session).empty
+
+    for hour, suffix in ((23, "late"), (6, "early")):
+        db_session.add(
+            NewsDigestItem(
+                title=suffix,
+                source="s",
+                source_key="s",
+                authority_tier=2,
+                url=f"https://example.invalid/{suffix}",
+                published_at=datetime(2026, 9, 30, hour, 30),
+            )
+        )
+    db_session.commit()
+
+    series = quant_sync._digest_count_series(db_session)
+
+    assert list(series.index) == [date(2026, 9, 30)]
+    assert float(series.iloc[0]) == 2.0
 
 
 @pytest.mark.unit
@@ -341,5 +391,14 @@ def test_the_factor_to_source_map_covers_every_factor_and_raw_key():
     assert set(quant_sync.RAW_KEY_SOURCES) == required_raw_keys(), (
         f"原始序列到源的映射不完整：缺 {sorted(required_raw_keys() - set(quant_sync.RAW_KEY_SOURCES))}"
     )
-    unknown = set(quant_sync.RAW_KEY_SOURCES.values()) - set(quant_sync.SOURCE_ORDER)
+    # 源必须二选一：要么是可抓取的外部源（SOURCE_ORDER），要么是显式声明的
+    # 本地源（LOCAL_SOURCES，由 run_sync 从本库数据派生）。两者都要有可读标签。
+    unknown = (
+        set(quant_sync.RAW_KEY_SOURCES.values())
+        - set(quant_sync.SOURCE_ORDER)
+        - set(quant_sync.LOCAL_SOURCES)
+    )
     assert not unknown, f"映射到了不存在的源：{sorted(unknown)}"
+    assert quant_sync.LOCAL_SOURCES <= set(quant_sync.SOURCE_LABELS), (
+        f"本地源缺标签：{sorted(quant_sync.LOCAL_SOURCES - set(quant_sync.SOURCE_LABELS))}"
+    )

@@ -26,6 +26,7 @@ NEW_INFORMATION_KEYS = {
     "copper_gold_ratio",
     "cftc_net_oi_ratio",
     "gpr_daily",
+    "digest_intensity",
 }
 
 

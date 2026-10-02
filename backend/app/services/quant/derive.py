@@ -147,6 +147,10 @@ def derive_factors(raw: dict[str, pd.Series]) -> dict[str, pd.Series]:
         net_oi = cftc_net.align(cftc_oi, join="inner")
         add("cftc_net_oi_ratio", net_oi[0] / net_oi[1])
 
+    # 第四轮预注册候选（2.0.2）：高权威消息强度（消息板块每日入库条数）。
+    # 只存储、上监测表，本轮不进信号合成；是否进因子集由下一轮预注册决定。
+    add("digest_intensity", raw.get("digest_gold_count"))
+
     return derived
 
 
@@ -185,6 +189,8 @@ FACTOR_RAW_KEYS: dict[str, tuple[str, ...]] = {
     "cftc_net_oi_ratio": ("cftc_net", "cftc_oi"),
     # 基准对照序列（第四轮，只进研究台）
     "gld_close": ("gld_close",),
+    # 第四轮预注册候选：高权威消息强度（本库消息板块计数）
+    "digest_intensity": ("digest_gold_count",),
 }
 
 
@@ -216,4 +222,5 @@ def required_raw_keys() -> set[str]:
         "btc",
         "spy",
         "gld_close",
+        "digest_gold_count",
     }

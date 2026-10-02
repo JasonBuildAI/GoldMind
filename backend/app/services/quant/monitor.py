@@ -31,6 +31,7 @@ INFO_KEYS = {
     "copper_gold_ratio",
     "cftc_net_oi_ratio",
     "gpr_daily",
+    "digest_intensity",
 }
 
 SIGNAL_LABELS = {SIGNAL_BULL: "看涨", SIGNAL_BEAR: "看跌", SIGNAL_NEUTRAL: "中性"}
@@ -151,6 +152,11 @@ ROW_SPECS: tuple[RowSpec, ...] = (
     RowSpec(
         "gpr_daily", "地缘风险指数（GPR 官方日度）", "日", "Iacoviello & Papaioannou GPR", "点",
         "信息行：26 年实测 20 日 t=−2.64（反向），离 |t| ≥ 3 的门槛还差，不给方向",
+    ),
+    RowSpec(
+        "digest_intensity", "高权威消息强度（每日条数）", "日",
+        "消息板块（13 个高权威源，本库统计）", "条",
+        "信息行：第四轮预注册候选，只积累覆盖，不进本轮信号合成",
     ),
 )
 
@@ -344,7 +350,7 @@ def _rule(key: str, series: pd.Series) -> tuple[Optional[str], Optional[float]]:
         return None, _pct_delta(series, 5)
     if key == "cftc_oi":
         return None, _delta(series, 1)
-    if key in {"gvz", "gold_silver_ratio", "copper_gold_ratio", "gpr_daily"}:
+    if key in {"gvz", "gold_silver_ratio", "copper_gold_ratio", "gpr_daily", "digest_intensity"}:
         return None, _delta(series, 5)
     if key == "cftc_net_oi_ratio":
         return None, _delta(series, 1)

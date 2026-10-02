@@ -17,8 +17,10 @@ from typing import Callable, Dict, Optional
 
 import pandas as pd
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.news_digest import NewsDigestItem
 from app.services.cache_manager import CacheManager
 from app.services.quant import derive, storage
 from app.services.quant.definitions import BENCHMARK_KEY, EXTRA_SERIES, FACTORS
@@ -66,7 +68,15 @@ RAW_KEY_SOURCES: dict[str, str] = {
     "copper_close": "yahoo",
     "news_geo_intensity": "news_geo",
     "gld_close": "yahoo",
+    # 不是外部源：由本库消息板块（news_digest_items）计数而来
+    "digest_gold_count": "news_digest",
 }
+
+# 本地源：不由 _fetch_source 抓取，而是在 run_sync 里从本库现成数据派生
+# （目前只有消息板块计数 news_digest）。它们同样必须在 SOURCE_LABELS 里有标签，
+# 否则「因子为什么缺失」会退回那句无用的兜底文本。
+LOCAL_SOURCES = frozenset({"news_digest"})
+
 
 SOURCE_LABELS = {
     "treasury": "美国财政部收益率曲线",
@@ -77,6 +87,7 @@ SOURCE_LABELS = {
     "sina_macro": "新浪财经宏观数据（央行储备）",
     "yahoo": "Yahoo Finance 行情",
     "news_geo": "本系统新闻语料",
+    "news_digest": "消息板块（本库高权威消息计数）",
 }
 
 # 每个源最短抓取间隔：数据本身多久更新一次，就多久抓一次。
@@ -309,6 +320,25 @@ def _apply_local_price_fallbacks(
     return used
 
 
+def _digest_count_series(db: Session) -> pd.Series:
+    """消息板块每日入库条数（高权威，抓取时已按黄金/货币相关性过滤）。
+
+    时间口径：\`published_at\` 在抓取时已换算进 \`SCHEDULER_TIMEZONE\`（红线五），
+    这里只按日期聚合，不再做时区运算。
+    """
+    days = [
+        moment.date()
+        for (moment,) in db.execute(select(NewsDigestItem.published_at)).all()
+        if moment is not None
+    ]
+    if not days:
+        return pd.Series(dtype="float64")
+    counts: Dict[object, int] = {}
+    for day in days:
+        counts[day] = counts.get(day, 0) + 1
+    return pd.Series(counts, dtype="float64").sort_index()
+
+
 def run_sync(
     db: Session,
     *,
@@ -352,6 +382,12 @@ def run_sync(
             }
 
     fallback_sources = _apply_local_price_fallbacks(db, raw, report)
+
+    # 高权威消息强度：数据来自消息板块本库（不是外部源），先转成原始序列再派生
+    digest_counts = _digest_count_series(db)
+    if not digest_counts.empty:
+        raw["digest_gold_count"] = digest_counts
+
     derived = derive_factors(raw)
 
     for factor in FACTORS:

@@ -381,6 +381,15 @@ EXTRA_SERIES: tuple[ExtraSeries, ...] = (
     # 基准对照序列（第四轮）：只供研究台做「生产基准 vs ETF 基准」的敏感性对照，
     # 不参与信号合成、不进仪表盘。口径见 regimes.BENCHMARK_CHOICES。
     ExtraSeries("gld_close", "GLD 收盘价（基准对照）", "Yahoo Finance（GLD）", "日"),
+    # 第四轮预注册候选（2.0.2 第 16 条整改）：高权威消息强度 —— 消息板块每日
+    # 入库条数。只存储、上监测表（信息行）；不进本轮信号合成，是否进因子集
+    # 由下一轮预注册写死后再执行。
+    ExtraSeries(
+        "digest_intensity",
+        "高权威消息强度（每日条数）",
+        "消息板块（13 个高权威源，本库统计）",
+        "日",
+    ),
 )
 
 extra_series_by_key = {item.key: item for item in EXTRA_SERIES}

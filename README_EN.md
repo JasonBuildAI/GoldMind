@@ -63,7 +63,7 @@ it landed at 0.7679, 1.2pp short, and was eliminated. The bar does not move for 
 | Bet accounting | 754 overlapping holdout samples in the 250-day window treated as 754 pieces of evidence | Independent bets sampled at stride = h (that same stretch really holds 3 bets); insufficient samples are labelled "undecidable", not "failed" |
 | Significance | iid t only | HAC (Newey–West) shown next to iid: gold/silver at 60d reads **+2.30** HAC vs **+12.70** iid — the literal meaning of "half of your significant factors are fake" |
 | Sample periods | development / holdout | Four: development, historical holdout (record only), **forward holdout** (the only judging window, starting 2026-10-02), full sample |
-| New information sources | — | GVZ, gold/silver ratio, copper/gold ratio, CFTC net-long share of open interest, official daily GPR — all on the monitor table, **all labelled information-only** (none cleared the gates on a 26-year panel; giving them a direction would be fabrication) |
+| New information sources | — | GVZ, gold/silver ratio, copper/gold ratio, CFTC net-long share of open interest, official daily GPR, high-authority message intensity (daily count) — all on the monitor table, **all labelled information-only** (none cleared the gates on a 26-year panel; giving them a direction would be fabrication) |
 | Reproducibility | Factor table kept only the current value | Append-only revision ledger + `--as-of` panel rebuild; every stored prediction carries the measured skill of its own horizon |
 
 ---
@@ -124,7 +124,7 @@ Public sources ──► factor observations ──► rolling z ──► per-h
 (Treasury / NY Fed / CFTC /     │  (current value + append-only revision ledger; --as-of rebuilds
  Yahoo / RSS, all key-free)     │   the panel as of any past day)
                                 ├──► walk-forward backtest (independent bets / HAC / four periods)
-                                └──► monitor dashboard (21 water-level rows, 5 of them information-only)
+                                └──► monitor dashboard (22 water-level rows, 6 of them information-only)
 ```
 
 | Service | Input | Output |
@@ -226,7 +226,7 @@ If this project helps or inspires you, a ⭐ **Star** is the best thank-you.
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshots/quant-monitor.png" alt="Monitor dashboard (21 rows)" width="800">
+  <img src="docs/images/screenshots/quant-monitor.png" alt="Monitor dashboard (22 rows)" width="800">
 </p>
 
 <p align="center">
@@ -237,10 +237,10 @@ If this project helps or inspires you, a ⭐ **Star** is the best thank-you.
 > factors and indicators are marked "unavailable" with a reason, and fewer than 3 usable factors
 > means "forecast unavailable". On the capture day 12/14 factors were usable (geopolitical
 > strength and GLD shares lacked samples); forecast and backtest share one horizon tab strip,
-> so the shots above are the 1-year and 1-quarter tabs. In the monitor table the last five of the
-> 21 rows are the second round's **information-only** series: GVZ, gold/silver ratio, copper/gold
-> ratio, CFTC net-long share of open interest and official daily GPR — none cleared the gates, so
-> they show values and dates but no bull/bear label. Stored forecasts keep one row per
+> so the shots above are the 1-year and 1-quarter tabs. Six of the 22 monitor rows are
+> **information-only** (the second round's five series plus the 2.0.2 digest-derived message
+> intensity): none cleared the gates, so they show values and dates but no bull/bear label.
+> Stored forecasts keep one row per
 > (model version, horizon, as_of): same-day recomputes update in place, a new day appends,
 > so the table is the forecast archive.
 
@@ -312,9 +312,10 @@ Full definitions of the 14 factors (prior `+1` = the factor rising is bullish fo
 Direction priors come from economic reasoning and are **not guaranteed to hold** — the backtest
 reports per-factor hit rates and IC (the "factor breakdown" section of the research page), and
 the page shows contrary evidence as it is. Besides these 14 factors, the
-`factor_observations` table also stores 10 **monitor-only** series (USDCNY, the CNY gold
+`factor_observations` table also stores 12 **monitor-only** series (USDCNY, the CNY gold
 reference, the TGA balance, RRP, open interest, GVZ, the gold/silver ratio, the copper/gold
-ratio, the CFTC net-long share and official daily GPR). They never enter composition — see
+ratio, the CFTC net-long share, official daily GPR, GLD close for the benchmark comparison and
+the digest-derived message intensity). They never enter composition — see
 section 8.
 
 ### 2. Five horizons, each with its own dominant layer
@@ -570,9 +571,9 @@ Neither group enters live signals or the live benchmark before clearing the forw
 > the evidence does not support one. It made every future improvement clear the line first — and
 > made "not there yet" visible by itself.
 
-### 8. Monitor dashboard: 21 water-level rows
+### 8. Monitor dashboard: 22 water-level rows
 
-`monitor.py` covers **21 rows**. Each row carries frequency, source, current value, signal
+`monitor.py` covers **22 rows**. Each row carries frequency, source, current value, signal
 (bullish / bearish / neutral / information) and as-of date. Signal rules are deterministic
 thresholds centralised in `_rule`; rows without data or without enough history honestly return
 "unavailable + reason". Each row updates at its own source cadence (daily / weekly / monthly) —
@@ -601,10 +602,12 @@ this is not one uniform refresh:
 | 19 | Copper/gold ratio | D | ratio | Yahoo Finance (HG=F ÷ GC=F) | information only: 250d t=+1.27 over 26 years, gate not cleared |
 | 20 | CFTC net long share of open interest | W | % | CFTC positioning report | information only: crowding as a share, 250d t=+0.73, gate not cleared |
 | 21 | Geopolitical risk (official daily GPR) | D | pts | Iacoviello & Papaioannou GPR | information only: 20d t=−2.64 (reversed), short of \|t\| ≥ 3, no direction |
+| 22 | High-authority message intensity (daily count) | D | items | digest board (13 high-authority sources, counted in-house) | information only: round-four pre-registration candidate, not in this round's signal |
 
-> Rows 17–21 are the second round's five new sources. Whether they carry directional information
+> Rows 17–21 are the second round's five new sources and row 22 is the 2.0.2 digest-derived
+> intensity. Whether they carry directional information
 > was tested on a 26-year panel through the strict gates (section 7) and none cleared — so these
-> five **never get a bull/bear label**, they are water levels only. Rows 12–16 are likewise
+> six **never get a bull/bear label**, they are water levels only. Rows 12–16 are likewise
 > monitor-only series stored in the same table (`factor_observations`) without entering
 > composition; order and count are fixed by `monitor.ROW_SPECS` and guarded line by line in
 > `backend/tests/unit/quant/test_monitor.py`.

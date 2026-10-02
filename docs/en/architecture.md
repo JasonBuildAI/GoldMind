@@ -498,8 +498,10 @@ up/down, CRPS scores how well the whole distribution matches the realised return
 form / exact empirical form, each checked against the defining integral in the tests).
 Guard: `backend/tests/unit/quant/test_backtest_metrics.py`.
 
-The monitoring dashboard (`monitor.py`) covers 16 rows of metrics; usdcny / cny_gold / tga / rrp /
-cftc_oi are monitor-only series, stored in the same table as the factors (`factor_observations`) but
+The monitoring dashboard (`monitor.py`) covers 22 rows of metrics; usdcny / cny_gold / tga / rrp /
+cftc_oi plus the second round's gvz / gold_silver_ratio / copper_gold_ratio / cftc_net_oi_ratio /
+gpr_daily, the round-four gld_close and the 2.0.2 digest_intensity are monitor-only series, stored in
+the same table as the factors (`factor_observations`) but
 not used in signal composition. The public endpoint for the Shanghai gold premium is unavailable in
 practice, and its row honestly shows "unavailable + reason".
 Guard: `backend/tests/unit/quant/test_monitor.py`.

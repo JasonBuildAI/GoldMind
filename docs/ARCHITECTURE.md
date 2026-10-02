@@ -476,9 +476,10 @@ ACI 判错区间之后升为 `quant-v5`，同日引擎加固再升为 `quant-v6`
 与实现收益的匹配（正态闭式解 / 经验分布精确式，定义式数值积分在测试里逐点对照）。
 守卫：`backend/tests/unit/quant/test_backtest_metrics.py`。
 
-监测仪表盘（`monitor.py`）覆盖 21 行指标；其中 usdcny / cny_gold / tga / rrp /
+监测仪表盘（`monitor.py`）覆盖 22 行指标；其中 usdcny / cny_gold / tga / rrp /
 cftc_oi 与第二轮接入的 gvz / gold_silver_ratio / copper_gold_ratio /
-cftc_net_oi_ratio / gpr_daily 是监控专用序列，与因子同表（`factor_observations`）
+cftc_net_oi_ratio / gpr_daily、第四轮的 gld_close 与 2.0.2 的 digest_intensity
+是监控专用序列，与因子同表（`factor_observations`）
 存储但不参与信号合成 —— 顺序、数量与 `monitor.ROW_SPECS` 逐行对齐。
 上海金溢价的公开接口实测不可用，行内如实显示「不可用 + 原因」。
 守卫：`backend/tests/unit/quant/test_monitor.py`。
