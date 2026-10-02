@@ -76,8 +76,10 @@ def test_missing_table_response_is_503_with_fix_command(client) -> None:
     assert response.status_code == 503
     payload = response.json()
     assert payload["error"] == "database_not_initialized"
-    assert "init_db.py" in payload["detail"], "必须告诉运维怎么修"
-    assert "backfill_quant.py" in payload["detail"]
+    # 2.0.2 起默认由启动引导自动重建表结构；detail 必须至少给出这条自动路径，
+    # 以及关闭引导时的手工兜底命令。
+    assert "AUTO_BOOTSTRAP" in payload["detail"], "必须告诉运维默认会自动重建"
+    assert "init_db.py" in payload["detail"], "必须保留手工兜底命令"
 
 
 @pytest.mark.unit

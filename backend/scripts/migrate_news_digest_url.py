@@ -110,6 +110,24 @@ def longest_url(bind: Engine) -> Optional[int]:
     return int(value) if value is not None else None
 
 
+def apply(bind: Engine) -> str:
+    """自动迁移入口（启动引导调用）：幂等把 url 列迁到 TEXT，返回做了什么。
+
+    与 CLI 共用 ``describe`` / ``plan_for`` 同一份判定 —— 引导与手工运维不会出现两套口径。
+    """
+    table_exists, current_type = describe(bind)
+    plan = plan_for(
+        dialect=bind.dialect.name,
+        table_exists=table_exists,
+        current_type=current_type,
+    )
+    if not plan.needed:
+        return plan.reason
+    with bind.begin() as conn:
+        conn.execute(text(plan.statement))
+    return f"{plan.reason}（已执行）"
+
+
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(description=f"{TABLE}.{COLUMN} 列迁移（只改列型，不删行）")
     parser.add_argument("--apply", action="store_true", help="真正执行（默认 dry-run）")

@@ -166,7 +166,28 @@ class Settings(BaseSettings):
     UPDATE_QUANT_CRON: str = "45 */2 * * *"
     # 首次回填的年数（之后都是增量抓取）。
     QUANT_HISTORY_YEARS: int = 10
-    
+
+    # ------------------------------------------------------------------
+    # 全自动运行（2.0.2）—— 「填好 .env → 启动」是唯一人工步骤
+    # ------------------------------------------------------------------
+    # 启动引导：建表 → 自动迁移 → 数据回填 → 首轮分析（幂等，可中断续跑）。
+    # 关掉后回退到手工跑 init_db.py / migrate_*.py 的旧流程。
+    AUTO_BOOTSTRAP: bool = True
+    # 冷启动量化因子全历史回填年数（首次用；之后都是增量抓取）。
+    QUANT_BACKFILL_YEARS: int = 20
+    # 每日自动备份：SQLite 复制库文件到 backend/backups/ 并保留 7 份；
+    # MySQL 不代跑 mysqldump（如实标注为不支持）。
+    AUTO_BACKUP: bool = True
+    # 监听 .env 变化并热生效 LLM 配置（无需重启；DATABASE_URL 等需重启的项
+    # 会在 /health 的 config_watch 里提示）。默认开启。
+    CONFIG_WATCH: bool = True
+    # 可选：设置后 POST refresh 必须带 X-Refresh-Token 请求头（公开部署防止被
+    # 随意触发付费 LLM 调用）。留空 = 不鉴权（与历史行为一致）。
+    REFRESH_TOKEN: SecretStr = SecretStr("")
+    # LLM 每日调用预算（按 SCHEDULER_TIMEZONE 的自然日累计；达到上限后各块
+    # 返回「今日预算已用尽」，不再发起新调用）。
+    LLM_DAILY_CALL_BUDGET: int = 200
+
     class Config:
         env_file = ".env"
         case_sensitive = True

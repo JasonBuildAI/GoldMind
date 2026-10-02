@@ -108,6 +108,45 @@ def fix_column(cur, table: str, column: str, wanted: list[str], dry_run: bool) -
     return f"已修正（{current} -> {wanted}，改写 {moved} 行）"
 
 
+def _connect_engine(engine):
+    """按 SQLAlchemy Engine 建 pymysql 连接（密码取 SQLAlchemy 已解码值，避免二次转义）。"""
+    import pymysql
+
+    url = engine.url
+    return pymysql.connect(
+        host=url.host or "localhost",
+        port=url.port or 3306,
+        user=url.username or "root",
+        password=url.password or "",
+        database=url.database or None,
+        charset="utf8mb4",
+        autocommit=True,
+    )
+
+
+def apply(engine=None) -> list[str]:
+    """自动迁移入口（启动引导调用）：幂等修正枚举列取值。
+
+    非 MySQL 库直接返回说明；与 CLI 共用 ``TARGETS`` 与 ``fix_column`` 同一份实现。
+    """
+    if engine is None:
+        from app.database import engine as default_engine
+
+        engine = default_engine
+    if engine.dialect.name != "mysql":
+        return [f"{engine.dialect.name} 库无需修正枚举取值（ENUM 大小写问题只在 MySQL 出现）"]
+    conn = _connect_engine(engine)
+    try:
+        results: list[str] = []
+        with conn.cursor() as cur:
+            for table, column, wanted in TARGETS:
+                results.append(f"{table}.{column}: {fix_column(cur, table, column, wanted, False)}")
+        conn.commit()
+        return results
+    finally:
+        conn.close()
+
+
 def main() -> int:
     try:  # Windows 控制台默认可能是 GBK，直接打印 emoji 会抛 UnicodeEncodeError
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")

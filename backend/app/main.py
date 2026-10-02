@@ -84,6 +84,40 @@ async def warmup_cache():
     except Exception as e:
         logger.error(f"[缓存预热] 预热失败: {e}")
 
+# --------------------------------------------------------------------------- #
+# 启动引导（2.0.2）
+# --------------------------------------------------------------------------- #
+# 「填好 backend/.env → 启动」是唯一人工步骤：迁移在 lifespan 里自动应用，
+# 结果暴露在 /health 的 bootstrap 字段。失败不阻塞服务 —— 下轮启动自动重试。
+_bootstrap_state: dict = {
+    "status": "pending" if settings.AUTO_BOOTSTRAP else "disabled",
+    "enabled": bool(settings.AUTO_BOOTSTRAP),
+    "migrations": None,
+    "error": None,
+}
+
+
+def _run_bootstrap() -> None:
+    """应用迁移注册表；异常不外抛 —— 引导失败不该拖垮整个服务。"""
+    from app import bootstrap
+
+    try:
+        results = bootstrap.run_migrations(engine)
+        failed = next((item for item in results if item["status"] == "failed"), None)
+        _bootstrap_state.update(
+            status="failed" if failed else "done",
+            migrations=bootstrap.registry_snapshot(engine),
+            error=failed.get("error") if failed else None,
+            at=timeutil.now_iso(),
+        )
+        logger.info(f"[引导] 迁移完成：{_bootstrap_state['migrations']}")
+    except Exception as exc:  # noqa: BLE001 —— 任何引导异常都不该阻止服务启动
+        _bootstrap_state.update(
+            status="failed", error=f"{type(exc).__name__}: {exc}", at=timeutil.now_iso()
+        )
+        logger.error(f"[引导] 迁移阶段异常：{exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
@@ -100,7 +134,10 @@ async def lifespan(app: FastAPI):
         )
     else:
         logger.info("数据库表创建完成")
-    
+
+    if settings.AUTO_BOOTSTRAP:
+        _run_bootstrap()
+
     if settings.SCHEDULER_ENABLED:
         init_scheduler()
         logger.info("定时任务调度器已启动")
@@ -130,9 +167,9 @@ app = FastAPI(
 # 是数据库没初始化：按 503（暂时不可用）返回，并把「怎么修」写进 detail，
 # 前端可以原样展示给用户/运维。
 _MISSING_SCHEMA_HINT = (
-    "数据表缺失：数据库未初始化或已被重置。"
-    "请在 backend/ 目录运行 `python init_db.py` 重建表结构；"
-    "需要历史数据再运行 `python scripts/backfill_quant.py --apply --years 20`。"
+    "数据表缺失：默认开启的启动引导（AUTO_BOOTSTRAP）会自动建表；"
+    "若反复出现，请查看后端日志与 /health 的 bootstrap 字段排查。"
+    "旧版本或关闭了引导时，也可以在 backend/ 目录运行 `python init_db.py` 手工建表。"
 )
 
 # MySQL / MariaDB 错误码：1146 表不存在、1049 库不存在。
@@ -281,6 +318,7 @@ async def health_check():
         "status": "healthy",
         "timestamp": timeutil.now_iso(),
         "version": "2.0.1",
+        "bootstrap": dict(_bootstrap_state),
         "services": {}
     }
     

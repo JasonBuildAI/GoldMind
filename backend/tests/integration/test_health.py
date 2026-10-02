@@ -23,6 +23,10 @@ def test_health_returns_expected_shape(client):
     assert re.fullmatch(r"\d+\.\d+\.\d+", body["version"]), "版本号必须是 X.Y.Z"
     for service in ("database", "tencent_api", "cache", "scheduler", "ai_config"):
         assert service in body["services"], f"健康检查缺少 {service}"
+    # 启动引导进度：测试库是内存 SQLite，迁移应当场跑完
+    assert "bootstrap" in body, "健康检查缺少启动引导状态"
+    assert body["bootstrap"]["enabled"] is True
+    assert body["bootstrap"]["status"] == "done"
 
 
 @pytest.mark.integration
