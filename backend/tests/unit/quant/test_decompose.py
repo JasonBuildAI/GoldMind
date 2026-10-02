@@ -140,3 +140,29 @@ def test_out_of_support_values_are_refused_not_extrapolated(calendar, make_panel
     for column in ("fair_value", "center", "demand_premium", "risk_premium", "residual"):
         values = frame[column].dropna().to_numpy(dtype="float64")
         assert np.isfinite(values).all(), column
+
+def test_stale_regressor_refuses_the_decomposition_instead_of_reusing_it(calendar, make_panel):
+    """分解的回归量断更超过新鲜度上限时不给公允价 —— 长尺度主输出更不能吃陈旧值。
+
+    `central_bank` 是月度序列（上限 62 天）：删掉最后 90 天后，无界前向填充会拿
+    三个月前的储备继续算「需求溢价」，而四层分解正是 250 日尺度的主输出。
+    变异验证：把 `_regressor_frame` 换回 `series.reindex(calendar).ffill()`，
+    第一条断言必红（会照常给出公允价）。
+    """
+    factors, close = make_panel(calendar)
+    ok = decompose.decompose_latest(factors, close)
+    assert ok.status == decompose.STATUS_OK
+
+    stale = dict(factors, central_bank=factors["central_bank"].iloc[:-90])
+
+    result = decompose.decompose_latest(stale, close)
+
+    assert result.status == decompose.STATUS_UNAVAILABLE
+    assert "央行" in result.reason
+    assert "新鲜度" in result.reason
+    assert result.fair_value is None
+    assert result.blocks == ()
+    # 上限之内仍照常工作：证明判定不是「月度序列一律拒绝」
+    mild = dict(factors, central_bank=factors["central_bank"].iloc[:-10])
+    assert decompose.decompose_latest(mild, close).status == decompose.STATUS_OK
+

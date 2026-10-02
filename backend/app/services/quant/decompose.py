@@ -33,6 +33,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from app.services.quant import engine
 from app.services.quant.definitions import factor_by_key
 
 # 水平回归至少要有这么多个已实现样本，否则返回「不可用 + 原因」
@@ -50,6 +51,11 @@ class RegressorSpec:
     key: str
     transform: str  # "level" / "log"
     block: str  # "anchor" / "demand" / "risk"
+
+    @property
+    def max_age_days(self) -> int:
+        """新鲜度上限沿用因子表的定义，不在这里抄第二份。"""
+        return factor_by_key[self.key].max_age_days
 
 
 REGRESSORS: tuple[RegressorSpec, ...] = (
@@ -115,13 +121,19 @@ class Decomposition:
 
 
 def _regressor_frame(factors: dict[str, pd.Series], calendar: pd.DatetimeIndex) -> pd.DataFrame:
-    """把回归量对齐到价格日历；缺任一列都会让该行不可用（不补默认值）。"""
+    """把回归量对齐到价格日历；缺任一列都会让该行不可用（不补默认值）。
+
+    对齐必须走 `engine.align_series`：它按该因子的 `max_age_days` 停止前向填充。
+    分解用的四个回归量里 `central_bank` 是月度序列（上限 62 天），无界 ffill 会让
+    「央行三个月没更新」照常参与公允价 —— 而四层分解正是长尺度的主输出，
+    拿陈旧水位算出的「公允价值偏离」比没有这个数更有害（同一个缺陷在信号层已修）。
+    """
     columns: dict[str, pd.Series] = {}
     for spec in REGRESSORS:
         series = factors.get(spec.key)
         if series is None or series.empty:
             continue
-        aligned = series.reindex(calendar).ffill()
+        aligned = engine.align_series(series, calendar, max_age_days=spec.max_age_days)
         if spec.transform == "log":
             aligned = np.log(aligned.where(aligned > 0))
         columns[spec.key] = aligned.astype("float64")
@@ -292,6 +304,7 @@ def decompose_latest(
             None, None, None, None, None, 0, (),
         )
 
+    x = _regressor_frame(factors, close.index)
     frame = decompose_frame(factors, close)
     position = _position_of(close.index, as_of)
     row = frame.iloc[position]
@@ -308,10 +321,25 @@ def decompose_latest(
         )
     if pd.isna(row["fair_value"]) or pd.isna(row["residual"]):
         count = int(row["samples"]) if "samples" in row and pd.notna(row["samples"]) else 0
+        as_of = close.index[position].date()
+        missing = [
+            spec.key
+            for spec in REGRESSORS
+            if spec.key in x.columns and pd.isna(x.at[close.index[position], spec.key])
+        ]
+        if missing and count >= MIN_DECOMPOSE_SAMPLES:
+            names = "、".join(factor_by_key[key].name for key in missing)
+            return Decomposition(
+                STATUS_UNAVAILABLE,
+                f"{names} 在该日已超过新鲜度上限（数据源没有新观测），四层分解不外推陈旧值",
+                as_of,
+                float(row["market_price"]),
+                None, None, None, count, (),
+            )
         return Decomposition(
             STATUS_UNAVAILABLE,
             f"已实现样本只有 {count} 组（至少需要 {MIN_DECOMPOSE_SAMPLES} 组）",
-            close.index[position].date(), None, None, None, None, count, (),
+            as_of, None, None, None, None, count, (),
         )
 
     market = float(row["market_price"])
