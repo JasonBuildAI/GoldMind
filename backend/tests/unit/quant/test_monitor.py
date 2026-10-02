@@ -80,7 +80,7 @@ def test_monitor_reports_values_changes_and_dates(db_session):
     assert result["as_of"] == date(2026, 9, 30)
 
     for row in result["rows"]:
-        assert row["status"] in ("ok", "unavailable")
+        assert row["status"] in ("ok", "unavailable", "stale")
         if row["status"] == "unavailable":
             assert row["reason"], f"{row['key']} 不可用却没有原因"
             assert row["value"] is None
@@ -117,3 +117,36 @@ def test_ma200_without_enough_history_is_unavailable(db_session):
     row = next(item for item in result["rows"] if item["key"] == "ma200")
     assert row["status"] == "unavailable"
     assert "历史样本不足" in row["reason"]
+
+
+def test_stale_rows_keep_the_number_but_lose_the_signal(db_session):
+    """仪表盘按声明的更新节奏判陈旧：数值与观测日照示，但不再给多空方向。
+
+    变异验证：把 `_freshness` 的 `age > budget` 改成恒 False（等于不判陈旧），
+    本测试第一条断言必红。陈旧分支在算信号之前就返回，所以「带着方向显示陈旧值」
+    这条路在结构上不存在 —— 断言 `signal is None` 是把这个结构钉住，防止以后
+    有人把返回顺序挪到 `_rule` 之后。
+    """
+    calendar = pd.date_range(end="2026-09-30", periods=200, freq="B")
+    gold = pd.Series(np.linspace(2000.0, 2400.0, len(calendar)), index=calendar)
+    storage.upsert_series(db_session, "gold_close", gold, source="测试夹具")
+
+    # 周频序列（cftc_positioning，上限 14 天）最后一次观测停在 40 天前
+    weekly = pd.Series(
+        [100.0, 101.0] * 20, index=pd.date_range(end="2026-08-21", periods=40, freq="W-FRI")
+    )
+    storage.upsert_series(db_session, "cftc_positioning", weekly, source="测试夹具")
+    # 日频序列照常更新 —— 用来证明判定不是「一律陈旧」
+    vix = pd.Series([18.0] * 199 + [30.0], index=calendar)
+    storage.upsert_series(db_session, "vix", vix, source="测试夹具")
+
+    rows = {row["key"]: row for row in monitor.build_monitor(db_session)["rows"]}
+
+    stale = rows["cftc_positioning"]
+    assert stale["status"] == monitor.STATUS_STALE
+    assert stale["signal"] is None and stale["signal_label"] == "陈旧"
+    assert stale["value"] == pytest.approx(101.0)
+    assert stale["obs_date"] == "2026-08-21"
+    assert "40 天" in stale["reason"]
+    # 参照系是金价日历（红线五），不是服务器时间
+    assert rows["vix"]["status"] == "ok" and rows["vix"]["signal"] == "bull"

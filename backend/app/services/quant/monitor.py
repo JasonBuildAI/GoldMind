@@ -151,6 +151,40 @@ class MonitorRow:
         }
 
 
+# 每类更新节奏允许的「最近一条」年龄上限（日历天）。口径与 definitions 里因子的
+# `max_age_days` 一致：日频留 7 天覆盖长假，周频留 14 天覆盖漏发，月频留 62 天覆盖发布推迟。
+STALE_AFTER_DAYS = {"日": 7, "周": 14, "月": 62}
+STATUS_STALE = "stale"
+
+
+def _freshness(
+    spec: RowSpec, obs_date: Optional[date], close: Optional[pd.Series]
+) -> tuple[str, Optional[str]]:
+    """这行数据还「新」吗？参照系是面板日期（金价最后一根交易日），不是服务器时间。
+
+    红线五：不能用 `datetime.now()` 当「今天」—— 容器默认 UTC 与调度时区不一致，
+    跨时区部署时年龄会莫名差一天。金价日历就是这个产品对「现在」的定义。
+
+    为什么必须在监控层判：仪表盘原先只取 `series.iloc[-1]`，一条三个月前的周度持仓
+    照样带着「看涨/看跌」标签显示 —— 那是最容易让人误读成「今天的水位」的东西。
+    陈旧行仍给出值与观测日（它是水位，不是预测），但**不再给信号**。
+    """
+    budget = STALE_AFTER_DAYS.get(spec.frequency)
+    reference = None
+    if close is not None and not close.empty:
+        reference = close.index[-1].date()
+    if budget is None or reference is None or obs_date is None:
+        return "ok", None
+    age = (reference - obs_date).days
+    if age > budget:
+        return (
+            STATUS_STALE,
+            f"最近一条是 {age} 天前，超过该序列的更新节奏（{spec.frequency}，上限 {budget} 天）；"
+            "数值与观测日仍如实展示，但不给方向",
+        )
+    return "ok", None
+
+
 def _latest(series: Optional[pd.Series]) -> Optional[tuple[date, float]]:
     if series is None or series.empty:
         return None
@@ -202,6 +236,18 @@ def _ma200(close: Optional[pd.Series]) -> Optional[float]:
     window = close.rolling(MA_WINDOW, min_periods=MIN_MA_SAMPLES).mean()
     value = window.iloc[-1]
     return float(value) if pd.notna(value) else None
+
+
+def change_of(series: pd.Series, spec: RowSpec) -> Optional[float]:
+    """该行展示的「变化量」，与 `_rule` 用同一个回看长度；不算信号方向。"""
+    pct_keys = {"dollar_index", "cny_gold"}
+    periods = {
+        "central_bank": 1, "etf_shares": 1, "cftc_positioning": 1, "cftc_oi": 1,
+        "tga": 20, "rrp": 20,
+    }.get(spec.key, 5)
+    if spec.key == "usdcny":
+        periods = 5
+    return _pct_delta(series, periods) if spec.key in pct_keys else _delta(series, periods)
 
 
 def _rule(key: str, series: pd.Series) -> tuple[Optional[str], Optional[float]]:
@@ -324,6 +370,24 @@ def _build_row(
     latest = _latest(series)
     if latest is None:
         return _unavailable(spec, f"最近一次同步未取到该序列（来源：{spec.source}）")
+
+    status, reason = _freshness(spec, latest[0], close)
+    if status == STATUS_STALE:
+        return MonitorRow(
+            key=spec.key,
+            name=spec.name,
+            frequency=spec.frequency,
+            source=spec.source,
+            value=latest[1],
+            unit=spec.unit,
+            change=change_of(series, spec),
+            obs_date=latest[0],
+            signal=None,
+            signal_label="陈旧",
+            note=spec.note,
+            status=status,
+            reason=reason,
+        )
 
     signal, change = _rule(spec.key, series)
     if signal is None and spec.key not in INFO_KEYS:
