@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v2.0.1-brightgreen?style=flat-square" alt="Version">
-  <img src="https://img.shields.io/badge/released-2026--10--02-success?style=flat-square" alt="Release date">
+  <img src="https://img.shields.io/badge/version-v2.0.2-brightgreen?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/released-2026--10--03-success?style=flat-square" alt="Release date">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/SQLite-零配置复现-003B57?style=flat-square&logo=sqlite" alt="SQLite">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
@@ -26,43 +26,44 @@
 
 <!-- ⬇️⬇️⬇️ 发布横幅：改版本时这几行一起改 ⬇️⬇️⬇️ -->
 
-<h1 align="center">🎉 GoldMind 2.0.1 正式发布</h1>
+<h1 align="center">🎉 GoldMind 2.0.2 正式发布</h1>
 
-<h2 align="center">GoldMind 2.0.1 is here</h2>
+<h2 align="center">GoldMind 2.0.2 is here</h2>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v2.0.1-FFD700?style=for-the-badge" alt="v2.0.1">
-  <img src="https://img.shields.io/badge/released-2026--10--02-2EA043?style=for-the-badge" alt="2026-10-02">
+  <img src="https://img.shields.io/badge/release-v2.0.2-FFD700?style=for-the-badge" alt="v2.0.2">
+  <img src="https://img.shields.io/badge/released-2026--10--03-2EA043?style=for-the-badge" alt="2026-10-03">
 </p>
 
 <p align="center">
-  <strong>每个数字都出自同一份校准分布；每条没通过验证的结论，也照样写在页面上。</strong><br>
-  <em>Every number comes from one calibrated distribution — and every claim that failed its check stays on the page.</em><br><br>
+  <strong>填一次 <code>backend/.env</code>，剩下全部自动：建库、迁移、回填、分析、备份、自检。</strong><br>
+  <em>Configure <code>backend/.env</code> once; everything else runs itself — schema, backfill, analysis, backups, health checks.</em><br><br>
   📋 <a href="./CHANGELOG.md">更新日志 CHANGELOG</a> ·
   🌍 <a href="./CHANGELOG_EN.md">Changelog (EN)</a> ·
-  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.1">GitHub Release v2.0.1</a>
+  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.2">GitHub Release v2.0.2</a>
 </p>
 
 <!-- ⬆️⬆️⬆️ 发布横幅结束 ⬆️⬆️⬆️ -->
 
 ---
 
-## 🆕 2.0.1 带来了什么
+## 🆕 2.0.2 带来了什么
 
-2.0.1 不换模型，只做三件事：**把口径修对、把评估做真、把不能证实的话收回来**。
-线上模型是 `quant-v7`（发布滞后修正；v6 及更早的记录不再可比）—— 第三轮预注册候选 C2 拿开发期 60 日覆盖率 0.7679 去撞事先写死的
-0.78，差 1.2pp，按规则淘汰，阈值不为它让路。
+2.0.2 的目标只有一句话：**填一次 `backend/.env`，之后零人工**。围绕它落地了 20 条评审里
+能自主完成的高价值项，重写了前端，并把「每个数字都标出处」推到金价口径层面。
 
-| 方向 | 2.0.0 | 2.0.1 |
+| 方向 | 2.0.1 | 2.0.2 |
 |---|---|---|
-| 概率口径 | `p_up = Φ(μ/σ)`，分母 σ 还被区间宽度二次放大 —— 这是 Brier 技能分全线为负的直接机制 | `p_up = 1 − F̂(−μ/scale)`：概率、区间、情景全部取自同一张校准分布 F̂；方向 = sign(μ) |
-| 区间口径 | 正态分位；且 ACI 的 α 更新拿「现在这行」判「h 天前发出的那一注」 | 非对称经验分位 + ACI 在线递推，错位修复后开发期 20 日覆盖 76.7% → 79.3%、60 日 72.6% → 73.6% |
-| 陈旧因子 | 超过新鲜度上限的旧观测被向前填充成「假水位」 | 陈旧观测在合成阶段就变 NaN：不进 z、不进得分、不进回测的可用因子计数 |
-| 下注口径 | 250 日留出期 754 个重叠样本当成 754 次证据 | 按 stride = h 抽**独立下注**（同一段其实只有 3 次）；样本不够就标「不可判定」，不标「未通过」 |
-| 显著性 | 只报 iid t 值 | 并列 HAC（Newey–West）与 iid：金银比 60 日 HAC **+2.30** 对 iid **+12.70** —— 「一半显著因子是假的」的字面意思 |
-| 样本期 | development / holdout 两段 | 四段：开发期、历史留出期（只看不用）、**前向留出期**（唯一裁决窗口，起点 2026-10-02）、全样本 |
-| 新信息源 | — | GVZ、金银比、铜金比、CFTC 净多头占未平仓比、GPR 官方日度、高权威消息强度（每日条数） —— 上监测表且**一律标为信息行**（26 年面板无一过闸门，给方向就是编造） |
-| 可复核性 | 因子表只有当前值 | 追加式修订流水 + `--as-of` 按时点重建面板；每条落库预测自带它自己那个尺度的实测技能状态 |
+| 启动 | 要手动跑 `init_db.py` / 回填 / 首次分析 | 启动引导自动建表、自动迁移、按覆盖度回填、自动首轮分析；`/health.bootstrap` 显示「第 N 步 / 共 M 步」，失败下轮自动重试，重复启动不重复回填 |
+| 配置 | 改 `.env` 必须重启 | LLM 配置热生效（`CONFIG_WATCH`）：watcher 检测到变化即重载，并立刻补一轮分析 |
+| 调度 | 错过的 cron 窗口就错过了 | 启动即补差；所有任务 `coalesce` + `misfire_grace_time`；每日自动备份（SQLite 留 7 份）与数据体检（只修安全项，先备份） |
+| 金价口径 | 同一页三个「金价」不加区分 | 每个价格附 `basis`（实时报价 / 日收盘 / 量化基准）、来源与 as-of；同日实时与收盘偏差 > 3% 进体检点名 |
+| 量化 | 五个尺度都给方向 | 250 日尺度停发方向（`direction_status: not_published` + 原因，保留公允价值偏离与校准区间）；一级指标换成「相对永远看多的增量（含置信区间）」与「敢喊跌质量」；前向裁决加 Beta 后验、与 CRPS 并排；因子按发布滞后对齐（`quant-v7`，前向窗口重封板 2026-10-03） |
+| 付费调用 | 每次刷新都真调 LLM | 输入指纹不变就跳过重算（强制刷新不受限）；`LLM_DAILY_CALL_BUDGET` 默认 200/日，用尽后如实显示「暂不可用」，不编内容 |
+| 前端 | 七节信息密度高、层级混乱 | 重写为「报头（今日速览 + 数据新鲜度）→ 今日结论 → 行情 → 驱动 → 量化 → 策略 → 数据与方法」；每节「一句话结论 + 关键数字 + 一层折叠」，所有 API 字段都有展示位 |
+| 可复核性 | 服务库与研究长库的分歧要人工核对 | 启动引导自动对齐两个库；实测 10902 行分歧清零，`check_data_sanity --strict` 通过；每条源记录尝试流水（`/api/gold/sources/status`） |
+
+2.0.1 的改动（分布口径、独立下注、前向窗口……）见 [CHANGELOG](./CHANGELOG.md) 的 `[2.0.1]` 一节。
 
 ---
 

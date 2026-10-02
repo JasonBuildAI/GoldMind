@@ -567,6 +567,7 @@ ReAct 推理循环、多 Agent 协作、TF-IDF / NER、
    （`services/store_alignment.py`：长库→服务库 insert-only，服务库→长库覆盖，
    对齐前冲突数如实上报）→ 金价 / 美元指数历史 → RSS 新闻与高权威消息 →
    量化因子历史（`QUANT_BACKFILL_YEARS`，可断点续跑）→ 因子修订流水 →
+   回填后再次对齐长库（`align_stores_final`：把本轮回填的新行同步回长库，一次启动即收敛）→
    五个首轮 AI 分析。
 3. 每个阶段只有两种状态：真跑了，或给出**为什么跳过**的明确理由；单阶段失败记录在
    `/health` 的 `bootstrap.phases[].note`，不阻塞后续阶段，下一轮启动重试。整条链路

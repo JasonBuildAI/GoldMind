@@ -12,8 +12,26 @@
 
 ## [Unreleased]
 
+（下一轮的未发布内容记在这里；2.0.2 的全部改动见下方。）
+
+---
+
+## [2.0.2] - 2026-10-03
+
 ### 新增
 
+- **全自动运行：`backend/.env` 是唯一人工输入**。启动引导（`app/bootstrap.py`，挂在 FastAPI lifespan）自动建表、自动迁移、按覆盖度回填（价格 / 美元指数 / 新闻与消息板块 / 量化因子全历史，`QUANT_BACKFILL_YEARS` 默认 20 年、可断点续跑、修订流水一并回填）并在数据就绪后触发首轮分析；全程幂等、失败自动下轮重试，`/health.bootstrap` 暴露「第 N 步 / 共 M 步」与缺口（`AUTO_BOOTSTRAP` 默认 true）
+- 自动迁移注册表 + `schema_migrations` 表：`migrate_quant` / `migrate_institution_views` / `migrate_news_digest_url` / `fix_enum_columns` 全部转为幂等自动迁移；SQLite 在 DDL 前自动备份到 `backend/backups/`，MySQL 只做加列 / 建表、不删数据
+- LLM 配置热生效（`CONFIG_WATCH` 默认 true）：监听 `backend/.env`，LLM 相关键出现或变化时热重载设置、重置客户端缓存并**立即触发一轮分析**，无需重启；`DATABASE_URL` 等需重启的键在 `/health.config_watch` 明确提示
+- 调度自愈与日常维护：启动即补跑错过的日期任务（不等 cron），所有任务开启 `coalesce` + `misfire_grace_time`；新增长期任务 —— 每日自动备份（SQLite 保留 7 份；MySQL 如实标注不代跑 mysqldump）与每日数据体检（只对安全项自动修复，先备份）（`AUTO_BACKUP` 默认 true）
+- LLM 调用门控 `services/llm_gate.py`：输入指纹不变则跳过重算、复用缓存（显式强制刷新不受限）；新增 `LLM_DAILY_CALL_BUDGET`（默认 200/日，≤0 不设限），用尽后各块返回「暂不可用 + 原因」，绝不编内容
+- `GET /api/gold/sources/status` 汇总各抓取通道的尝试流水与可用性；`/health` 增加 `bootstrap` 与 `config_watch` 字段
+- 金价口径逐处标注（第 1 条）：每个价格附 `basis`（实时报价 / 日收盘 / 量化基准）、来源与 as-of；同一交易日的实时报价与收盘价偏差 > 3% 进体检点名
+- 消息条目新增 `via_aggregator`（经聚合入口）与 `event_tags`（FOMC / CPI / NFP / 央行决议 / 央行购金确定性标注，注入分析 prompt、页面照实展示）
+- 量化 `quant-v7`：因子新增 `publication_lag_days` 按**可观测时点**对齐（第 12 条）；250 日尺度停止发布方向（`direction_status: not_published` + 原因，只保留公允价值偏离与校准区间）；新增「相对永远看多的增量（含置信区间）」与「敢喊跌质量」一级指标、前向裁决 Beta 后验（先验写死 `Beta(1,1)`，与 CRPS 并排）、研究台 regime 与展期基准对照候选（只进研究台）、「高权威消息强度」派生序列（预注册候选 + 监测表第 22 行）
+- 权重敏感性报告 `backend/scripts/weight_sensitivity.py`（第 6 条）：扰动权重后报告排序稳定性 / 符号翻转 / 逐因子杠杆，只报告不改线上权重，附归一化守卫；逐因子覆盖画像（首末观测、年计数、缺口年、「积累期」）(第 11 条)
+- 上海黄金交易所 Au99.99 日线接入为 `sge_gold` 序列（第 3 条），「上海金溢价」从「不可用」转为实算；接入当日的源核验结论见本轮 spec（金十 / MINING / Kitco / FX168 不可达，如实记未落地）
+- 可选 `REFRESH_TOKEN`（第 20 条）：设置后 POST refresh 必须带 `X-Refresh-Token` 请求头
 - 数据体检入口 `scripts/check_data_sanity.py`：未来日期 / NaN 与 ±inf / 宽松数值域 / 跨库一致性一起报告；首跑点出长库 1 行未来日期（etf_shares 2026-10-05，已备份后清理）与 seasonality 两库 778 行分歧
 - 消息板块的 13 个高权威源接入四类 LLM 分析：多空因子 / 机构观点 / 投资策略 / 市场总结共用一份「分析输入包」，新闻从「仅标题」升级为「标题 + 摘要（截断、去 HTML）」，来源、时间与链接一并进 prompt
 - LLM 输出的确定性结构校验（`services/factor_validation.py`）：id 与标题去重、空项过滤、最多 5 条、正文数字 best-effort 引用核对；不合格时降级为空结构而不是原样透传
@@ -26,12 +44,25 @@
 
 ### 变更
 
+- 双库对齐进启动引导（第 14 条）：服务库为准覆盖长库、长库独有日期只补不删；存量 10902 行分歧（GPR 整条序列错位一天 + 冷启动测试落进长库的 5 行假数据）清零，`check_data_sanity --strict` 由失败转为通过
+- 运维脚本降级为可选：`init_db.py` / `backfill_quant.py` / `migrate_*.py` / `backup_db.py` / `check_data_sanity.py` 保留原样，但「不使用也不会缺任何功能」；Docker 入口改为「等库 → 直接起 uvicorn」，裸机路径就是 `uvicorn app.main:app`
+- 快速开始改为「填 `backend/.env` → 启动 → 完成」，README 中英同步
+- 研究页与看板把方向增量 KPI、Beta 后验、监测行分组（参与信号 / 只看不评）摆到一级位置
 - 四个 LLM 分析服务改为消费同一份「分析输入包」：同窗口、同价格上下文、同技能声明，消除各服务各拉数据的口径漂移
 - 量化页把未校准的「因子偏向」与同步报告的「未到期」噪音从主表折进详情：偏向收进折叠说明，逐源状态收进折叠的「数据源状态」区，主版面只留结论与可行动信息
 - 看板轮询从 10 秒放宽到 30 秒，标签页隐藏时暂停、恢复可见立即补一次（空闲请求量约 30 次/分 → 约 8 次/分）
 
+### 变更（破坏性）
+
+- `/news` 响应移除死字段 `sentiment`，删除情感汇总端点 `/api/gold/news/sentiment/summary`（DB 列留存历史数据、过滤参数保留；页面不再展示情感结论）
+- 量化模型版本 `quant-v6 → quant-v7`：发布滞后修正 + 250 日方向策略落地，前向窗口按新封板日 2026-10-03 重启（旧 `quant-v6` 记录保留在库中、按版本号可查；v6 的前向注单不再计入裁决）
+
 ### 修复
 
+- LLM 输出撞上单点输出上限（`finish_reason=length`）时不再直接整块降级：`invoke_with_retries` 用「压缩提示」重试一次（数组条目变少、字段变短），仍截断才如实返回「暂不可用」，绝不拼接残缺 JSON。首次真实冷启动实测：投资策略的四档策略 schema 撞上 8192 输出上限、整块降级为空，重试后产出完整三档策略
+- 启动引导的市场总结不再每次启动强制重算（`force` 透传，输入指纹不变就不重复计费）；新增第 7 步「回填后再次对齐本地研究长库」，一次启动就收敛两库，且首次对齐导入长库历史避免重复联网回填
+- 长库 GPR 序列缺少发布滞后右移、整条错位一天（第 12 条的存量后果），以及冷启动测试曾写进长库的假数据 —— 由启动引导的双库对齐修复，实测跨库不一致 10902 行 → 0 行
+- 引导回填期间页面显示「初始化中（第 N 步 / 共 M 步）」并给出缺口，而不是「不可用」；LLM 未配置时数据层照常运行，配置出现后自动补齐，不需要点任何「重新分析」
 - 投资建议的统计窗口随日历滚动（去掉写死的 `datetime(2025,1,1)`）；「波动区间」正名为「高低振幅」并写明定义，prompt 同步
 - `etf_shares` 拒绝写入晚于今天的观测日（存储层守卫 + 源层修复），页面上不再出现未来日期
 - 机构观点的 news_scan 总结改为由结构化行**确定性拼装**，LLM 总结不再与结构化数据互相矛盾
@@ -41,6 +72,13 @@
 - 缺库/缺表时接口返回 **503 + `python init_db.py` 修复指引**（原先裸 500），启动时做 schema 自检并在缺表时打 ERROR；其余 SQL 错误仍是 500
 - 外部行情源（Yahoo 限流/不可用）时，量化引擎改用本地已同步的 `gold_prices` / `dollar_index` 兜底基准价与美元因子，来源如实标注；不再整片「缺少黄金价格序列」
 - 前端对 **429 / 5xx / 网络错误**做指数退避重试（429 尊重 `Retry-After`，最多 3 次尝试）；同一 URL 的在飞 GET 合并为一个请求；`POST` 与 `?refresh=true` 永不重试
+
+### 文档
+
+- README 中英：2.0.2 发布横幅 / 徽章 / 新截图、快速开始改为「填 `.env` → 启动」、新增「全自动运行」节、金价三口径与监测表第 22 行的说明
+- `docs/ARCHITECTURE.md` 新增「自动化运行」一节（引导阶段、迁移注册、热生效、调度自愈与备份）；`docs/API.md` 与 `docs/en/api.md` 由路由表重新生成
+- 新增本轮 spec / plan（`docs/specs/2026-10-03-2.0.2-整改与自动化.md` 及其 `-plan`）、权重敏感性报告（`docs/specs/2026-10-03-权重敏感性报告.md`）与零人工冷启动验收报告（`docs/specs/2026-10-03-零人工冷启动验收.md`）
+- `docs/10-密钥与隐私.md` 补齐 `AUTO_BOOTSTRAP` / `QUANT_BACKFILL_YEARS` / `AUTO_BACKUP` / `CONFIG_WATCH` / `REFRESH_TOKEN` / `LLM_DAILY_CALL_BUDGET` 六个新配置键
 
 ---
 
@@ -149,6 +187,7 @@
 - 内存 + JSON 文件两级缓存，支持多进程与重启后共享
 - APScheduler 定时刷新，Docker Compose 一键部署
 
+[2.0.2]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.2
 [2.0.1]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.1
 [2.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.0
 [1.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v1.0.0

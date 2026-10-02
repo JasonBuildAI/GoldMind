@@ -34,14 +34,16 @@ and what the bullish and bearish arguments are".
 
 | Capability | Description |
 |------|------|
-| Gold price and dollar index collection | Tencent Finance real-time gold price; Sina Finance ICE dollar index; historical backfill supports three sources: Sina / Eastmoney / Yahoo |
+| Gold price and dollar index collection | Tencent Finance real-time gold price; Sina Finance ICE dollar index; historical backfill supports three sources: Sina / Eastmoney / Yahoo; every price carries its `basis` (realtime quote / daily close / quant benchmark), source and as-of date, and a same-day realtime-vs-close divergence above 3% is named by the data sanity check (2.0.2 items 1 and 2) |
 | Historical data storage | A single SQLite file by default (`backend/goldmind.db`), two tables: `gold_prices` / `dollar_index`; `DATABASE_URL` can switch to MySQL (not exercised in this repository) |
 | Bullish/bearish factor analysis | Based on the last 24 hours of news (high-authority message-board items + RSS, deduplicated by normalised URL; each prompt line carries a title plus a cleaned, truncated summary), calls the LLM to generate 5 bullish + 5 bearish factors, with caching |
 | Institutional views | Scans the last 30 days of news (`INSTITUTION_NEWS_LOOKBACK_DAYS`) + (web search) and compiles the **most recent verifiable** prediction from Goldman Sachs / UBS / Morgan Stanley / Citi, labelled with the prediction date and source; an empty price target never overwrites an existing real record |
 | Message board | Crawls four categories of high-authority sources — central banks / wire services / industry bodies / professional financial media (13 built-in, verified working; `NEWS_DIGEST_SOURCES` overrides them) — for gold-related headlines; scores them deterministically by source authority / gold relevance / same-story coverage / recency (no LLM), and shows the Top 10 in each of three windows (24h / 7d / 30d); items expand to a summary and same-story reports, link to the original article, and can be crawled manually; when nothing is available it says so, with the reason; these high-authority items also feed the news input of the factors / institutional views / advice / summary services (`services/analysis_input.py`) |
 | Investment advice | Combines market state, bullish/bearish factors, institutional views and recent news to generate three tiers of strategy: conservative / balanced / opportunity |
 | Market summary | Outputs the core logic, the main risks, institutional price targets and an overall judgement |
-| Scheduled refresh | APScheduler: prices daily at 06:30; news and AI analysis every even hour; the message board at minute 25 of every hour |
+| Scheduled refresh | APScheduler: prices daily at 06:30; news and AI analysis every even hour; the message board at minute 25 of every hour; missed date jobs are caught up at start-up and every job runs with `coalesce` + `misfire_grace_time` (2.0.2) |
+| Fully automatic operation (2.0.2) | `backend/.env` is the only manual input: the bootstrapper creates the schema, migrates, backfills and warms the first analyses (`AUTO_BOOTSTRAP`); LLM settings hot-reload (`CONFIG_WATCH`); a daily automatic backup (7 SQLite copies) and data sanity check run on their own (`AUTO_BACKUP`); `init_db.py` / `backfill_quant.py` / `migrate_*.py` are optional ops tools now - not using them loses no functionality |
+| Source availability board | `GET /api/gold/sources/status` aggregates each fetch channel's last attempt (ok / no data / failed + reason); `/health` exposes the bootstrap progress (`bootstrap`) and the hot-reload state (`config_watch`) |
 | Quant prediction engine | 14 factors covering four categories of drivers (monetary policy and rates / safe-haven and credit / supply-demand structure / market and technicals), all from free public data sources and updated automatically on each source's own release cadence; rolling z-scores are combined into a score → **one calibrated distribution** over 1 / 5 / 20 / 60 / 250 trading days (intraday–1 week / 1–3 months / 6–18 months) (expected return μ, uncertainty σ, upside probability p = 1 − F̂(−μ/scale), the tail share of that same calibrated distribution); the direction = sign(μ), and the price target and range and the three scenarios are all derived from this one distribution — factor scores are uncalibrated inputs, and the "factor bias (uncalibrated)" row is listed separately for comparison only; **each horizon has its own dominant weights** (short horizons: capital flows and technicals; medium horizons: policy expectations and the dollar; long horizons: central-bank purchases and demand structure); the walk-forward backtest hit rate scores exactly this direction, compared against "always long / momentum / coin flip", with the uncalibrated score direction's record listed as a separate tier. Per-source failures are annotated on the page with the reason, and when fewer than 3 factors are available it says plainly that the "prediction is unavailable"; the 1-year horizon **stops publishing a direction** by the pre-registered rule (it matched "always long" day by day in the holdout and has no verifiable edge) and publishes only the fair-value deviation and the annual calibrated interval |
 | Frontend dashboard | React single page: masthead + 7 sections (Market / Bullish vs Bearish / Institutions / Messages / Strategy / Quant Prediction / Conclusion), with 30-second quote polling (paused while the tab is hidden); plus a separate "Research" page (`app/research.html`) showing the holdout evaluation of the pre-registered candidates |
 | Cache | Two-level cache: in-process memory + JSON files, supporting multiple processes and sharing across restarts |
@@ -61,6 +63,7 @@ shows "temporarily unavailable"), and constructed uniformly through
 | Multi-agent collaboration / ReAct / RAG | The current implementation is a **single-turn prompt call**: `llm.invoke(prompt)` → parse the JSON. There is no tool-calling loop, no vector retrieval and no inter-agent communication. The early `app/agents/` package was never instantiated and has been deleted. |
 | User system and personalization | No login, no user profiles; "personalized advice" is actually a generic strategy in three tiers by risk preference. |
 | Mobile | None. |
+| Event-conditioned distributions | Event tags (FOMC / CPI / NFP / central-bank decision / central-bank buying) shipped as deterministic rules with no calendar API; the "distribution conditioned on the event" needs a free, verifiable macro calendar that was not found on 2026-10-03, so it is **not landed**. |
 | Web search fallback plan | See the limitations in the next section. |
 
 ---
@@ -83,12 +86,19 @@ shows "temporarily unavailable"), and constructed uniformly through
    2026-10-02: `backend/app/services/llm_provider.py` checks the combination when it
    builds the chat and search clients, logs one warning with the switch guidance
    (never the key itself), and `/health` reports `services.ai_config.token_plan_backend`.
-3. **The news sources are mainly English financial media**. The built-in default RSS sources (FXStreet / MarketWatch /
-   CNBC / WSJ) are the set verified as usable in practice; the public
-   RSS addresses of the Chinese sources (Sina, FX168, Jin10) have all expired and can be configured
-   yourself via `NEWS_RSS_SOURCES`.
-4. **No auth, no multi-tenancy**. All endpoints are publicly accessible, including
-   `POST .../refresh`, which triggers paid LLM calls.
+3. **Chinese and Asian physical sources have to be re-measured.** Probed on 2026-10-03
+   (re-run with `python scripts/probe_sources.py`): the Shanghai Gold Exchange Au99.99 daily
+   series (`sge_gold`) is reachable and wired in, turning the "Shanghai premium" row from
+   unavailable into a real calculation; the Sina / Tencent quote endpoints are reachable and in
+   use; the Jin10 flash API (HTTP 502), FX168 RSS (connects but 0 items), MINING.COM (403) and
+   Kitco (404) are unreachable and explicitly not landed. Sources change, so the conclusions
+   only cover the measurement day. News remains mostly English-language financial media and can
+   be reconfigured through `NEWS_RSS_SOURCES`.
+4. **No auth by default, with an optional token.** All endpoints are publicly accessible,
+   including `POST .../refresh`, which triggers paid LLM calls; since 2.0.2 a `REFRESH_TOKEN`
+   can be set, after which POST refresh requires the `X-Refresh-Token` header.
+   `LLM_DAILY_CALL_BUDGET` (default 200/day) additionally caps paid calls - once exhausted
+   every block says "unavailable + reason" rather than inventing content.
 5. **In the holdout the long-horizon coverage is still below nominal, and the direction has no edge**. The interval width has been calibrated to the empirical quantiles of historical walk-forward errors
    (recomputed 2026-10-02, holdout from 2023-10-02): the actual coverage of the 80% interval is 78.9% / 77.6% / 73.2% / 61.2% / 24.1% (1 day → 1 year);
    over the same holdout the direction hit rates are 56.3% / 62.2% / 68.2% / 83.3% / 100%, matching "always long" day by day (+0.0pp), with a negative Brier skill score.
@@ -101,8 +111,15 @@ shows "temporarily unavailable"), and constructed uniformly through
    title, summary and link that each source's RSS provides, does not bypass logins or paywalls,
    and sends readers to the original article through an external link that may or may not be
    reachable. Some outlets have no public RSS, so they are reached through Google News
-   domain-scoped search; when that aggregator is unavailable those sources are counted as
-   failures in the fetch report rather than replaced with other content.
+   domain-scoped search; aggregator-routed items carry an explicit `via_aggregator` label, and
+   when that entry point is unavailable those sources are counted as failures in the fetch
+   report rather than replaced with other content.
+7. **The global central-bank gold caliber is China only.** The WGC monthly central-bank page is
+   reachable but has no free machine-readable feed (a public data-API path probed 404), and IMF
+   SDMX / DataMapper answered 502 / a TLS handshake failure / 403 - neither offers a "free,
+   machine-readable, repeatable" global series, so the `central_bank` factor stays as the
+   People's Bank of China official reserves (a China caliber) and says so on the page instead of
+   passing one country off as the world.
 
 ---
 

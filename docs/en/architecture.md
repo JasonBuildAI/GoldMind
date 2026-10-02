@@ -559,3 +559,67 @@ column stays for history and its filter keeps working).
 
 The `app/agents/` package (`BaseAgent` / `MarketAnalyzerAgent` / `NewsAnalyzerAgent`) was never
 instantiated anywhere and has been deleted.
+
+---
+
+## 14. Fully automated operation (2.0.2)
+
+Hard goal: **configuring `backend/.env` is the only manual input**. Once it is filled in,
+schema creation, migrations, history backfill, crawling, analysis, backups and health checks
+all run themselves. The manual scripts (`init_db.py` / `migrate_*.py` / `backfill_quant.py` /
+sanity check / backup) are demoted to **optional operations entry points** (see "Fully
+automated operation" in README_EN.md).
+
+### Startup bootstrap (`app/bootstrap.py`, hooked into the FastAPI lifespan)
+
+1. A migration registry (`schema_migrations`) applies schema / column migrations. Before a
+   migration that alters an existing table, SQLite copies the database file into
+   `backend/backups/`; if the backup fails the migration is aborted (`run_migrations`).
+   On MySQL only additive operations (create table / add column / change column type) run —
+   never data deletion.
+2. Data phases run in the fixed `STEPS` order: coverage probe → local research long-store
+   alignment (`services/store_alignment.py`: long store → service store insert-only, service
+   store → long store overwrite, reporting conflicts before alignment) → gold / dollar-index
+   history → RSS news and the high-authority digest → quant factor history
+   (`QUANT_BACKFILL_YEARS`, resumable) → factor revision ledger → a second alignment pass
+   (`align_stores_final`, syncing this round's new rows back to the long store so one boot
+   converges) → the five first-round AI analyses.
+3. Every phase has exactly two outcomes: it really ran, or it states **why it was skipped**.
+   A single failing phase is recorded in `/health` (`bootstrap.phases[].note`), never blocks
+   the rest, and is retried on the next boot. The whole chain is idempotent: a restart does
+   not duplicate backfill rows, and analyses whose input fingerprint is unchanged are not
+   re-billed.
+4. `/health` exposes `bootstrap` with `status` / `step.index` / `step.total` / `gaps`; the
+   frontend shows "initializing (step N of M)" instead of "unavailable" while bootstrapping.
+
+### Configuration hot reload (`app/config_watch.py`)
+
+- Every 10 seconds the `.env` key/value snapshot is compared; when `LLM_*` appears / changes /
+  is removed: `config.reload_settings` applies only the changed keys (removed string / secret
+  keys are blanked so stale `os.environ` values cannot come back) →
+  `llm_provider.reset_clients` drops the shared httpx client →
+  `llm_gate.reset_fingerprints` clears input fingerprints (a cached answer from the old model
+  is not an answer from the new one; the daily call counter stays) → a background thread
+  immediately triggers a `force=True` analysis round.
+- Non-`LLM_*` changes (e.g. `DATABASE_URL`) are not hot-applied; `config_watch.note` says a
+  restart is required.
+- With `CONFIG_WATCH=false`, or `SCHEDULER_ENABLED=false` (tests / external scheduling), the
+  watcher thread does not start and `/health` honestly reports `disabled` with the reason.
+
+### Scheduler self-healing and daily maintenance (`app/scheduler.py`, `app/services/maintenance.py`)
+
+- Every job uses `coalesce=True`, `misfire_grace_time=3600`, `max_instances=1`: a missed
+  window is caught up once, never run twice concurrently.
+- About 20 seconds after startup, a catch-up round runs (quotes / dollar / news / digest)
+  without waiting for cron.
+- Daily at 04:00 (`SCHEDULER_TIMEZONE`): SQLite backup (last 7 kept) → `check_data_sanity`.
+  **Backup first, then repair**: when the backup did not really happen (`AUTO_BACKUP=false`,
+  in-memory DB, MySQL where mysqldump is not run for you) the check runs read-only. Automatic
+  repair is limited to safe items such as clearing future-dated rows.
+
+### Deployment paths
+
+- Bare metal: `uvicorn app.main:app` (README quick start).
+- Docker: `backend/docker-entrypoint.sh` only waits for the database, then starts uvicorn.
+- MySQL: automatic migrations work the same; automatic backup is honestly documented as
+  unsupported (no mysqldump invocation).

@@ -12,8 +12,26 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ## [Unreleased]
 
+(Unreleased work for the next round lives here; everything in 2.0.2 is below.)
+
+---
+
+## [2.0.2] - 2026-10-03
+
 ### Added
 
+- **Fully automatic operation: `backend/.env` is the only manual input.** The bootstrapper (`app/bootstrap.py`, wired into the FastAPI lifespan) creates the schema, applies migrations, backfills according to coverage (prices / dollar index / news and digest / full quant factor history, `QUANT_BACKFILL_YEARS` default 20, resumable after interruption, revision log included) and warms the first analyses once data is ready; every phase is idempotent and retried on the next boot. `/health.bootstrap` exposes "step N of M" plus the remaining gaps (`AUTO_BOOTSTRAP` defaults to true)
+- Migration registry + `schema_migrations` table: `migrate_quant` / `migrate_institution_views` / `migrate_news_digest_url` / `fix_enum_columns` all became idempotent automatic migrations; SQLite is backed up to `backend/backups/` before any DDL, MySQL only ever adds columns or tables and never deletes data
+- LLM configuration hot-reload (`CONFIG_WATCH` defaults to true): `backend/.env` is watched, and when LLM keys appear or change the settings reload, the client cache resets and a fresh analysis round starts immediately - no restart. Keys that still need a restart (e.g. `DATABASE_URL`) are reported under `/health.config_watch`
+- Scheduler self-healing and daily maintenance: missed date-driven jobs are caught up at start-up instead of waiting for cron, every job runs with `coalesce` + `misfire_grace_time`, and two long-term jobs were added - a daily automatic backup (7 SQLite copies kept; MySQL explicitly documented as not dumped on your behalf) and a daily data sanity check (auto-fixes only the safe cases, after a successful backup) (`AUTO_BACKUP` defaults to true)
+- LLM call gate `services/llm_gate.py`: an unchanged input fingerprint skips the recomputation and reuses the cache (an explicit forced refresh is exempt); new `LLM_DAILY_CALL_BUDGET` (default 200/day, <=0 means uncapped) degrades every block to "unavailable + reason" once exhausted, and never to invented content
+- `GET /api/gold/sources/status` aggregates each fetch channel's last attempt and availability; `/health` gained the `bootstrap` and `config_watch` fields
+- Every price now carries its `basis` (realtime quote / daily close / quant benchmark), its source and its as-of date (item 1); a same-day realtime-vs-close divergence above 3% is named by the data sanity check
+- News items gained `via_aggregator` (reached through an aggregator) and `event_tags` (deterministic FOMC / CPI / NFP / central-bank decision / central-bank buying tags, fed into the analysis prompt and shown as-is on the page)
+- Quant `quant-v7`: factors carry `publication_lag_days` and align on the observable time (item 12); the 250-day horizon stops publishing a direction (`direction_status: not_published` plus the reason, keeping the fair-value gap and the calibrated interval); new first-class metrics "edge over always-long (with confidence interval)" and "down-call quality", a Beta posterior on the forward verdict (hard-coded `Beta(1,1)` prior, next to CRPS), regime and rolled-benchmark lab candidates (research bench only), and the "high-authority digest intensity" derived series (pre-registered candidate, monitor row 22)
+- Weight-sensitivity report `backend/scripts/weight_sensitivity.py` (item 6): rank stability, sign flips and per-factor leverage under weight perturbation, report-only with a normalisation guard; per-factor coverage profile (first/last observation, yearly counts, gap years, "accumulating") (item 11)
+- Shanghai Gold Exchange Au99.99 daily series wired in as `sge_gold` (item 3), turning the "Shanghai premium" row from unavailable into a real calculation; the same-day source probe recorded Jin10 / MINING / Kitco / FX168 as unreachable and explicitly not landed
+- Optional `REFRESH_TOKEN` (item 20): when set, POST refresh requires the `X-Refresh-Token` header
 - Data-sanity entry point `scripts/check_data_sanity.py`: future dates / NaN and ±inf / loose plausibility bounds / cross-store consistency in one report; its first run flagged 1 future-dated row in the long store (etf_shares 2026-10-05, purged after backup) and 778 diverging seasonality rows between the two stores
 - The 13 high-authority digest sources now feed all four LLM analyses: factors / institutions / advice / market summary share one "analysis input packet"; news goes from titles-only to "title + summary (truncated, HTML stripped)", and source, time and link travel into the prompt
 - Deterministic structure validation of LLM output (`services/factor_validation.py`): id and title dedupe, empty-item filtering, at most 5 items, best-effort numeric citation checks; a failing response degrades to an empty structure instead of passing through
@@ -26,12 +44,25 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ### Changed
 
+- Store alignment moved into the bootstrapper (item 14): the service database is authoritative and overwrites the long research store, long-only dates are inserted but never deleted; the 10,902 pre-existing divergences (the GPR series shifted by one day plus five fake rows a cold-start test had written into the long store) dropped to zero, and `check_data_sanity --strict` went from failing to passing
+- Ops scripts demoted to optional: `init_db.py` / `backfill_quant.py` / `migrate_*.py` / `backup_db.py` / `check_data_sanity.py` stay as they are, but "not using them loses no functionality"; the Docker entry point now waits for the database and starts uvicorn directly, and the bare-metal path is simply `uvicorn app.main:app`
+- Quick start is now "fill `backend/.env` -> start -> done", README zh/en in sync
+- The research page and dashboard promote the direction edge KPI, the Beta posterior and the monitor grouping (participating signals / watch-only) to first-class positions
 - The four LLM services consume one shared "analysis input packet" (same window, same price context, same skill note), removing per-service drift
 - The quant page moved the uncalibrated factor tilt and the sync report's "not due" noise off its main tables: the tilt sits in a details block, per-source status sits in a folded "data source status" block, and the main surface keeps conclusions and actionable items only
 - Dashboard polling drops from 10 s to 30 s, pauses while the tab is hidden and catches up immediately on return (idle request rate ~30/min -> ~8/min)
 
+### Breaking changes
+
+- The `/news` response drops the dead `sentiment` field and the sentiment endpoint `/api/gold/news/sentiment/summary` is removed (the DB column keeps the history, the filter parameter stays; the page no longer shows sentiment conclusions)
+- Model version `quant-v6 -> quant-v7`: publication-lag alignment plus the 250-day direction policy; the forward window restarts on the new seal date 2026-10-03 (old `quant-v6` rows stay in the database and remain queryable by version; v6 bets no longer count towards the verdict)
+
 ### Fixed
 
+- LLM completions that hit the per-call output ceiling (`finish_reason=length`) no longer degrade the whole block: `invoke_with_retries` retries once with a compaction hint (fewer array items, shorter fields) and only then honestly returns "temporarily unavailable" instead of stitching partial JSON. Observed on the first real cold start: the four-strategy investment-advice schema hit the 8192-token ceiling and the block fell back to empty; the retry produced a complete three-strategy answer
+- The bootstrap no longer force-refreshes the market summary on every boot (`force` is forwarded; an unchanged input fingerprint is not re-billed), and a new step 7 ("align the local research long store after backfill") converges both stores in a single boot while the first alignment imports long-store history to avoid re-downloading it
+- The long store's GPR series lacked the publication-lag shift and was offset by one day (the legacy consequence of item 12), and a cold-start test had once written fake rows into the long store - both are repaired by the bootstrapper's store alignment, measured as 10,902 diverging rows -> 0
+- During the bootstrap backfill the page now shows "initialising (step N of M)" with the remaining gaps instead of "unavailable"; with no LLM configured the data layer keeps running and catches up automatically once the configuration appears, with no "reanalyse" click needed
 - The investment-advice window now rolls with the calendar (the hard-coded `datetime(2025,1,1)` is gone); "volatility range" is renamed to "high-low amplitude" with its definition written down, prompt synced
 - `etf_shares` refuses observation dates later than today (storage guard + source fix); future dates no longer appear on the page
 - The news-scan institution summary is assembled deterministically from the structured rows, so the LLM text can no longer contradict the structured data
@@ -41,6 +72,13 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 - Missing database/tables now answer **503 + `python init_db.py` guidance** (was a bare 500); startup runs a schema self-check and logs an ERROR when tables are missing; other SQL errors still return 500
 - When the external quote source (Yahoo) is rate-limited or down, the quant engine falls back to the locally synced `gold_prices` / `dollar_index` tables for the benchmark and the dollar factor, labelled as such; no more whole-page "missing gold price series"
 - The frontend retries **429 / 5xx / network errors** with exponential backoff (429 honours `Retry-After`, at most 3 attempts); in-flight GETs for the same URL are merged into one request; `POST` and `?refresh=true` are never retried
+
+### Documentation
+
+- README zh/en: 2.0.2 banner / badge / new screenshots, quick start rewritten as "fill `.env` -> start", a new "fully automatic operation" section, and the three gold-price bases plus monitor row 22 explained
+- `docs/ARCHITECTURE.md` gained an "automatic operation" section (bootstrap phases, migration registry, hot reload, scheduler self-healing and backups); `docs/API.md` and `docs/en/api.md` were regenerated from the route table
+- New spec / plan for this round (`docs/specs/2026-10-03-2.0.2-整改与自动化.md` and its `-plan`), the weight-sensitivity report (`docs/specs/2026-10-03-权重敏感性报告.md`) and the zero-touch cold-start acceptance report (`docs/specs/2026-10-03-零人工冷启动验收.md`)
+- `docs/10-密钥与隐私.md` (and its English twin) document the six new keys: `AUTO_BOOTSTRAP` / `QUANT_BACKFILL_YEARS` / `AUTO_BACKUP` / `CONFIG_WATCH` / `REFRESH_TOKEN` / `LLM_DAILY_CALL_BUDGET`
 
 ---
 
@@ -150,6 +188,7 @@ First public release.
 - Two-level cache (in-memory + JSON file) shared across processes and restarts
 - APScheduler refresh tasks and one-command Docker Compose deployment
 
+[2.0.2]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.2
 [2.0.1]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.1
 [2.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.0
 [1.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v1.0.0

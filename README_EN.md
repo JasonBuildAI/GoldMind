@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v2.0.1-brightgreen?style=flat-square" alt="Version">
-  <img src="https://img.shields.io/badge/released-2026--10--02-success?style=flat-square" alt="Release date">
+  <img src="https://img.shields.io/badge/version-v2.0.2-brightgreen?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/released-2026--10--03-success?style=flat-square" alt="Release date">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/SQLite-zero--config%20repro-003B57?style=flat-square&logo=sqlite" alt="SQLite">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
@@ -26,45 +26,47 @@
 
 <!-- ⬇️⬇️⬇️ Release banner: update these lines together with the version ⬇️⬇️⬇️ -->
 
-<h1 align="center">🎉 GoldMind 2.0.1 is here</h1>
+<h1 align="center">🎉 GoldMind 2.0.2 is here</h1>
 
-<h2 align="center">GoldMind 2.0.1 正式发布</h2>
+<h2 align="center">GoldMind 2.0.2 正式发布</h2>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v2.0.1-FFD700?style=for-the-badge" alt="v2.0.1">
-  <img src="https://img.shields.io/badge/released-2026--10--02-2EA043?style=for-the-badge" alt="2026-10-02">
+  <img src="https://img.shields.io/badge/release-v2.0.2-FFD700?style=for-the-badge" alt="v2.0.2">
+  <img src="https://img.shields.io/badge/released-2026--10--03-2EA043?style=for-the-badge" alt="2026-10-03">
 </p>
 
 <p align="center">
-  <strong>Every number comes from one calibrated distribution — and every claim that failed its check stays on the page.</strong><br>
-  <em>每个数字都出自同一份校准分布；每条没通过验证的结论，也照样写在页面上。</em><br><br>
+  <strong>Configure <code>backend/.env</code> once; everything else runs itself — schema, backfill, analysis, backups, health checks.</strong><br>
+  <em>填一次 <code>backend/.env</code>，剩下全部自动：建库、迁移、回填、分析、备份、自检。</em><br><br>
   📋 <a href="./CHANGELOG_EN.md">Changelog</a> ·
   🌍 <a href="./CHANGELOG.md">更新日志</a> ·
-  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.1">GitHub Release v2.0.1</a>
+  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.2">GitHub Release v2.0.2</a>
 </p>
 
 <!-- ⬆️⬆️⬆️ Release banner ends ⬆️⬆️⬆️ -->
 
 ---
 
-## 🆕 What 2.0.1 delivers
+## 🆕 What 2.0.2 delivers
 
-2.0.1 does not swap the model. It does three things: **fix the conventions, make the evaluation
-honest, and take back claims that cannot be proven.** The live model is `quant-v7` (this round's
-publication-lag fix; the `quant-v6` and older records are no longer comparable) —
-the third pre-registered candidate C2 needed 60-day development coverage in [0.78, 0.82];
-it landed at 0.7679, 1.2pp short, and was eliminated. The bar does not move for it.
+2.0.2 has one goal: **configure `backend/.env` once, then touch nothing**. Around it, the
+high-value items of the 20-point review that could be delivered independently are all in, the
+frontend was rewritten, and "every number states its provenance" now reaches the price basis
+itself.
 
-| Area | 2.0.0 | 2.0.1 |
+| Area | 2.0.1 | 2.0.2 |
 |---|---|---|
-| Probability | `p_up = Φ(μ/σ)`, with a σ that had already been inflated for interval width — the direct mechanism behind a negative Brier skill score everywhere | `p_up = 1 − F̂(−μ/scale)`: probability, interval and scenarios all come from the same calibrated distribution F̂; direction = sign(μ) |
-| Interval | Normal quantiles; and the ACI α update judged "the bet sent h days ago" with "today's row" | Asymmetric empirical quantiles + online ACI. After the misalignment fix, development coverage went 76.7% → 79.3% (20d) and 72.6% → 73.6% (60d) |
-| Stale factors | Old observations were forward-filled into a fake current level | Observations past their freshness cap become NaN at composition time: no z, no score, no backtest factor count |
-| Bet accounting | 754 overlapping holdout samples in the 250-day window treated as 754 pieces of evidence | Independent bets sampled at stride = h (that same stretch really holds 3 bets); insufficient samples are labelled "undecidable", not "failed" |
-| Significance | iid t only | HAC (Newey–West) shown next to iid: gold/silver at 60d reads **+2.30** HAC vs **+12.70** iid — the literal meaning of "half of your significant factors are fake" |
-| Sample periods | development / holdout | Four: development, historical holdout (record only), **forward holdout** (the only judging window, starting 2026-10-02), full sample |
-| New information sources | — | GVZ, gold/silver ratio, copper/gold ratio, CFTC net-long share of open interest, official daily GPR, high-authority message intensity (daily count) — all on the monitor table, **all labelled information-only** (none cleared the gates on a 26-year panel; giving them a direction would be fabrication) |
-| Reproducibility | Factor table kept only the current value | Append-only revision ledger + `--as-of` panel rebuild; every stored prediction carries the measured skill of its own horizon |
+| Start-up | You ran `init_db.py` / backfill / first analysis by hand | The bootstrapper creates the schema, applies migrations, backfills by coverage and warms the first analyses; `/health.bootstrap` shows "step N of M", failures retry on the next boot, and a restart never double-backfills |
+| Configuration | Editing `.env` required a restart | LLM settings hot-reload (`CONFIG_WATCH`): the watcher picks up changes, resets the client cache and immediately runs a fresh analysis round |
+| Scheduling | A missed cron window was simply missed | Missed jobs are caught up at start-up; every job runs with `coalesce` + `misfire_grace_time`; daily automatic backup (7 SQLite copies) and data sanity check (safe fixes only, after a backup) |
+| Price basis | Three different "gold prices" on one page, unlabelled | Every price carries its `basis` (realtime quote / daily close / quant benchmark), source and as-of; a same-day realtime-vs-close divergence above 3% is named by the sanity check |
+| Quant | Every horizon published a direction | The 250-day horizon stops publishing one (`direction_status: not_published` plus the reason, keeping the fair-value gap and the calibrated interval); the first-class metrics are now "edge over always-long (with CI)" and "down-call quality"; the forward verdict gained a Beta posterior next to CRPS; factors align on their publication lag (`quant-v7`, forward window resealed 2026-10-03) |
+| Paid calls | Every refresh really called the LLM | An unchanged input fingerprint skips the recomputation (a forced refresh is exempt); `LLM_DAILY_CALL_BUDGET` defaults to 200/day and exhaustion shows "temporarily unavailable" instead of invented content |
+| Frontend | Seven dense sections with a flat hierarchy | Rewritten as "masthead (today's glance + data freshness) -> today's verdict -> market -> drivers -> quant -> strategy -> data & methods"; every section is "one-sentence conclusion + key numbers + one details layer", and every API field has a slot |
+| Reproducibility | Service store vs research long store divergences were reconciled by hand | The bootstrapper aligns the two stores automatically; the measured 10,902 diverging rows dropped to zero, `check_data_sanity --strict` passes, and every fetch channel keeps an attempt log (`/api/gold/sources/status`) |
+
+2.0.1's changes (the distribution conventions, independent bets, the forward window, ...) live in
+the `[2.0.1]` section of the [Changelog](./CHANGELOG_EN.md).
 
 ---
 

@@ -192,3 +192,21 @@ git push --force-with-lease origin --tags
 | LLM (reasoning + web search) | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` in `backend/.env` | Any OpenAI-compatible endpoint. **Before connecting, confirm the chosen endpoint's terms allow backend use**; see Section 4, item 2 of `docs/00-产品方向.md`. |
 
 `backend/.env` is not under version control. Under no circumstances paste its contents into commits, logs or issues.
+
+### Configuration keys added in 2.0.2
+
+All of them live only in `backend/.env` (or the deployment environment) and never in a
+version-controlled file:
+
+| Key | Default | Effect | Carries a secret? |
+|---|---|---|---|
+| `AUTO_BOOTSTRAP` | `true` | Bootstrapper creates the schema, migrates, backfills and warms the first analyses | no |
+| `QUANT_BACKFILL_YEARS` | `20` | Years of quant factor history backfilled on a cold start | no |
+| `AUTO_BACKUP` | `true` | Daily automatic backup (7 SQLite copies kept; MySQL not dumped on your behalf) | no |
+| `CONFIG_WATCH` | `true` | Watch `.env` and hot-reload the LLM settings | no |
+| `REFRESH_TOKEN` | empty | Optional: when set, POST refresh requires the `X-Refresh-Token` header | **yes** - treat it exactly like `LLM_API_KEY` |
+| `LLM_DAILY_CALL_BUDGET` | `200` | Daily LLM call ceiling (<=0 means uncapped), so a runaway page cannot burn the budget | no |
+
+`REFRESH_TOKEN` follows the same rules as every other secret: only in `.env`, never in
+logs or commits. If you suspect a leak, rotate first and investigate after; the watcher
+picks the new value up on its next poll, so refresh auth needs no restart.
