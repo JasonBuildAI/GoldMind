@@ -26,13 +26,13 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import date
 from typing import Iterable, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
 from app.services.quant import engine, stats
+from app.services.quant.definitions import ACTIVE_HOLDOUT_START
 
 # 低于这个样本数就不给判定（与回测同一档，避免「3 天里对了 2 天」）
 MIN_SCREEN_SAMPLES = 300
@@ -123,7 +123,9 @@ class Verdict:
 # 第 ③ 道闸门的数据起点：第二轮结论写进 spec 的那一天（2026-10-02）。
 # 之前的历史已经被看过、被汇报过，拿它确认自己 = 事后挑参数；只有这一天之后
 # 新增的观测才是干净的。改动它等于作废整轮预注册，必须换新的窗口而不是挪日期。
-FORWARD_WINDOW_START = date(2026, 10, 2)
+# 这个日期只在 definitions 里定义一次（同一事实只留一个权威来源），
+# 屏幕层与裁决层必须看同一个窗口 —— 两边能各自漂移就等于没有窗口。
+FORWARD_WINDOW_START = ACTIVE_HOLDOUT_START
 # 前向窗口至少要有这么多次独立下注才允许下结论（与裁决层的可判定下限同档）
 MIN_FORWARD_BETS = 20
 STATUS_FORWARD_PENDING = "forward_window_pending"

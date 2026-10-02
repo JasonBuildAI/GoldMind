@@ -6,6 +6,7 @@ import { describeApiError } from '@/lib/apiError'
 import { displayStamp } from '@/lib/format'
 import { quantApi } from '@/services/api'
 import type {
+  ForwardWindowReadiness,
   HorizonResearch,
   QuantResearchResponse,
   ResearchPeriod,
@@ -45,7 +46,9 @@ function SkillTable({ horizons }: { horizons: HorizonResearch[] }) {
       <table className="data-table" data-testid="research-overview">
         <caption className="note">
           命中率 = 方向命中；「差」= 留出期命中率 − 永远看多；Brier 技能分要在 HAC
-          DM 单尾 p &lt; 0.05 下为正才算显著。样本不足的格子显示「—」，鼠标悬停给出原因。
+          DM 单尾 p &lt; 0.05 下为正才算显著。这一列的「留出期」是**历史**留出期
+          （已被前两轮裁决看过，只作记录）；裁决窗口的成绩见上一节。样本不足的格子
+          显示「—」，鼠标悬停给出原因。
         </caption>
         <thead>
           <tr>
@@ -54,7 +57,7 @@ function SkillTable({ horizons }: { horizons: HorizonResearch[] }) {
               开发期命中
             </th>
             <th scope="col" className="num">
-              留出期命中
+              留出期命中（历史）
             </th>
             <th scope="col" className="num">
               永远看多
@@ -69,7 +72,7 @@ function SkillTable({ horizons }: { horizons: HorizonResearch[] }) {
               Brier 技能
             </th>
             <th scope="col" className="num">
-              覆盖率（留出）
+              覆盖率（历史留出）
             </th>
           </tr>
         </thead>
@@ -105,10 +108,63 @@ function SkillTable({ horizons }: { horizons: HorizonResearch[] }) {
   )
 }
 
+/** 裁决窗口的进度：还差多少个交易日才够独立下注数 —— 「为什么还没有结论」的答案。 */
+function ForwardWindow({ horizons }: { horizons: HorizonResearch[] }) {
+  return (
+    <div className="table-scroll">
+      <table className="data-table" data-testid="research-forward-window">
+        <caption className="note">
+          裁决只认前向留出期：预注册封板日之后**新增**的观测。窗口内的观测按尺度折算成
+          互不相干的独立下注，够 20 次才有资格说「有 / 没有优势」；在那之前状态一律是
+          「尚不可判」，不用历史留出期的成绩顶替。
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">尺度</th>
+            <th scope="col">窗口起点</th>
+            <th scope="col" className="num">
+              已积累观测
+            </th>
+            <th scope="col" className="num">
+              独立下注
+            </th>
+            <th scope="col" className="num">
+              需要
+            </th>
+            <th scope="col" className="num">
+              还差约（交易日）
+            </th>
+            <th scope="col">状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          {horizons.map((horizon) => {
+            const readiness: ForwardWindowReadiness = horizon.forward_readiness
+            return (
+              <tr key={horizon.horizon_days}>
+                <th scope="row">{horizon.label}</th>
+                <td>{readiness.window_start}</td>
+                <td className="num">{readiness.observations}</td>
+                <td className="num">{readiness.independent_bets}</td>
+                <td className="num">{readiness.required_bets}</td>
+                <td className="num">
+                  {readiness.decidable ? '—' : readiness.approx_trading_days_needed}
+                </td>
+                <td>{readiness.decidable ? '可判' : '尚不可判'}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function PeriodDetail({ horizon }: { horizon: HorizonResearch }) {
   const rows: Array<ResearchPeriod> = [
     horizon.periods.development,
     horizon.periods.holdout,
+    horizon.periods.forward,
     horizon.periods.full,
   ]
   return (
@@ -325,8 +381,12 @@ function VerdictPanel({ data }: { data: QuantResearchResponse }) {
           <dd>{data.model_version}</dd>
         </div>
         <div>
-          <dt>留出期起点</dt>
+          <dt>历史留出期起点</dt>
           <dd>{data.holdout_start}</dd>
+        </div>
+        <div>
+          <dt>前向留出期起点</dt>
+          <dd>{data.active_holdout_start}</dd>
         </div>
         <div>
           <dt>数据截至</dt>
@@ -406,7 +466,7 @@ export default function ResearchPage() {
               <StateBlock
                 kind="analyzing"
                 title="正在计算技能指标…"
-                detail="留出期是走查式回测，首次约数秒；结果缓存 1 小时。"
+                detail="技能指标是走查式回测，首次约数秒；结果缓存 1 小时。"
               />
             </section>
           ) : null}
@@ -449,15 +509,23 @@ export default function ResearchPage() {
               <Section
                 id="verdict"
                 title="版本与裁决"
-                intro="先看裁决：模型相对「永远看多」的留出期成绩，以及是否达到预注册的换代条件。"
+                intro="先看裁决：裁决只看前向留出期（预注册封板之后的观测）；窗口没攒够就说「尚不可判」，还差多少个交易日一并摊开。"
               >
                 <VerdictPanel data={state.data} />
               </Section>
 
               <Section
+                id="forward"
+                title="前向留出期（裁决窗口）"
+                intro="预注册封板日之后新增的观测才干净：这一段够不够判、还差多少，是「为什么现在没有结论」的唯一答案。"
+              >
+                <ForwardWindow horizons={state.data.horizons} />
+              </Section>
+
+              <Section
                 id="skills"
                 title="技能总览"
-                intro="五个尺度的方向命中率、基准对照、Brier 技能分与区间覆盖率；数字全部来自走查式回测。"
+                intro="五个尺度的方向命中率、基准对照、Brier 技能分与区间覆盖率；数字全部来自走查式回测。留出期一列是历史记录（已被前两轮裁决看过），不是干净的样本外证据。"
               >
                 <SkillTable horizons={state.data.horizons} />
                 <div style={{ marginTop: 18 }}>
@@ -466,9 +534,9 @@ export default function ResearchPage() {
                 {state.data.horizons.map((horizon) => (
                   <details key={horizon.horizon_days} className="factor">
                     <summary>
-                      <span className="factor__title">{horizon.label} · 三个样本期明细</span>
+                      <span className="factor__title">{horizon.label} · 四个样本期明细</span>
                       <span className="factor__subtitle">
-                        开发 / 留出 / 全样本；样本不足的格子给出原因。
+                        开发 / 历史留出 / 前向留出（裁决）/ 全样本；样本不足的格子给出原因。
                       </span>
                     </summary>
                     <div className="factor__body">

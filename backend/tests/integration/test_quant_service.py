@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app.models.analysis import ModelEvaluation, Prediction
-from app.services.quant import service
+from app.services.quant import preregistered, service
 from app.services.quant.definitions import HORIZONS, MODEL_VERSION
 
 
@@ -157,13 +157,31 @@ def test_factor_dashboard_reports_staleness(db_session, seed_quant_panel):
     assert dashboard["available_factors"] < dashboard["total_factors"]
 
 def test_research_verdict_separates_undecidable_scales_from_failures():
-    """结论句子必须说清哪个尺度「没被判定」，哪个尺度真的不及格。"""
+    """结论句子必须说清哪个尺度「没被判定」（还差多少），哪个尺度真的不及格。"""
 
-    def payload(horizon: int, accuracy: float, up: float, coverage: float, n_eff: float) -> dict:
+    def payload(
+        horizon: int,
+        accuracy: float,
+        up: float,
+        coverage: float,
+        n_eff: float,
+        *,
+        decidable: bool = True,
+        days_needed: int = 0,
+    ) -> dict:
         return {
             "horizon_days": horizon,
+            "forward_readiness": {
+                "window_start": "2026-10-02",
+                "observations": int(n_eff * horizon),
+                "independent_bets": int(n_eff),
+                "required_bets": preregistered.MIN_EFFECTIVE_SAMPLES,
+                "decidable": decidable,
+                "shortfall_bets": 0 if decidable else preregistered.MIN_EFFECTIVE_SAMPLES,
+                "approx_trading_days_needed": days_needed,
+            },
             "periods": {
-                "holdout": {
+                "forward": {
                     "accuracy": accuracy,
                     "baseline_up_accuracy": up,
                     "accuracy_diff_vs_up": accuracy - up,
@@ -177,7 +195,7 @@ def test_research_verdict_separates_undecidable_scales_from_failures():
         [],
         [
             payload(1, 0.563, 0.563, 0.789, 753.0),
-            payload(250, 1.0, 1.0, 0.241, 2.0),
+            payload(250, 1.0, 1.0, 0.241, 2.0, decidable=False, days_needed=4971),
         ],
     )
 
@@ -185,6 +203,8 @@ def test_research_verdict_separates_undecidable_scales_from_failures():
     assert "不可判定" in verdict["detail"]
     assert "250 日" in verdict["detail"]
     assert "保留 quant-v4" in verdict["detail"]
+    # 判不了的尺度必须顺带说清还要等多久，而不是只丢一句「样本不足」
+    assert "还需约 4971 个交易日" in verdict["detail"]
     # 可判定的尺度不许被顺带标成不可判定
     assert "1 日命中" in verdict["detail"]
     assert "仅约 753" not in verdict["detail"]

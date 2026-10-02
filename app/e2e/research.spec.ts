@@ -14,8 +14,18 @@ test.describe('GoldMind 研究页端到端', () => {
     expect(resp.ok()).toBeTruthy()
     const body = await resp.json()
     expect(body.holdout_start).toBe('2023-10-02')
+    // 裁决窗口自成一列：封板日之后才是干净的样本外，页面必须把这段摊开
+    expect(body.active_holdout_start).toBe('2026-10-02')
     expect(body.model_version).toBe('quant-v4')
     expect(['ok', 'unavailable']).toContain(body.status)
+
+    if (body.status === 'ok') {
+      for (const horizon of body.horizons) {
+        expect(horizon.periods.forward).toBeTruthy()
+        expect(horizon.forward_readiness.window_start).toBe('2026-10-02')
+        expect(horizon.forward_readiness.required_bets).toBeGreaterThan(0)
+      }
+    }
 
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
@@ -28,6 +38,7 @@ test.describe('GoldMind 研究页端到端', () => {
 
     if (body.status === 'ok') {
       await expect(page.getByTestId('research-overview')).toBeVisible()
+      await expect(page.getByTestId('research-forward-window')).toBeVisible()
     } else {
       await expect(page.getByText(body.reason)).toBeVisible()
     }

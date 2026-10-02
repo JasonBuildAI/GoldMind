@@ -25,7 +25,13 @@ import numpy as np
 import pandas as pd
 
 from app.services.quant import engine, stats
-from app.services.quant.definitions import FACTORS, HOLDOUT_START, HORIZONS, factor_by_key
+from app.services.quant.definitions import (
+    ACTIVE_HOLDOUT_START,
+    FACTORS,
+    HOLDOUT_START,
+    HORIZONS,
+    factor_by_key,
+)
 
 # 低于这个样本数就不给命中率（避免「3 天里对了 2 天 = 67%」这种数字）
 MIN_EVALUATION_SAMPLES = 30
@@ -645,6 +651,7 @@ def evaluate_periods(
     *,
     horizon: int,
     holdout_start: date = HOLDOUT_START,
+    active_holdout_start: date = ACTIVE_HOLDOUT_START,
     score_mode: str = "weighted",
     include: Optional[tuple[str, ...]] = None,
     regression_window: Optional[int] = None,
@@ -652,15 +659,21 @@ def evaluate_periods(
     calibration_mode: str = engine.CALIBRATION_ROW,
     score: Optional[pd.Series] = None,
 ) -> dict[str, HorizonEvaluation]:
-    """开发期 / 留出期 / 全样本三列。
+    """开发期 / 历史留出期 / 前向留出期 / 全样本四列。
 
-    留出期（``HOLDOUT_START`` 起）只用于汇报与预注册裁决，不参与任何调参 ——
-    否则「样本外」就不再是样本外。三个切片共用一次预计算（见
-    ``prepare_evaluation``），不会对整段历史把同一候选算三遍。
+    三个样本外的切法都有理由，混在一起就会偷换证据：
+
+    * ``holdout``（``HOLDOUT_START`` 起）是**历史**留出期：第一/二轮裁决已经看过
+      它，只能当记录，不能再当样本外证据；
+    * ``forward``（``ACTIVE_HOLDOUT_START`` 起）是**唯一**的裁决窗口：只有预注册
+      封板之后新增的观测才干净。它现在是空的也很正常 —— 空的就如实空着，
+      状态记 pending，不许拿历史那一段顶替；
+    * 四个切片共用一次预计算（见 ``prepare_evaluation``），
+      不会对整段历史把同一候选算四遍。
     """
     if close is None or close.empty:
         empty = _empty(horizon, "缺少黄金价格序列")
-        return {"development": empty, "holdout": empty, "full": empty}
+        return {"development": empty, "holdout": empty, "forward": empty, "full": empty}
 
     prepared = prepare_evaluation(
         factors,
@@ -676,12 +689,16 @@ def evaluate_periods(
     base = _base_mask(prepared)
     calendar = close.index
     development = base & (calendar < pd.Timestamp(holdout_start))
-    holdout = base & (calendar >= pd.Timestamp(holdout_start))
+    historical = base & (calendar >= pd.Timestamp(holdout_start)) & (
+        calendar < pd.Timestamp(active_holdout_start)
+    )
+    forward = base & (calendar >= pd.Timestamp(active_holdout_start))
     return {
         "development": _evaluate(
             horizon, prepared, development, universe=int(development.size)
         ),
-        "holdout": _evaluate(horizon, prepared, holdout, universe=int(holdout.size)),
+        "holdout": _evaluate(horizon, prepared, historical, universe=int(historical.size)),
+        "forward": _evaluate(horizon, prepared, forward, universe=int(forward.size)),
         "full": _evaluate(horizon, prepared, base, universe=int(base.size)),
     }
 
@@ -712,6 +729,7 @@ def factor_summary(evaluation: HorizonEvaluation) -> list[dict]:
 __all__ = [
     "BOOTSTRAP_DRAWS",
     "HorizonEvaluation",
+    "ACTIVE_HOLDOUT_START",
     "HOLDOUT_START",
     "INTERVAL_NOMINAL_80",
     "REGIME_SPLIT",

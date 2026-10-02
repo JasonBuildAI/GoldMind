@@ -95,7 +95,12 @@ def test_report_contains_development_and_holdout_columns(make_panel, monkeypatch
     # 必须钉住主表表头本身：「留出期」在裁决标题里也出现，只搜正文会假绿
     header = next(line for line in markdown.splitlines() if line.startswith("| 候选 |"))
     header_cells = [cell.strip() for cell in header.strip("|").split("|")]
-    assert "开发期" in header_cells and "留出期" in header_cells and "全样本" in header_cells
+    # 「留出期」这一列指的是**历史**留出期（裁决窗口另算），表头必须写清楚
+    assert (
+        "开发期" in header_cells
+        and "历史留出期" in header_cells
+        and "全样本" in header_cells
+    )
     assert "| B0 |" in markdown and "| E0 |" in markdown
     holdout = next(
         row for row in rows if row["candidate"] == "B0" and row["period"] == "holdout"

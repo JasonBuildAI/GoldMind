@@ -25,7 +25,7 @@ export default function CoverageChart({ horizons }: { horizons: HorizonResearch[
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label="留出期各尺度 80% 区间覆盖率与 80% 名义线的对比"
+        aria-label="历史留出期各尺度 80% 区间覆盖率与 80% 名义线的对比"
         style={{ width: '100%', height: 'auto' }}
       >
         {[0, 0.4, 1].map((tick) => (
@@ -100,7 +100,8 @@ export default function CoverageChart({ horizons }: { horizons: HorizonResearch[
         })}
       </svg>
       <p className="note" style={{ marginTop: 10 }}>
-        柱值 = 留出期实际覆盖率；样本不足时显示「—」，不补数字。
+        柱值 = **历史**留出期（已被前两轮裁决看过）的实际覆盖率，只作记录；
+        样本不足时显示「—」，不补数字。裁决窗口的覆盖率见「前向留出期」一节。
       </p>
     </figure>
   )

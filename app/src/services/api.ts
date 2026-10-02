@@ -627,6 +627,17 @@ export interface ResearchPeriod {
   reason: string | null
 }
 
+/** 判决窗口（前向留出期）够不够判：次数与「还差多少个交易日」都由后端算好。 */
+export interface ForwardWindowReadiness {
+  window_start: string
+  observations: number
+  independent_bets: number
+  required_bets: number
+  decidable: boolean
+  shortfall_bets: number
+  approx_trading_days_needed: number
+}
+
 export interface ResearchReliabilityBin {
   lo: number | null
   hi: number | null
@@ -655,8 +666,10 @@ export interface HorizonResearch {
   periods: {
     development: ResearchPeriod
     holdout: ResearchPeriod
+    forward: ResearchPeriod
     full: ResearchPeriod
   }
+  forward_readiness: ForwardWindowReadiness
   reliability_bins: ResearchReliabilityBin[]
   factors: ResearchFactor[]
 }
@@ -673,6 +686,7 @@ export interface QuantResearchResponse {
   reason: string | null
   as_of: string | null
   holdout_start: string
+  active_holdout_start: string
   generated_at: string
   cached: boolean
   verdict: ResearchVerdict

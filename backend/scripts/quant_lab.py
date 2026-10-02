@@ -35,6 +35,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.services.quant import backtest, engine, preregistered, storage  # noqa: E402
 from app.services.quant.definitions import (  # noqa: E402
+    ACTIVE_HOLDOUT_START,
     CATEGORY_MONETARY,
     CATEGORY_RISK,
     FACTORS,
@@ -51,7 +52,11 @@ from app.services.quant.preregistered import (  # noqa: E402
 from app.utils import timeutil  # noqa: E402
 
 PERIODS = ("development", "holdout", "full")
-PERIOD_LABELS = {"development": "开发期", "holdout": "留出期", "full": "全样本"}
+PERIOD_LABELS = {
+    "development": "开发期",
+    "holdout": "历史留出期",
+    "full": "全样本",
+}
 
 GROUP_LABELS = {
     "baseline": "基线族",
@@ -439,14 +444,16 @@ def format_markdown(
     horizons: tuple[int, ...] = HORIZONS,
     generated_at: Optional[str] = None,
 ) -> str:
-    """报告主体：主表（开发 / 留出 / 全样本）+ 失败尝试 + 预注册裁决。"""
+    """报告主体：主表（开发 / 历史留出 / 全样本）+ 失败尝试 + 预注册裁决。"""
     index = {(row["candidate"], row["horizon_days"], row["period"]): row for row in rows}
     order = _candidate_order(rows)
     lines = [
         "# 量化研究台报告",
         "",
         "> 候选与判定为预注册（`docs/specs/2026-10-02-量化策略提升路线图.md` 6.1），",
-        f"> 留出期起点 = {HOLDOUT_START.isoformat()}。报告呈现全部尝试，不做二次挑选。",
+        f"> 留出期起点 = {HOLDOUT_START.isoformat()}（历史留出期，已被前两轮裁决看过，",
+        f"> 只作记录）；裁决只认前向留出期（{ACTIVE_HOLDOUT_START.isoformat()} 起）。",
+        "> 报告呈现全部尝试，不做二次挑选。",
     ]
     if generated_at:
         lines.append(f"> 生成时间：{generated_at}")
@@ -454,7 +461,7 @@ def format_markdown(
         "",
         "## 主表（命中率三列）",
         "",
-        "| 候选 | 组 | 尺度(日) | 开发期 | 留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | 覆盖率(留出) |",
+        "| 候选 | 组 | 尺度(日) | 开发期 | 历史留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | 覆盖率(留出) |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for candidate in order:

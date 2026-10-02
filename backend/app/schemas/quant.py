@@ -261,6 +261,8 @@ class HorizonResearch(BaseModel):
     horizon_days: int
     label: str
     headline: str
+    # 裁决窗口（前向留出期）够不够判、还差多少：页面据此说明「为什么还没有结论」
+    forward_readiness: Dict[str, Any] = {}
     periods: Dict[str, ResearchPeriod]
     reliability_bins: List[Dict[str, Any]] = []
     factors: List[ResearchFactor] = []
@@ -278,6 +280,7 @@ class QuantResearchResponse(BaseModel):
     reason: Optional[str] = None
     as_of: Optional[date] = None
     holdout_start: date
+    active_holdout_start: date
     generated_at: datetime
     cached: bool = False
     verdict: ResearchVerdict

@@ -147,10 +147,13 @@ def test_periods_split_development_and_holdout(make_panel):
 
     periods = backtest.evaluate_periods(factors, close, horizon=20)
 
-    assert set(periods) == {"development", "holdout", "full"}
-    development, holdout, full = periods["development"], periods["holdout"], periods["full"]
+    assert set(periods) == {"development", "holdout", "forward", "full"}
+    development = periods["development"]
+    holdout = periods["holdout"]
+    full = periods["full"]
     assert development.window_end < backtest.HOLDOUT_START
     assert holdout.window_start >= backtest.HOLDOUT_START
+    assert holdout.window_end < backtest.ACTIVE_HOLDOUT_START
     assert holdout.accuracy is not None, "留出期样本足够时必须给出独立的成绩"
     assert development.sample_size + holdout.sample_size == full.sample_size
     assert holdout.metrics["holdout_start"] == backtest.HOLDOUT_START.isoformat()
@@ -160,6 +163,80 @@ def test_holdout_start_is_the_preregistered_constant():
     from app.services.quant.definitions import HOLDOUT_START
 
     assert backtest.HOLDOUT_START == HOLDOUT_START == date(2023, 10, 2)
+
+
+def test_forward_slice_is_the_only_deciding_window(make_panel):
+    """前向留出期必须自成一列、且只覆盖封板日之后的观测。
+
+    变异验证：把 forward 的掩码改回 `>= HOLDOUT_START`（拿历史那段顶替）、
+    或把 holdout 的上界删掉，本用例必红 —— 那正是「窗口纪律变成装饰」的改法。
+    """
+    calendar = pd.date_range("2019-01-01", "2027-06-30", freq="B")
+    factors, close = make_panel(calendar)
+
+    periods = backtest.evaluate_periods(factors, close, horizon=5)
+
+    development = periods["development"]
+    holdout = periods["holdout"]
+    forward = periods["forward"]
+    assert development.window_end < backtest.HOLDOUT_START
+    assert holdout.window_start >= backtest.HOLDOUT_START
+    assert holdout.window_end < backtest.ACTIVE_HOLDOUT_START
+    assert forward.window_start >= backtest.ACTIVE_HOLDOUT_START
+    assert forward.sample_size > 0, "面板跨过封板日后裁决窗口必须有观测"
+    # 三段互不重叠、合起来等于全样本 —— 有重叠就说明切片口径错了
+    assert (
+        development.sample_size + holdout.sample_size + forward.sample_size
+        == periods["full"].sample_size
+    )
+
+
+def test_forward_slice_stays_empty_and_says_so_before_the_window_fills(make_panel):
+    """窗口还没到/刚开：前向那一列如实空着，不给数字、也不借历史那段。
+
+    变异验证：把 forward 掩码退回 `>= HOLDOUT_START`，forward.sample_size 会变成
+    一大段历史样本，本用例必红。
+    """
+    factors, close = make_panel(_long_calendar())  # 止于 2026-09-30，还没到封板日
+
+    periods = backtest.evaluate_periods(factors, close, horizon=20)
+
+    forward = periods["forward"]
+    assert forward.sample_size == 0
+    assert forward.accuracy is None
+    assert forward.window_start is None
+    assert forward.metrics["reason"], "空窗口必须给出原因，不能静默"
+
+
+def test_forward_window_readiness_counts_bets_and_shortfall():
+    from app.services.quant import preregistered
+
+    empty = pd.date_range("2026-09-01", "2026-10-01", freq="B")
+    readiness = preregistered.forward_window_readiness(empty, 20)
+
+    assert readiness["window_start"] == "2026-10-02"
+    assert readiness["observations"] == 0
+    assert readiness["independent_bets"] == 0
+    assert readiness["decidable"] is False
+    assert readiness["shortfall_bets"] == preregistered.MIN_EFFECTIVE_SAMPLES
+    assert readiness["approx_trading_days_needed"] == preregistered.MIN_EFFECTIVE_SAMPLES * 20
+
+    # 400 个交易日 = 20 注（stride = 20）刚好够判，缺口归零
+    filled = pd.date_range("2026-10-05", periods=400, freq="B")
+    ready = preregistered.forward_window_readiness(filled, 20)
+
+    assert ready["observations"] == 400
+    assert ready["independent_bets"] == 20
+    assert ready["decidable"] is True
+    assert ready["shortfall_bets"] == 0
+    assert ready["approx_trading_days_needed"] == 0
+
+    # 差一注就不能判 —— 门槛是 ≥ 而不是 ≥ 之前的某个数
+    almost = preregistered.forward_window_readiness(
+        pd.date_range("2026-10-05", periods=399, freq="B"), 20
+    )
+    assert almost["decidable"] is False
+    assert almost["approx_trading_days_needed"] == 1
 
 
 def test_backtest_coverage_uses_the_calibrated_bounds(make_panel):

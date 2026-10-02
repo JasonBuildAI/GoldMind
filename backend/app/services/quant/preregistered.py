@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import date
 from typing import Optional, Sequence
+
+from app.services.quant.definitions import ACTIVE_HOLDOUT_START
 
 # 预注册常量（与 spec 6.1 一字不差地对应）
 TARGET_SCALE = 250
@@ -23,6 +26,33 @@ MIN_PASSING_SCALES = 3              # ≥3/5 尺度成立
 # 依据：250 日留出期 506 个重叠样本 = 2 次独立下注，覆盖率 24.1% 的 CI 是 [4%, 45%]
 # （docs/specs/2026-10-02-量化引擎第二轮预注册.md 一、为什么目标定义必须换）。
 MIN_EFFECTIVE_SAMPLES = 20
+
+# 裁决层的前向窗口状态：还没积累够独立下注时说 pending，不说「没过线」——
+# 「还不知道」和「知道了，是坏的」是两件事，混在一起就把窗口纪律变成了装饰。
+STATUS_PENDING = "pending"
+
+
+def forward_window_readiness(
+    index, horizon: int, *, start: date = ACTIVE_HOLDOUT_START
+) -> dict:
+    """裁决窗口现在能不能判：把已经积累多少、还差多少摊开说。
+
+    ``index`` 是价格序列的日期索引（DatetimeIndex / 任何带 ``.date()`` 的序列）。
+    「独立下注」= 窗口内的观测数按尺度折算（``observations // horizon``），
+    与回测里 stride = h 的抽样同一口径；要够 ``MIN_EFFECTIVE_SAMPLES`` 次才可判。
+    """
+    observations = sum(1 for moment in index if moment.date() >= start)
+    bets = observations // horizon if horizon > 0 else 0
+    required = MIN_EFFECTIVE_SAMPLES
+    return {
+        "window_start": start.isoformat(),
+        "observations": int(observations),
+        "independent_bets": int(bets),
+        "required_bets": int(required),
+        "decidable": bets >= required,
+        "shortfall_bets": int(max(0, required - bets)),
+        "approx_trading_days_needed": int(max(0, required * horizon - observations)),
+    }
 
 
 def finite(value) -> Optional[float]:

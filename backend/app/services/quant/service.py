@@ -25,6 +25,7 @@ from app.services.quant import (
     sync,
 )
 from app.services.quant.definitions import (
+    ACTIVE_HOLDOUT_START,
     BENCHMARK_KEY,
     CATEGORY_NAMES,
     HOLDOUT_START,
@@ -40,7 +41,14 @@ BACKTEST_INTERVAL = timedelta(hours=24)
 # 研究页报告：走查式重算约数秒，缓存 1 小时；刷新数据后主动失效
 RESEARCH_CACHE_TTL = 3600
 RESEARCH_CACHE_KEY = "quant_research"
-RESEARCH_PERIOD_LABELS = {"development": "开发期", "holdout": "留出期", "full": "全样本"}
+# 「历史留出期」这一段第一/二轮裁决已经看过，标签就必须写清楚它是记录而不是证据 ——
+# 把两段留出期都叫「留出期」，读者会以为页面上的样本外成绩还是干净的。
+RESEARCH_PERIOD_LABELS = {
+    "development": "开发期",
+    "holdout": "历史留出期（已看过）",
+    "forward": "前向留出期（裁决窗口）",
+    "full": "全样本",
+}
 
 
 def load_panel(
@@ -331,6 +339,7 @@ def _build_research_payload(db: Session) -> dict:
             "reason": "库里还没有因子面板或黄金价格序列（先同步数据，再看研究页）",
             "as_of": None,
             "holdout_start": HOLDOUT_START.isoformat(),
+            "active_holdout_start": ACTIVE_HOLDOUT_START.isoformat(),
             "generated_at": generated_at,
             "verdict": {
                 "status": "unavailable",
@@ -345,16 +354,20 @@ def _build_research_payload(db: Session) -> dict:
     for horizon in HORIZONS:
         periods = backtest.evaluate_periods(factors, close, horizon=horizon)
         spec = horizon_spec.get(horizon)
-        # 线上模型就是 B0：留出期裁决里「自己 vs 自己」的覆盖率比较按保守处理
+        # 线上模型就是 B0：裁决窗口里「自己 vs 自己」的覆盖率比较按保守处理
         # （规则 ② 的覆盖率一条永不成立），与 quant_lab 对 B0 的算法一致。
         flags[horizon] = preregistered.rule_flags(
-            preregistered.rule_input(periods["holdout"], periods["holdout"])
+            preregistered.rule_input(periods["forward"], periods["forward"])
         )
         horizons_payload.append(
             {
                 "horizon_days": horizon,
                 "label": spec.label if spec else f"{horizon} 日",
                 "headline": spec.headline if spec else "方向 / 校准区间",
+                # 裁决窗口够不够判、还差多少 —— 页面必须能回答「为什么没有结论」
+                "forward_readiness": preregistered.forward_window_readiness(
+                    close.index, horizon
+                ),
                 "periods": {
                     name: _research_period(name, evaluation)
                     for name, evaluation in periods.items()
@@ -371,6 +384,7 @@ def _build_research_payload(db: Session) -> dict:
         "reason": None,
         "as_of": close.index[-1].date().isoformat(),
         "holdout_start": HOLDOUT_START.isoformat(),
+        "active_holdout_start": ACTIVE_HOLDOUT_START.isoformat(),
         "generated_at": generated_at,
         "verdict": _research_verdict(passed_scales, horizons_payload),
         "horizons": horizons_payload,
@@ -475,15 +489,44 @@ def _research_factors(evaluation: backtest.HorizonEvaluation) -> list[dict]:
 
 def _research_verdict(passed_scales: list[int], horizons_payload: list[dict]) -> dict:
     """由数据生成一句诚实的结论；文案不写死「好」或「坏」。"""
+    # 第一件事：裁决窗口到底能不能判。判不了就说 pending 与还差多少 ——
+    # 拿历史留出期的成绩顶替，等于把预注册的窗口纪律作废。
+    pending = [
+        item
+        for item in horizons_payload
+        if not (item.get("forward_readiness") or {}).get("decidable")
+    ]
+    # 全部尺度都还判不了 → pending。只要有一个尺度能判，就照常走规则并逐条说明
+    # 哪些尺度还没到判定条件 —— 把已经能看出来的东西藏起来同样是撒谎。
+    if pending and len(pending) == len(horizons_payload):
+        shortfalls = []
+        for item in pending:
+            readiness = item["forward_readiness"]
+            shortfalls.append(
+                f"{item['horizon_days']} 日 {readiness['independent_bets']}/"
+                f"{readiness['required_bets']} 次独立下注"
+                f"（还需约 {readiness['approx_trading_days_needed']} 个交易日）"
+            )
+        return {
+            "status": preregistered.STATUS_PENDING,
+            "label": "前向窗口尚不可判",
+            "detail": (
+                f"裁决只认前向留出期（{ACTIVE_HOLDOUT_START.isoformat()} 起）的独立下注："
+                + "；".join(shortfalls)
+                + f"。{HOLDOUT_START.isoformat()} 起的那一段已被前两轮裁决看过，"
+                "只能当历史记录，不作为入选依据；此刻不给出「有优势 / 无优势」的结论。"
+            ),
+        }
+
     differences = [
-        item["periods"]["holdout"]["accuracy_diff_vs_up"]
+        item["periods"]["forward"]["accuracy_diff_vs_up"]
         for item in horizons_payload
         if item["horizon_days"] != preregistered.TARGET_SCALE
     ]
     others_ok = preregistered.other_scales_ok(differences)
     if preregistered.selected(passed_scales, others_ok=others_ok):
         detail = (
-            f"留出期有 {len(passed_scales)} 个尺度过线（"
+            f"前向留出期有 {len(passed_scales)} 个尺度过线（"
             + "、".join(f"{horizon} 日" for horizon in passed_scales)
             + "）；按预注册规则进入模型换代复核。"
         )
@@ -491,7 +534,7 @@ def _research_verdict(passed_scales: list[int], horizons_payload: list[dict]) ->
 
     details = []
     for item in horizons_payload:
-        holdout = item["periods"]["holdout"]
+        holdout = item["periods"]["forward"]
         accuracy = holdout["accuracy"]
         up = holdout["baseline_up_accuracy"]
         coverage = holdout["interval_coverage_80"]
@@ -514,22 +557,33 @@ def _research_verdict(passed_scales: list[int], horizons_payload: list[dict]) ->
     undecidable = [
         item["horizon_days"]
         for item in horizons_payload
-        if (item["periods"]["holdout"].get("effective_sample_size") or 0)
+        if (item["periods"]["forward"].get("effective_sample_size") or 0)
         < preregistered.MIN_EFFECTIVE_SAMPLES
     ]
+    # 还没攒够独立下注的尺度：把「还差多少个交易日」直接写在结论里 ——
+    # 只说「样本不足以判定」会让人以为再等几天就行，其实差的是几十上百个交易日。
+    waits = {
+        item["horizon_days"]: (item.get("forward_readiness") or {}).get(
+            "approx_trading_days_needed"
+        )
+        for item in horizons_payload
+    }
+    evidence_note = ""
+    if undecidable:
+        listed = "、".join(
+            f"{horizon} 日"
+            + (f"（还需约 {waits[horizon]} 个交易日）" if waits.get(horizon) else "")
+            for horizon in undecidable
+        )
+        evidence_note = f"。其中 {listed} 的样本量不足以判定，不计入「未过线」的证据"
     return {
         "status": "no_edge",
         "label": "无统计优势",
         "detail": (
-            f"留出期（{HOLDOUT_START.isoformat()} 起）没有尺度满足预注册规则 ①/②："
+            f"前向留出期（{ACTIVE_HOLDOUT_START.isoformat()} 起）没有尺度满足预注册规则 ①/②："
             + "；".join(details)
-            + (
-                f"。其中 {('、'.join(str(h) for h in undecidable))} 日的样本量不足以判定，"
-                "不计入「未过线」的证据"
-                if undecidable
-                else ""
-            )
-            + "。按预注册规则保留 quant-v4，不换模型。"
+            + evidence_note
+            + f"。按预注册规则保留 {MODEL_VERSION}，不换模型。"
         ),
     }
 

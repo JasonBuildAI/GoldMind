@@ -11,8 +11,10 @@
 这里回答的是「一个新信息值不值得进因子集」—— 判定规则、分母（Bonferroni 按整轮算）
 和输出都不同，混在一起会让两边的事前承诺互相污染。
 
-默认只看**开发期**（`HOLDOUT_START` 之前）。留出期是将来第 ③ 道闸门用的，
-现在拿它筛因子等于事后挑参数，所以要把这个开关做成显式且带警告的。
+默认只看**开发期**（`HOLDOUT_START` 之前）。第 ③ 道闸门用的是**前向**窗口
+（`screen.FORWARD_WINDOW_START` = `ACTIVE_HOLDOUT_START`，预注册封板日之后），
+不是那段已经被看过的历史留出期 —— `--include-holdout` 只是诊断开关，
+连历史留出期一起看等于事后挑参数，所以它必须显式且带警告。
 """
 from __future__ import annotations
 
@@ -234,11 +236,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not args.include_holdout:
         mask = pd.Series(benchmark.index < pd.Timestamp(HOLDOUT_START), index=benchmark.index)
         print(
-            f"筛选窗口：开发期（{HOLDOUT_START.isoformat()} 之前）；留出期留给第 ③ 道闸门。",
+            f"筛选窗口：开发期（{HOLDOUT_START.isoformat()} 之前）；"
+            f"第 ③ 道闸门看前向窗口（{screen.FORWARD_WINDOW_START.isoformat()} 起）。",
             file=sys.stderr,
         )
     else:
-        print("⚠ 已包含留出期：本次结果不可用于因子入选，只能当诊断。", file=sys.stderr)
+        print(
+            "⚠ 已包含历史留出期（已被前两轮裁决看过）：本次结果不可用于因子入选，"
+            "只能当诊断。",
+            file=sys.stderr,
+        )
 
     verdicts = screen.screen_round(candidates, benchmark, horizons=horizons, mask=mask)
     rows = screen.summary_rows(verdicts)

@@ -46,6 +46,7 @@ function response(): QuantResearchResponse {
     reason: null,
     as_of: '2026-10-01',
     holdout_start: '2023-10-02',
+    active_holdout_start: '2026-10-02',
     generated_at: '2026-10-02T10:00:00+08:00',
     cached: false,
     verdict: {
@@ -58,9 +59,27 @@ function response(): QuantResearchResponse {
         horizon_days: 1,
         label: '1 日',
         headline: '方向 / 校准区间',
+        forward_readiness: {
+          window_start: '2026-10-02',
+          observations: 0,
+          independent_bets: 0,
+          required_bets: 20,
+          decidable: false,
+          shortfall_bets: 20,
+          approx_trading_days_needed: 20,
+        },
         periods: {
           development: period({ label: '开发期', accuracy: 0.522 }),
           holdout: period(),
+          forward: period({
+            label: '前向留出期（裁决窗口）',
+            sample_size: 0,
+            accuracy: null,
+            accuracy_independent_bets: null,
+            interval_coverage_80: null,
+            interval_coverage_80_independent_bets: null,
+            reason: '可评估样本只有 0 个（至少需要 30 个）',
+          }),
           full: period({ label: '全样本', accuracy: 0.528 }),
         },
         reliability_bins: [
@@ -105,11 +124,17 @@ describe('ResearchPage', () => {
     // 模型版本与样本外起点是裁决的关键字段
     expect(screen.getAllByText('quant-v4').length).toBeGreaterThan(0)
     expect(screen.getByText('2023-10-02')).toBeInTheDocument()
+    // 裁决窗口：起点、还差多少个交易日、以及「尚不可判」的状态
+    expect(screen.getByTestId('research-forward-window')).toBeInTheDocument()
+    expect(screen.getAllByText('2026-10-02').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('尚不可判').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('20').length).toBeGreaterThan(0)
     // 独立下注口径：次数与「按 stride 抽出来的成绩」一起展示
     const betCells = screen.getAllByTitle(
       '每 5 个交易日算一次独立下注 —— 重叠样本不是独立证据',
     )
-    expect(betCells).toHaveLength(3) // 开发期 / 留出期 / 全样本，每行各自报次数
+    // 开发 / 历史留出 / 前向留出 / 全样本，每行各自报次数
+    expect(betCells).toHaveLength(4)
     expect(betCells[0]).toHaveTextContent('31')
     expect(screen.getAllByText('54.8%').length).toBeGreaterThan(0)
     expect(screen.getAllByText('77.4%').length).toBeGreaterThan(0)

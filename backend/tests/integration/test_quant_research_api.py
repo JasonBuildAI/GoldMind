@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.quant import backtest, engine
-from app.services.quant.definitions import HOLDOUT_START, HORIZONS, MODEL_VERSION
+from app.services.quant import backtest, engine, preregistered
+from app.services.quant.definitions import (
+    ACTIVE_HOLDOUT_START,
+    HOLDOUT_START,
+    HORIZONS,
+    MODEL_VERSION,
+)
 
 
 @pytest.mark.integration
@@ -20,6 +25,7 @@ def test_research_endpoint_reports_periods_factors_and_verdict(
     assert body["model_version"] == MODEL_VERSION
     assert body["status"] == engine.STATUS_OK
     assert body["holdout_start"] == HOLDOUT_START.isoformat()
+    assert body["active_holdout_start"] == ACTIVE_HOLDOUT_START.isoformat()
     assert body["as_of"]
     assert body["generated_at"]
     assert body["reason"] is None
@@ -27,7 +33,17 @@ def test_research_endpoint_reports_periods_factors_and_verdict(
 
     for item in body["horizons"]:
         assert item["label"] and item["headline"]
-        assert set(item["periods"]) == {"development", "holdout", "full"}
+        assert set(item["periods"]) == {"development", "holdout", "forward", "full"}
+        # 历史那一段必须在标签里说清楚它是记录、不是干净的样本外证据
+        assert "历史" in item["periods"]["holdout"]["label"]
+        assert "前向" in item["periods"]["forward"]["label"]
+        # 裁决窗口的进度：口径与 horizon 一致，且缺口非负
+        readiness = item["forward_readiness"]
+        assert readiness["window_start"] == ACTIVE_HOLDOUT_START.isoformat()
+        assert readiness["required_bets"] == preregistered.MIN_EFFECTIVE_SAMPLES
+        assert readiness["independent_bets"] == readiness["observations"] // item["horizon_days"]
+        assert readiness["shortfall_bets"] >= 0
+        assert readiness["decidable"] == (readiness["shortfall_bets"] == 0)
         for period in item["periods"].values():
             assert period["label"]
             assert period["sample_size"] >= 0
@@ -55,7 +71,14 @@ def test_research_endpoint_reports_periods_factors_and_verdict(
             assert row["key"] and row["name"] and row["category_name"]
 
     verdict = body["verdict"]
-    assert verdict["status"] in ("candidate", "no_edge")
+    # 裁决窗口够不够判，决定了结论是「尚不可判」还是「有 / 无优势」——
+    # 两者必须自洽：所有尺度都判不了时，不许出现「无统计优势」这种盖棺论定。
+    decidable = [item for item in body["horizons"] if item["forward_readiness"]["decidable"]]
+    if decidable:
+        assert verdict["status"] in ("candidate", "no_edge")
+    else:
+        assert verdict["status"] == preregistered.STATUS_PENDING
+        assert "交易日" in verdict["detail"], "pending 必须摊开还差多少个交易日"
     assert verdict["label"] and verdict["detail"]
     assert body["cached"] is False
 
