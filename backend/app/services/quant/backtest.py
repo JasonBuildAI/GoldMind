@@ -336,6 +336,10 @@ def _evaluate(
         "magnitude_mape": magnitude_mape,
         "magnitude_skill_vs_flat": magnitude_skill_vs_flat,
         "interval_sharpness_80": sharpness_80,
+        # 「模型原本想报更夸张的数」被封顶拦住的比例：封顶不是美化，是把不可信的幅度
+        # 关回市场真的动过的那个量级里，比例本身是要给用户看的健康度指标。
+        "expected_cap_rate": float(frame["expected_capped"][mask].mean()),
+        "expected_cap_sigmas": engine.EXPECTED_CAP_SIGMAS,
         "nonoverlapping_stride": horizon,
         "nonoverlapping_samples": int(len(nonoverlap_correct)),
         "accuracy_nonoverlapping": accuracy_nonoverlapping,

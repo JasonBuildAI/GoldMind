@@ -60,6 +60,48 @@ def test_direction_follows_the_calibrated_mean_and_reports_the_median():
     assert _snapshot(score=+2.0, expected_return=0.0).direction == "flat"
 
 
+def test_expected_return_is_capped_by_what_the_market_actually_did(calendar):
+    """OLS 在「得分几乎不动」的窗口里能把 β 推到 10⁴ 量级，μ 必须被封顶。
+
+    2026-10-02 真实面板实测：2019-01-08 那天 60 日期望收益是 **+1261**（即 +126167%），
+    目标价与区间一起被带飞 —— 展示这种数字等于违反红线一「不许编造数据」。
+    这里用同一种病态构造（近乎恒定的得分 + 一次跳变）复现它，并钉住四条：
+    μ 被夹到界内、被夹的行有标记、目标价与区间仍有限、且封顶不许吃掉正常行。
+
+    变异验证：删掉 `.where(~capped, ...)` 那一行，本测试第一组断言必红。
+    """
+    rng = np.random.default_rng(11)
+    n = len(calendar)
+    # 前段：得分几乎恒定（分母接近 0 → β 爆炸）；末段给一次大幅跳变
+    score_values = np.concatenate([1.0 + rng.normal(0.0, 1e-6, n - 5), np.full(5, 4.0)])
+    score = pd.Series(score_values, index=calendar)
+    returns = rng.normal(0.0, 0.006, n)
+    close = pd.Series(2000.0 * np.cumprod(1.0 + returns), index=calendar)
+
+    horizon = 20
+    frame = engine.build_prediction_frame(score, close, horizon)
+    realized_scale = (
+        close.shift(-horizon).div(close).sub(1.0).shift(horizon).expanding(
+            min_periods=engine.MIN_SCORES_FOR_SIGMA
+        ).std()
+    )
+    bound = engine.EXPECTED_CAP_SIGMAS * realized_scale
+    mu = frame["expected_return"]
+    valid = mu.notna() & bound.notna()
+
+    assert bool(frame["expected_capped"][valid].any()), "病态构造没能触发封顶，测试已经失效"
+    assert bool((mu[valid].abs() <= bound[valid] + 1e-15).all()), "存在越界的期望收益"
+    for column in ("target_price", "lower_return", "upper_return", "median_return"):
+        assert np.isfinite(frame[column].dropna()).all(), column
+    # 绝大多数行不该被夹 —— 封顶是护栏，不是把模型压平
+    assert float(frame["expected_capped"][valid].mean()) < 0.2
+    # 得分平稳的面板不该触发封顶（否则等于用护栏掩盖真问题）
+    calm = engine.build_prediction_frame(
+        pd.Series(rng.normal(0.0, 1.0, n), index=calendar), close, horizon
+    )
+    assert float(calm["expected_capped"][calm["expected_return"].notna()].mean()) < 0.05
+
+
 def test_normal_fallback_probability_is_the_normal_tail():
     """经验样本不足时退回解析正态：p_up = Φ(μ/scale)，与兜底区间同一套尺度。
 

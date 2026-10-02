@@ -160,6 +160,7 @@ ROW_FIELDS = (
     "coverage_ci_low",
     "coverage_ci_high",
     "effective_sample_size",
+    "expected_cap_rate",
     "independent_bets",
     "accuracy_nonoverlap",
     "reason",
@@ -233,6 +234,7 @@ def _row(candidate: Candidate, horizon: int, period: str, evaluation) -> dict:
         "coverage_ci_high": coverage_ci[1],
         "effective_sample_size": metrics.get("effective_sample_size"),
         # 独立下注次数与它给出的成绩：长尺度上这两个数才是「可不可判定」的答案
+        "expected_cap_rate": metrics.get("expected_cap_rate"),
         "independent_bets": metrics.get("nonoverlapping_samples"),
         "accuracy_nonoverlap": metrics.get("accuracy_nonoverlapping"),
         "reason": metrics.get("reason"),

@@ -410,6 +410,7 @@ def _research_period(name: str, evaluation: backtest.HorizonEvaluation) -> dict:
         "interval_coverage_80": preregistered.finite(metrics.get("interval_coverage_80")),
         "interval_coverage_ci95": _finite_pair(metrics.get("interval_coverage_ci95")),
         "effective_sample_size": preregistered.finite(metrics.get("effective_sample_size")),
+        "expected_cap_rate": preregistered.finite(metrics.get("expected_cap_rate")),
         "reason": metrics.get("reason"),
     }
 

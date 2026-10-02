@@ -53,6 +53,13 @@ MIN_HISTORY = 60
 MIN_SCORES_FOR_SIGMA = 20
 # 扩展窗口 OLS 至少要有这么多个「已实现」的样本对，否则 β=0（目标价=基准价）
 MIN_OLS_SAMPLES = 60
+# 期望收益的硬界：``|μ| ≤ EXPECTED_CAP_SIGMAS × 同期已实现 h 日收益的扩展标准差``。
+# 为什么必须有：一元 OLS 在得分几乎不动的窗口里分母接近 0，β 能冲到 10⁴ 量级 ——
+# 2026-10-02 在真实 20 年面板上实测到 2019-01-08 单日给出 μ=+1261（60 日 +126167%），
+# 目标价与区间全被带飞，这等价于向用户展示编造的数字（红线一）。
+# 尺度取「已实现收益自己的扩展标准差」而不是预测误差标准差：后者由 μ 算出，
+# 用它封顶会让一条异常预测污染自己的误差池（循环）。
+EXPECTED_CAP_SIGMAS = 2.0
 # 走查预测误差的 σ 至少要有这么多个「已实现」的误差（与 OLS 同一档）
 MIN_ERRORS_FOR_SIGMA = 60
 # 80% 名义区间的双侧分位点 Φ⁻¹(0.90)；展示口径统一成「μ ± INTERVAL_Z_80 × uncertainty」
@@ -489,13 +496,16 @@ def build_prediction_frame(
         score.shift(horizon), forward.shift(horizon), window=regression_window
     )
     # 没校准就没有期望收益：NaN 而不是 0，否则「样本不足」会被下游当成「预期不变」
-    expected = (alpha + beta * score).where(calibrated)
+    expected_raw = (alpha + beta * score).where(calibrated)
+    # 封顶：μ 不许超过「这一尺度上市场真的动过多少」的若干倍（原因见 EXPECTED_CAP_SIGMAS）
+    realized_scale = forward.shift(horizon).expanding(min_periods=MIN_SCORES_FOR_SIGMA).std()
+    cap = EXPECTED_CAP_SIGMAS * realized_scale
+    capped = expected_raw.notna() & cap.notna() & (expected_raw.abs() > cap)
+    expected = expected_raw.where(~capped, np.sign(expected_raw) * cap)
     # t 时刻只取 (s + h ≤ t) 的误差：e_s = 已实现收益 − 当时给出的期望收益
     errors = (forward - expected).shift(horizon)
     error_scale = errors.expanding(min_periods=MIN_ERRORS_FOR_SIGMA).std()
-    # 回归样本不足时退回「已实现 h 日收益的扩展标准差」，仍然只用过去的数据
-    fallback = forward.shift(horizon).expanding(min_periods=MIN_SCORES_FOR_SIGMA).std()
-    scale = error_scale.fillna(fallback)
+    scale = error_scale.fillna(realized_scale)
     # 收益恰好为 0 在这套 studentized 误差上的位置：r = 0 ⟺ z = −μ / scale
     flat_z = -expected / scale.where(scale > EPS)
 
@@ -552,6 +562,7 @@ def build_prediction_frame(
     )
     frame["uncertainty"] = (upper_return - lower_return) / (2.0 * INTERVAL_Z_80)
     frame["probability_up"] = probability
+    frame["expected_capped"] = capped.to_numpy()
     frame["target_price"] = frame["base_price"] * (1.0 + frame["expected_return"])
     return frame
 
