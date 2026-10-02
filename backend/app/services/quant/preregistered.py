@@ -33,16 +33,26 @@ STATUS_PENDING = "pending"
 
 
 def forward_window_readiness(
-    index, horizon: int, *, start: date = ACTIVE_HOLDOUT_START
+    index, horizon: int, *, start: date = ACTIVE_HOLDOUT_START,
+    realized_bets: Optional[int] = None,
 ) -> dict:
     """裁决窗口现在能不能判：把已经积累多少、还差多少摊开说。
 
     ``index`` 是价格序列的日期索引（DatetimeIndex / 任何带 ``.date()`` 的序列）。
     「独立下注」= 窗口内的观测数按尺度折算（``observations // horizon``），
     与回测里 stride = h 的抽样同一口径；要够 ``MIN_EFFECTIVE_SAMPLES`` 次才可判。
+
+    ``realized_bets`` 给定时以它为准 —— 调用方能拿到回测**实际**数出来的下注次数
+    （``metrics.nonoverlapping_samples``）时就应该传：日历折算会把最后 h 行也算进去，
+    而那些行的 h 日前瞻收益还没实现、进不了评估掩码，于是 readiness 可能报「可判」
+    而 ``rule_flags`` 同时报「独立下注不足」。同一页面上两个数各说各话，
+    正是第二轮要消灭的那类失真。
     """
     observations = sum(1 for moment in index if moment.date() >= start)
-    bets = observations // horizon if horizon > 0 else 0
+    if realized_bets is None:
+        bets = observations // horizon if horizon > 0 else 0
+    else:
+        bets = max(0, int(realized_bets))
     required = MIN_EFFECTIVE_SAMPLES
     return {
         "window_start": start.isoformat(),

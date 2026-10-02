@@ -364,8 +364,12 @@ def _build_research_payload(db: Session) -> dict:
     for horizon in HORIZONS:
         periods = backtest.evaluate_periods(factors, close, horizon=horizon)
         spec = horizon_spec.get(horizon)
-        # 线上模型就是 B0：裁决窗口里「自己 vs 自己」的覆盖率比较按保守处理
-        # （规则 ② 的覆盖率一条永不成立），与 quant_lab 对 B0 的算法一致。
+        # 裁决窗口够不够判、还差多少 —— 页面必须能回答「为什么没有结论」。
+        # 下注次数以回测**实际**数出来的为准（日历折算会把还没实现收益的最后 h 行
+        # 也算上，于是与 rule_flags 的样本量闸门差一注）。评估压根没跑时
+        # （`_empty`：样本不足 30）那个指标是缺失的 —— 一次可用下注都没有，记 0。
+        forward_metrics = periods["forward"].metrics or {}
+        forward_bets = forward_metrics.get("nonoverlapping_samples")
         flags[horizon] = preregistered.rule_flags(
             preregistered.rule_input(periods["forward"], periods["forward"])
         )
@@ -374,9 +378,10 @@ def _build_research_payload(db: Session) -> dict:
                 "horizon_days": horizon,
                 "label": spec.label if spec else f"{horizon} 日",
                 "headline": spec.headline if spec else "方向 / 校准区间",
-                # 裁决窗口够不够判、还差多少 —— 页面必须能回答「为什么没有结论」
                 "forward_readiness": preregistered.forward_window_readiness(
-                    close.index, horizon
+                    close.index,
+                    horizon,
+                    realized_bets=0 if forward_bets is None else forward_bets,
                 ),
                 "periods": {
                     name: _research_period(name, evaluation)

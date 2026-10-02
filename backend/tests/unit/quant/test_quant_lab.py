@@ -91,14 +91,16 @@ def test_report_contains_development_and_holdout_columns(make_panel, monkeypatch
     rows = quant_lab.run_lab(factors, close, horizons=(20,), candidates=subset)
     markdown = quant_lab.format_markdown(rows, horizons=(20,))
 
-    assert len(rows) == len(subset) * 3
+    assert len(rows) == len(subset) * 4
     # 必须钉住主表表头本身：「留出期」在裁决标题里也出现，只搜正文会假绿
     header = next(line for line in markdown.splitlines() if line.startswith("| 候选 |"))
     header_cells = [cell.strip() for cell in header.strip("|").split("|")]
-    # 「留出期」这一列指的是**历史**留出期（裁决窗口另算），表头必须写清楚
+    # 「留出期」这一列指的是**历史**留出期（裁决窗口另算），表头必须写清楚；
+    # 前向留出期单列，因为它是唯一的裁决窗口
     assert (
         "开发期" in header_cells
         and "历史留出期" in header_cells
+        and "前向留出期" in header_cells
         and "全样本" in header_cells
     )
     assert "| B0 |" in markdown and "| E0 |" in markdown
@@ -226,4 +228,109 @@ def test_the_band_section_marks_short_buckets_as_unknown_rather_than_zero(make_p
     line = next(item for item in section.splitlines() if item.startswith("| 20 |"))
     assert line.count("—") >= 3, f"分档未知时应当印「—」：{line}"
     assert "不是 0%" in section
+
+
+# --------------------------------------------------------------------------- #
+# 裁决窗口：只认前向留出期，且样本不够时是「不可判定」而不是「未过线」
+# --------------------------------------------------------------------------- #
+def _verdict_row(key: str, period: str, horizon: int = 20, **overrides) -> dict:
+    """一条裁决用的行；默认是「过线」的形状，按用例覆盖。"""
+    row = {
+        "candidate": key,
+        "group": quant_lab.CANDIDATES_BY_KEY[key].group,
+        "horizon_days": horizon,
+        "period": period,
+        "samples": 400,
+        "accuracy": 0.60,
+        "baseline_up": 0.50,
+        "baseline_momentum": 0.50,
+        "accuracy_diff_vs_up": 0.10,
+        "accuracy_ci_low": 0.55,
+        "accuracy_ci_high": 0.65,
+        "p_value_vs_up": 0.01,
+        "brier_score": 0.20,
+        "brier_skill_score": 0.05,
+        "brier_skill_p_value": 0.01,
+        "coverage_80": 0.80,
+        "coverage_ci_low": 0.76,
+        "coverage_ci_high": 0.84,
+        "effective_sample_size": 20.0,
+        "independent_bets": 30,
+        "reason": None,
+    }
+    row.update(overrides)
+    return row
+
+
+def _empty_forward(key: str, horizons=(5, 20, 60)) -> list[dict]:
+    return [
+        _verdict_row(
+            key,
+            "forward",
+            horizon=horizon,
+            samples=0,
+            accuracy=None,
+            baseline_up=None,
+            accuracy_diff_vs_up=None,
+            accuracy_ci_low=None,
+            brier_skill_score=None,
+            brier_skill_p_value=None,
+            coverage_80=None,
+            effective_sample_size=None,
+            independent_bets=0,
+            reason="前向留出期还没有可评估样本",
+        )
+        for horizon in horizons
+    ]
+
+
+def test_the_bench_adjudicates_on_the_forward_window():
+    """裁决只认前向留出期。历史留出期已经被前两轮看过，不能再当入选依据。
+
+    变异验证：把 `decide()` 里的 `"forward"` 改回 `"holdout"` 本测试必红
+    （S1 会在历史留出期上「入选」）。
+    """
+    horizons = (5, 20, 60)
+    spent = [
+        _verdict_row("B0", "holdout", horizon=h, accuracy_ci_low=0.40) for h in horizons
+    ] + [_verdict_row("S1", "holdout", horizon=h) for h in horizons]
+
+    verdicts = quant_lab.decide(spent + _empty_forward("B0", horizons) + _empty_forward("S1", horizons))
+
+    # S1 在历史留出期完全过线，但那段已被翻看 → 不许据此入选，状态是「还判不了」
+    assert verdicts["S1"]["selected"] is False
+    assert verdicts["S1"]["status"] == "pending"
+    assert verdicts["S1"]["sufficient_scales"] == []
+
+    # 前向窗口攒够下注且过线 → 才允许入选
+    fresh = [
+        _verdict_row("B0", "forward", horizon=h, accuracy_ci_low=0.40) for h in horizons
+    ] + [_verdict_row("S1", "forward", horizon=h) for h in horizons]
+    verdicts = quant_lab.decide(spent + fresh)
+
+    assert verdicts["S1"]["status"] == "passed"
+    assert verdicts["S1"]["selected"] is True
+
+
+def test_a_bench_with_no_forward_data_says_undecidable_not_failed(make_panel, monkeypatch):
+    """前向窗口还没有数据时，报告必须写「不可判定」，不能写「未过线」。
+
+    这正是第二轮宣布要消灭的错误：把「还不知道」印成「知道了，是坏的」。
+    面板在 `ACTIVE_HOLDOUT_START`（2026-10-02）之前结束 → 前向窗口必然是空的。
+
+    变异验证：把 `format_markdown` 的结论改回无条件「未过线（保留线上版本）」，
+    或让 `decide()` 不看 `sufficient_scales`，本测试必红。
+    """
+    _fast_bootstrap(monkeypatch)
+    factors, close = make_panel(_long_calendar())  # 结束于 2026-09-30
+
+    rows = quant_lab.run_lab(factors, close, horizons=(20,), candidates=_subset("B0", "S1"))
+    markdown = quant_lab.format_markdown(rows, horizons=(20,), generated_at=None)
+
+    assert "不可判定" in markdown
+    # 结论行不能说「未过线」/「无候选过线」，只能说还判不了（说明文字里出现这些词不算）
+    assert "未过线（保留线上版本）" not in markdown
+    assert "裁决：前向留出期尚不可判" in markdown
+    # 前向留出期必须是报告里的一个正式样本期
+    assert "前向留出期" in markdown
 

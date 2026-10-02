@@ -45,6 +45,7 @@ from app.services.quant.definitions import (  # noqa: E402
 )
 from app.services.quant.preregistered import (  # noqa: E402
     INTERVAL_NOMINAL,
+    MIN_EFFECTIVE_SAMPLES,
     RULE_2_ACCURACY_TOLERANCE,
     RULE_2_BRIER_P,
     RULE_OTHER_SCALE_TOLERANCE,
@@ -52,12 +53,17 @@ from app.services.quant.preregistered import (  # noqa: E402
 )
 from app.utils import timeutil  # noqa: E402
 
-PERIODS = ("development", "holdout", "full")
+PERIODS = ("development", "holdout", "forward", "full")
 PERIOD_LABELS = {
     "development": "开发期",
     "holdout": "历史留出期",
+    "forward": "前向留出期",
     "full": "全样本",
 }
+# 裁决窗口 = 唯一干净的样本外。`HOLDOUT_START` 起的历史留出期已经被第一/二轮裁决
+# 看过、汇报过，只能当记录；`ACTIVE_HOLDOUT_START` 起**新增**的观测才是入选依据。
+# 这里只定义一次，`decide()` 与报告文案都读它 —— 免得抬头写一套、代码跑另一套。
+DECISION_PERIOD = "forward"
 
 GROUP_LABELS = {
     "baseline": "基线族",
@@ -94,7 +100,7 @@ FACTOR_SETS = {
 
 @dataclass(frozen=True)
 class Candidate:
-    """一个预注册候选：只改一个维度，其余保持 B0（线上 v4）口径。"""
+    """一个预注册候选：只改一个维度，其余保持 B0（线上口径）口径。"""
 
     key: str
     group: str
@@ -123,7 +129,7 @@ class Candidate:
 def candidates() -> tuple[Candidate, ...]:
     """预注册候选清单 —— 与 spec 6.1 的表格逐项对应，顺序即报告顺序。"""
     return (
-        Candidate("B0", "baseline", "线上 v4 口径：加权合成 + 扩展窗口 + ACI 非对称 + 全部因子"),
+        Candidate("B0", "baseline", f"线上 {MODEL_VERSION} 口径：加权合成 + 扩展窗口 + ACI 非对称 + 全部因子"),
         Candidate("D1", "drift", "回归窗口 = 滚动 252 个交易日（1 年）", regression_window=252),
         Candidate("D3", "drift", "回归窗口 = 滚动 756 个交易日（3 年）", regression_window=756),
         Candidate("D5", "drift", "回归窗口 = 滚动 1260 个交易日（5 年）", regression_window=1260),
@@ -330,7 +336,13 @@ def _number(value, digits: int = 3) -> str:
 
 
 def rule_flags(row: dict, baseline_row: dict) -> dict:
-    """预注册硬规则的逐尺度判定（唯一实现见 ``preregistered.rule_flags``）。"""
+    """预注册硬规则的逐尺度判定（唯一实现见 ``preregistered.rule_flags``）。
+
+    ``effective_sample_size`` 必须传：``preregistered.rule_flags`` 靠它区分
+    「独立下注不够 → 不可判定」与「样本够但没过线」。漏传时它拿到 ``None`` 就
+    跳过整条判据，于是 2 个观测撑起来的成绩也会被印成「未过线」——
+    这正是第二轮宣布要消灭的那个错误。
+    """
     return preregistered.rule_flags(
         preregistered.RuleInput(
             accuracy_ci_low=row["accuracy_ci_low"],
@@ -340,58 +352,94 @@ def rule_flags(row: dict, baseline_row: dict) -> dict:
             brier_skill_p_value=row["brier_skill_p_value"],
             coverage_80=row["coverage_80"],
             baseline_coverage_80=baseline_row["coverage_80"],
+            effective_sample_size=row.get("effective_sample_size"),
         )
     )
 
 
 def decide(rows: list[dict]) -> dict[str, dict]:
-    """按预注册规则给出每个候选的裁决（留出期）。
+    """按预注册规则给出每个候选的裁决（**前向**留出期）。
 
     入选 = ≥3/5 个尺度过线，或目标尺度（250 日）过线且其它尺度对
     「永远看多」的命中率差不低于 −2pp。全部落空 → 保留当前线上版本
     （``definitions.MODEL_VERSION``，报告里按实际值打印，不写死在文案里）。
+
+    裁决只读 ``DECISION_PERIOD``（前向留出期）：历史留出期已被前两轮看过。
+    窗口里独立下注不够的尺度**既不算过线也不算未过线**，状态是 ``pending``；
+    一个候选在所有尺度上都还判不了时，结论是「不可判定」而不是「未过线」。
     """
     horizons = sorted({row["horizon_days"] for row in rows})
     index = {(row["candidate"], row["horizon_days"], row["period"]): row for row in rows}
-    baseline_key = "B0" if ("B0", horizons[0], "holdout") in index else None
+    baseline_key = "B0" if ("B0", horizons[0], DECISION_PERIOD) in index else None
     results: dict[str, dict] = {}
     for candidate in _candidate_order(rows):
         flags = {}
+        sufficient: list[int] = []
+        bets: list[int] = []
         for horizon in horizons:
-            key = (candidate.key, horizon, "holdout")
-            baseline = index.get(("B0", horizon, "holdout")) if baseline_key else None
-            flags[horizon] = (
+            key = (candidate.key, horizon, DECISION_PERIOD)
+            baseline = index.get(("B0", horizon, DECISION_PERIOD)) if baseline_key else None
+            flag = (
                 rule_flags(index[key], baseline)
                 if key in index and baseline is not None
-                else {"rule_1": False, "rule_2": False, "pass": False}
+                else {
+                    "rule_1": False,
+                    "rule_2": False,
+                    "pass": False,
+                    "sufficient": False,
+                    "status": "insufficient",
+                }
             )
-        passed_scales = [horizon for horizon in horizons if flags[horizon]["pass"]]
+            flags[horizon] = flag
+            row = index.get(key)
+            count = int((row or {}).get("independent_bets") or 0)
+            bets.append(count)
+            # 「可判」= 前向窗口里真的攒够了**独立下注**。`rule_flags` 的 ``sufficient``
+            # 只在拿到 ``effective_sample_size`` 时才判样本量；窗口整个是空的时候那个数
+            # 是 ``None``，按既定口径（test_preregistered.py 钉着）不算「样本不足」——
+            # 所以这里用回测报出的实际下注次数再判一次，免得一个还没有数据的窗口
+            # 被印成「未过线」。
+            if count >= MIN_EFFECTIVE_SAMPLES:
+                sufficient.append(horizon)
+        passed_scales = [horizon for horizon in sufficient if flags[horizon]["pass"]]
         others_ok = preregistered.other_scales_ok(
             [
-                index[(candidate.key, horizon, "holdout")]["accuracy_diff_vs_up"]
+                index[(candidate.key, horizon, DECISION_PERIOD)]["accuracy_diff_vs_up"]
                 for horizon in horizons
-                if (candidate.key, horizon, "holdout") in index
+                if (candidate.key, horizon, DECISION_PERIOD) in index
             ],
             horizons=[
                 horizon
                 for horizon in horizons
-                if (candidate.key, horizon, "holdout") in index
+                if (candidate.key, horizon, DECISION_PERIOD) in index
             ],
             target_scale=TARGET_SCALE,
         )
         target_ok = (
             TARGET_SCALE in flags
             and flags[TARGET_SCALE]["pass"]
-            and (candidate.key, TARGET_SCALE, "holdout") in index
+            and (candidate.key, TARGET_SCALE, DECISION_PERIOD) in index
         )
+        # 有尺度可判才谈得上「过线 / 未过线」；一个都判不了就是「还不知道」
+        selected = bool(sufficient) and preregistered.selected(
+            passed_scales, others_ok=bool(others_ok), target_scale=TARGET_SCALE
+        )
+        if selected:
+            status = "passed"
+        elif not sufficient:
+            status = "pending"
+        else:
+            status = "failed"
         results[candidate.key] = {
             "flags": flags,
             "passed_scales": passed_scales,
+            "sufficient_scales": sufficient,
             "target_ok": bool(target_ok),
             "others_ok": bool(others_ok),
-            "selected": preregistered.selected(
-                passed_scales, others_ok=bool(others_ok), target_scale=TARGET_SCALE
-            ),
+            "selected": selected,
+            "status": status,
+            "bets": max(bets) if bets else 0,
+            "shortfall_bets": max(0, MIN_EFFECTIVE_SAMPLES - (max(bets) if bets else 0)),
         }
     return results
 
@@ -467,25 +515,27 @@ def format_markdown(
         lines.append(f"> 生成时间：{generated_at}")
     lines += [
         "",
-        "## 主表（命中率三列）",
+        "## 主表（命中率四列）",
         "",
-        "| 候选 | 组 | 尺度(日) | 开发期 | 历史留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | 覆盖率(留出) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "| 候选 | 组 | 尺度(日) | 开发期 | 历史留出期 | 前向留出期 | 全样本 | 留出样本 | 留出期 vs 看多 | p(>看多) | Brier 技能 | 覆盖率(留出) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for candidate in order:
         for horizon in horizons:
             development = index[(candidate.key, horizon, "development")]
             holdout = index[(candidate.key, horizon, "holdout")]
             full = index[(candidate.key, horizon, "full")]
+            forward = index.get((candidate.key, horizon, "forward"))
             diff = holdout["accuracy_diff_vs_up"]
             difference = "—" if _missing(diff) else f"{100.0 * diff:+.1f}pp"
             lines.append(
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
                     candidate.key,
                     GROUP_LABELS.get(candidate.group, candidate.group),
                     horizon,
                     _pct(development["accuracy"]),
                     _pct(holdout["accuracy"]),
+                    _pct(forward["accuracy"]) if forward is not None else "—",
                     _pct(full["accuracy"]),
                     holdout["samples"],
                     difference,
@@ -512,36 +562,56 @@ def format_markdown(
     verdicts = decide(rows)
     lines += [
         "",
-        "## 预注册裁决（留出期）",
+        f"## 预注册裁决（{PERIOD_LABELS[DECISION_PERIOD]}）",
         "",
         "判定：① 命中率 95% 自助下界 > 永远看多；② 命中率不劣化 ≤1pp 且 Brier 技能分",
         "显著为正（HAC DM，p<0.05）且覆盖率更接近 80%。入选 = ≥3/5 尺度成立，或 250 日",
         "成立且其它尺度相对永远看多不恶化 ≤2pp。",
         "",
-        "| 候选 | 逐尺度(①/②) | 过线尺度数 | 250 日 | 其它尺度 ≤2pp | 结论 |",
-        "|---|---|---|---|---|---|",
+        f"裁决窗口 = {PERIOD_LABELS[DECISION_PERIOD]}（`ACTIVE_HOLDOUT_START` = "
+        f"{ACTIVE_HOLDOUT_START.isoformat()} 起**新增**的观测）；`HOLDOUT_START` = "
+        f"{HOLDOUT_START.isoformat()} 起那一段已被前两轮裁决看过，只作记录。",
+        f"窗口里独立下注不足 `preregistered.MIN_EFFECTIVE_SAMPLES` = {MIN_EFFECTIVE_SAMPLES} 次的"
+        "尺度**既不算过线也不算未过线** —— 状态是「不可判定」，不拿几个观测撑起来的比例当结论。",
+        "",
+        "| 候选 | 逐尺度(①/②) | 过线尺度数 | 可判尺度数 | 前向独立下注 | 250 日 | 其它尺度 ≤2pp | 结论 |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for candidate in order:
         verdict = verdicts[candidate.key]
         flags = "；".join(
             f"{horizon}:{_verdict_cell(verdict['flags'][horizon])}" for horizon in sorted(verdict["flags"])
         )
-        conclusion = "入选" if verdict["selected"] else "未过线（保留线上版本）"
+        if verdict["status"] == "passed":
+            conclusion = "入选"
+        elif verdict["status"] == "pending":
+            conclusion = (
+                f"不可判定（前向窗口独立下注不足，还差约 {verdict['shortfall_bets']} 次）"
+            )
+        else:
+            conclusion = "未过线（保留线上版本）"
         lines.append(
             f"| {candidate.key} | {flags} | {len(verdict['passed_scales'])}/{len(verdict['flags'])} | "
+            f"{len(verdict['sufficient_scales'])} | {verdict['bets']} | "
             f"{'是' if verdict['target_ok'] else '否'} | {'是' if verdict['others_ok'] else '否'} | {conclusion} |"
         )
     selected = [key for key, verdict in verdicts.items() if verdict["selected"] and key != "B0"]
+    decidable = [key for key, verdict in verdicts.items() if verdict["status"] != "pending"]
+    if selected:
+        overall = f"**裁决：候选 {', '.join(selected)} 过线**（落地前需按 spec 复核）。"
+    elif not decidable:
+        overall = (
+            f"**裁决：{PERIOD_LABELS[DECISION_PERIOD]}尚不可判** —— 独立下注次数还不够，"
+            f"此刻不能宣布「无候选过线」；继续积累观测，保留 `{MODEL_VERSION}`。"
+        )
+    else:
+        overall = (
+            f"**裁决：无候选过线 → 保留 `{MODEL_VERSION}`，"
+            "页面与文档标注「无统计优势」。**"
+        )
     lines += [
         "",
-        (
-            f"**裁决：候选 {', '.join(selected)} 过线**（落地前需按 spec 复核）。"
-            if selected
-            else (
-                f"**裁决：无候选过线 → 保留 `{MODEL_VERSION}`，"
-                "页面与文档标注「无统计优势」。**"
-            )
-        ),
+        overall,
         "",
         "## 候选口径",
         "",

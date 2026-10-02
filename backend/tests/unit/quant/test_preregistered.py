@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
 from app.services.quant import preregistered
@@ -167,4 +168,24 @@ def test_a_scale_with_too_few_independent_bets_is_undecidable_not_failed():
 
     # 没有这个数字时不臆断：按可判定处理，交给「缺数即不成立」那套既有规则
     assert preregistered.rule_flags(passing)["sufficient"] is True
+
+
+def test_readiness_prefers_the_bets_the_backtest_actually_counted():
+    """给了实际下注次数就以它为准，不再用日历折算。
+
+    日历折算把最后 h 行也算进去，而那些行的 h 日前瞻收益还没实现、进不了评估掩码，
+    于是同一页面上 readiness 会报「可判」而样本量闸门同时报「不足」。
+    变异验证：忽略 ``realized_bets`` 参数（只用日历折算）本测试必红。
+    """
+    filled = pd.date_range("2026-10-02", periods=400, freq="B")
+
+    calendar_only = preregistered.forward_window_readiness(filled, 20)
+    assert calendar_only["independent_bets"] == 20
+
+    counted = preregistered.forward_window_readiness(filled, 20, realized_bets=19)
+    assert counted["independent_bets"] == 19
+    assert counted["decidable"] is False
+    assert counted["shortfall_bets"] == 1
+    # 观测数与还差多少交易日仍然按日历给，只有「已攒够几次下注」换成实测值
+    assert counted["observations"] == calendar_only["observations"]
 
