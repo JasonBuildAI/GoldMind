@@ -198,9 +198,10 @@ def _evaluate(
             universe=universe,
         )
 
-    # 评的就是页面上那个方向：校准分布的中位数收益符号，与 p_up > 0.5 按构造等价
-    # （spec 判据见 test_backtest_metrics.py::test_accuracy_scores_the_calibrated_direction）
-    direction = np.sign(frame["median_return"][mask])
+    # 评的就是页面上那个方向：校准后的期望收益 μ 的符号（spec 判据见
+    # test_backtest_metrics.py::test_accuracy_scores_the_calibrated_direction）。
+    # 中位数只用于概率定标度 —— 用它定方向在真实面板上更差，见 engine.SignalSnapshot.direction。
+    direction = np.sign(expected_return[mask])
     realized = outcome[mask]
     correct = direction == realized
     accuracy = float(correct.mean())

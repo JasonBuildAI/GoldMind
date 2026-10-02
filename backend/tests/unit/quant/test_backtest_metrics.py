@@ -72,8 +72,7 @@ def test_accuracy_scores_the_calibrated_direction(make_panel):
     )
 
     realized = outcome[mask]
-    calibrated = np.sign(frame["median_return"][mask])
-    mean_sign = np.sign(frame["expected_return"][mask])
+    calibrated = np.sign(frame["expected_return"][mask])
     raw = np.sign(score[mask])
 
     assert evaluation.accuracy == pytest.approx(float((calibrated == realized).mean()))
@@ -82,8 +81,7 @@ def test_accuracy_scores_the_calibrated_direction(make_panel):
     )
     # 两个口径必须不同，否则「换回得分符号」的变异不会变红
     assert evaluation.accuracy != pytest.approx(evaluation.metrics["score_direction_accuracy"])
-    # 中位数与 μ 的符号必须真的会分开，否则这条守卫对「方向退回 sign(μ)」的变异不敏感
-    assert not bool((calibrated == mean_sign).all())
+    # 方向必须是「校准后的 μ」而不是未校准的得分符号（上一条断言已区分两者）
 
 
 def _long_calendar() -> pd.DatetimeIndex:
@@ -243,7 +241,7 @@ def test_timing_increment_metrics_refuse_to_score_an_untested_claim(make_panel):
     metrics = evaluation.metrics
     prepared = backtest.prepare_evaluation(factors, close, horizon=20)
     mask = backtest._base_mask(prepared)
-    direction = np.sign(prepared["frame"]["median_return"][mask])
+    direction = np.sign(prepared["frame"]["expected_return"][mask])
     forward = prepared["forward"][mask]
 
     assert metrics["down_calls"] == int((direction < 0).sum())

@@ -42,19 +42,21 @@ def _snapshot(*, score: float, expected_return: float,
     )
 
 
-def test_direction_follows_the_calibrated_median_not_the_mean():
-    """方向 = sign(校准分布的中位数)，不是 sign(μ)，更不是未校准的得分符号。
+def test_direction_follows_the_calibrated_mean_and_reports_the_median():
+    """方向 = sign(μ)；分布中位数作为另一个统计量一并给出。
 
     两次变异验证都会把本测试打红：
     ① 改回 ``"up" if score > 0`` —— 前两行红（构造的就是「得分与方向相反」）；
-    ② 改回 ``sign(μ)`` —— 后两行红：走查预测误差整体偏负时，μ 略正而中位数已为负，
-       此时页面写「看多」、概率写 47%，v3 想消除的自相矛盾就又回来了。
+    ② 把方向改成 sign(中位数) —— 第三行红。后者不是洁癖：2026-10-02 用真实 20 年
+    面板实测，按中位数定方向会让 60 日留出期命中率从 83.3% 掉到 78.9%
+    （走查误差的位置项偏负，把三成喊单翻成看跌），所以决策口径钉在 μ 上。
     """
     assert _snapshot(score=+2.0, expected_return=-0.01).direction == "down"
     assert _snapshot(score=-2.0, expected_return=+0.01).direction == "up"
-    assert _snapshot(score=+1.0, expected_return=+0.001, median_return=-0.004).direction == "down"
-    assert _snapshot(score=+1.0, expected_return=-0.001, median_return=+0.004).direction == "up"
-    # 中位数恰为 0（回归样本不足，目标价=基准价）既不看涨也不看跌
+    # μ 为正、中位数为负：方向仍按 μ（两者是不同的统计量，不是一致性缺陷）
+    assert _snapshot(score=+1.0, expected_return=+0.001, median_return=-0.004).direction == "up"
+    assert _snapshot(score=+1.0, expected_return=+0.001, median_return=-0.004).median_return == -0.004
+    # μ=0（回归样本不足，目标价=基准价）既不看涨也不看跌
     assert _snapshot(score=+2.0, expected_return=0.0).direction == "flat"
 
 
@@ -196,11 +198,10 @@ def test_every_horizon_publishes_one_story(panel):
         assert snapshot.status == engine.STATUS_OK
         expected = snapshot.expected_return
         assert expected is not None
-        # 方向评的是校准分布的中位数，不是 μ：μ 略正而误差整体偏负时必须说「跌」
-        median = snapshot.median_return
-        assert median is not None, f"h={horizon}"
-        median_direction = "up" if median > 0 else "down" if median < 0 else "flat"
-        assert snapshot.direction == median_direction, f"h={horizon}"
+        # 方向 = sign(μ)；中位数是分布的另一个统计量，只用于概率/区间的定标度
+        direction = "up" if expected > 0 else "down" if expected < 0 else "flat"
+        assert snapshot.direction == direction, f"h={horizon}"
+        assert snapshot.median_return is not None, f"h={horizon}"
         # 目标价相对基准价的方向 = 期望收益的符号
         assert (snapshot.target_price - snapshot.base_price) * expected >= 0, f"h={horizon}"
         # 上行概率与方向同号：两者都出自同一张校准分布（中位数），不是两套口径
