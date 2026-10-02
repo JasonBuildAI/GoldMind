@@ -286,6 +286,51 @@ def test_yahoo_shares_falls_back_to_net_assets():
         yahoo.parse_shares({})
 
 
+def _single_asset_frame(days: list[str], close: float = 4184.4) -> pd.DataFrame:
+    return pd.DataFrame(
+        [[close]] * len(days),
+        index=pd.to_datetime(days),
+        columns=pd.MultiIndex.from_tuples([("Close", "GC=F")]),
+    )
+
+
+def _fetch_gld_shares_stamp(frame: pd.DataFrame) -> pd.Timestamp:
+    series = yahoo.fetch(
+        downloader=lambda symbols, period: frame,
+        info_getter=lambda symbol: {"sharesOutstanding": 260_000_000},
+        symbols={"GC=F": "gold_close"},
+    )
+    (stamp,) = series["gld_shares"].index
+    return stamp
+
+
+@pytest.mark.unit
+def test_yahoo_gld_shares_stamp_is_the_next_business_day_when_that_day_has_passed():
+    """份额是上一交易日的快照，次一交易日（这里 9-25 周五 → 9-28 周一）起可用。"""
+    stamp = _fetch_gld_shares_stamp(_single_asset_frame(["2026-09-24", "2026-09-25"]))
+
+    assert stamp == pd.Timestamp("2026-09-28")
+
+
+@pytest.mark.unit
+def test_yahoo_never_stamps_gld_shares_in_the_future():
+    """最后一根 K 线就是今天时，份额的可用日不得被 +1 推到明天。
+
+    原实现直接 `index[-1] + BDay(1)`：2026-10-02 周五抓取会盖上 10-05
+    （周一）的日期 —— 按日走查的回测会把它当成已经知道的事实。
+    存储层已会拒绝未来行，源层也必须不再制造它。
+    """
+    from app.utils import timeutil
+
+    today = pd.Timestamp(timeutil.today())
+    stamp = _fetch_gld_shares_stamp(
+        _single_asset_frame(["2026-09-30", today.strftime("%Y-%m-%d")])
+    )
+
+    assert stamp == today
+    assert stamp <= pd.Timestamp(timeutil.today())
+
+
 @pytest.mark.unit
 def test_yahoo_maps_cny_to_usdcny():
     assert yahoo.SYMBOLS["CNY=X"] == "usdcny"

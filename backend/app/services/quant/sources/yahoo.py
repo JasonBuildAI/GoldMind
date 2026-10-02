@@ -14,6 +14,7 @@ from typing import Callable, Optional
 import pandas as pd
 
 from app.services.quant.sources.base import SourceError, clean_series
+from app.utils import timeutil
 
 # Yahoo 代码 → 序列名
 SYMBOLS = {
@@ -124,9 +125,15 @@ def fetch(
     if with_etf_shares:
         try:
             shares = parse_shares(get_info(ETF_SHARES_SYMBOL) or {})
-            # 份额是上一个美股交易日的快照，次日起可用。
-            usable_date = series["gold_close"].index[-1] + pd.tseries.offsets.BDay(1)
-            series["gld_shares"] = pd.Series({usable_date: shares}, dtype="float64", name="gld_shares")
+            # 份额是上一个美股交易日的快照，最早次日起可用；但「次日」不得
+            # 晚于今天 —— 数据源给的最后一根 K 线常常就是今天，+1 个交易日
+            # 会算出明天（2026-10-02 周五实测入库过 2026-10-05 的行），
+            # 那是「预言」不是观测。存储层也会兜底拒绝，源层先不制造它。
+            candidate = pd.Timestamp(series["gold_close"].index[-1]) + pd.tseries.offsets.BDay(1)
+            usable_date = min(candidate.date(), timeutil.today())
+            series["gld_shares"] = pd.Series(
+                {pd.Timestamp(usable_date): shares}, dtype="float64", name="gld_shares"
+            )
         except SourceError:
             # 份额取不到不影响其它序列（它是最年轻的一个因子）。
             pass
