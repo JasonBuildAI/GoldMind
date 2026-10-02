@@ -481,6 +481,8 @@ export interface QuantPredictionItem {
   scale_label: string | null
   scale: string | null
   scale_description: string | null
+  // 该尺度的主输出口径（1 年是「公允价值偏离 + 校准区间」）
+  headline: string | null
   status: string
   reason: string | null
   // 'flat' = 校准后的期望收益恰为 0（样本不足时不写方向，这里不会混进得分的符号）

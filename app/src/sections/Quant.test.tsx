@@ -170,6 +170,7 @@ function prediction(overrides: Partial<QuantPredictionItem>): QuantPredictionIte
     scale_label: '1 日',
     scale: '日内～一周',
     scale_description: '资金流、技术面、仓位拥挤度主导，宏观基本面权重最低',
+    headline: '方向 / 校准区间',
     status: 'ok',
     reason: null,
     direction: 'up',
@@ -455,6 +456,30 @@ describe('Quant', () => {
     const panel = await screen.findByTestId('quant-prediction-1')
     expect(within(panel).getByText('▲ 看涨')).toBeInTheDocument()
     expect(within(panel).getByText('$4,260.00')).toBeInTheDocument()
+  })
+
+  it('每个尺度给出主输出口径，1 年是公允价值偏离 + 校准区间', async () => {
+    mockApi()
+    mocked.getPredictions.mockResolvedValue({
+      ...PREDICTION_RESPONSE,
+      predictions: [
+        prediction({
+          horizon_days: 250,
+          scale_label: '1 年',
+          scale: '6～18 个月',
+          headline: '公允价值偏离 / 年度校准区间',
+        }),
+      ],
+    })
+    const user = userEvent.setup()
+
+    render(<Quant />)
+    await screen.findByText('量化预测')
+
+    await user.click(screen.getAllByRole('tab', { name: '1 年' })[0])
+
+    const headline = await screen.findByTestId('quant-prediction-headline-250')
+    expect(headline).toHaveTextContent('公允价值偏离 / 年度校准区间')
   })
 
   it('给出五个尺度，切换后各自给结论', async () => {

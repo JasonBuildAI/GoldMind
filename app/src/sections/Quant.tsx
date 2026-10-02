@@ -383,6 +383,12 @@ function PredictionPanel({ prediction }: { prediction: QuantPredictionItem }) {
         </div>
       </dl>
 
+      {prediction.headline ? (
+        <p className="note" data-testid={`quant-prediction-headline-${prediction.horizon_days}`}>
+          本尺度的主输出：{prediction.headline}
+        </p>
+      ) : null}
+
       {prediction.scale_description ? (
         <p className="note">该尺度的主控层：{prediction.scale_description}</p>
       ) : null}

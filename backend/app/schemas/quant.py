@@ -97,6 +97,7 @@ class QuantPredictionItem(BaseModel):
     scale_label: Optional[str] = None
     scale: Optional[str] = None
     scale_description: Optional[str] = None
+    headline: Optional[str] = None
     status: str
     reason: Optional[str] = None
     direction: Optional[str] = None

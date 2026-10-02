@@ -21,8 +21,13 @@ def test_predictions_endpoint_returns_every_horizon_with_numbers(client, db_sess
         assert item["target_price"] > 0
         assert 0.0 <= item["probability_up"] <= 1.0
         assert item["uncertainty"] >= 0.0
+        assert item["headline"]
         contributions = [f["contribution"] for f in item["factors"] if f["contribution"] is not None]
         assert sum(contributions) == pytest.approx(item["score"], abs=1e-9)
+
+    long_run = next(item for item in body["predictions"] if item["horizon_days"] == 250)
+    assert "公允价值" in long_run["headline"]
+    assert "区间" in long_run["headline"]
 
 
 @pytest.mark.integration
