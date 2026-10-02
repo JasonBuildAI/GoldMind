@@ -14,6 +14,7 @@ from typing import Iterable, Optional
 import statistics
 
 import pandas as pd
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.models.analysis import FactorObservation, FactorObservationRevision
@@ -51,6 +52,21 @@ def upsert_series(
         return 0, 0
 
     prepared.sort(key=lambda item: item[0])
+    # 不变量：不许写入「晚于今天」的观测。行情快照类采集会用「最近一根 K 线 +
+    # 1 个交易日」当作可用日（GLD 份额就是这样），而最新 K 线往往就是今天，
+    # 于是算出来的是明天 —— 这种行在按日走查的回测里等于把未来当成已知
+    # （2026-10-02 实测到 obs_date=2026-10-05 而当天是 10-02）。直接丢弃并告警。
+    today = timeutil.today()
+    future = [item for item in prepared if item[0] > today]
+    if future:
+        logger.warning(
+            f"[量化] {factor_key} 有 {len(future)} 条观测的日期晚于今天（"
+            f"{future[0][0].isoformat()}..{future[-1][0].isoformat()}），"
+            "未来日期的行会造成前视，已拒绝写入；请检查该源的「可用日」平移逻辑"
+        )
+        prepared = [item for item in prepared if item[0] <= today]
+    if not prepared:
+        return 0, 0
     dates = [item[0] for item in prepared]
     stamp = recorded_at or timeutil.now_naive()
 

@@ -149,3 +149,34 @@ def test_backfilled_history_is_absent_from_the_earlier_snapshot(db):
     # 当前值口径仍然是全量
     assert db.query(FactorObservation).count() == 2
     assert db.query(FactorObservationRevision).count() == 2
+
+def test_future_dated_observations_are_refused(db, caplog):
+    """`obs_date` 晚于今天就不是「观测」，是预言：拒绝写入并留告警。
+
+    触发它的真实事件：GLD 份额按「最近一根金价 K 线 + 1 个交易日」 stamped，
+    当天抓就得到明天的日期；按日走查的回测会把它当成已经知道的事实。
+    变异验证：把 `upsert_series` 里那段 future 过滤删掉，本测试第一条断言必红。
+    """
+    from app.utils import timeutil
+    from datetime import timedelta
+
+    tomorrow = timeutil.today() + timedelta(days=1)
+    inserted, updated = storage.upsert_series(
+        db,
+        "etf_shares",
+        pd.Series({tomorrow: 260_000_000.0}, dtype="float64"),
+        source="测试夹具",
+    )
+    assert (inserted, updated) == (0, 0), "未来日期的行竟然写进去了"
+    assert storage.load_series(db, "etf_shares").empty
+    assert storage.revision_count(db) == 0
+
+    # 同一批里混着未来日期：只收当天及以前的，不能被未来行连累
+    mixed = pd.Series(
+        {timeutil.today() - timedelta(days=1): 259_000_000.0, tomorrow: 260_000_000.0},
+        dtype="float64",
+    )
+    inserted, updated = storage.upsert_series(db, "etf_shares", mixed, source="测试夹具")
+    assert (inserted, updated) == (1, 0)
+    assert len(storage.load_series(db, "etf_shares")) == 1
+
