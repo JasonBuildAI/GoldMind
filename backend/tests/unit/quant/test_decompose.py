@@ -7,12 +7,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.services.quant import decompose
+from app.services.quant import decompose, engine
 from app.services.quant.definitions import BENCHMARK_KEY
 
 
 def _known_answer_panel(calendar):
-    """精确线性关系：log(price) = 2 + 0.2·real − 0.1·log(dxy) + 0.3·log(cb) − 0.02·vix。"""
+    """精确线性关系：log(price) = 2 + 0.2·real − 0.1·log(dxy) + 0.3·log(cb) − 0.02·vix。
+
+    回归量按**可见口径**生成：`real_yield_10y` 带 1 个工作日发布滞后，t 日的价格
+    只能依赖当时已可见的那条收益率（和真实世界一致）；dxy / cb / vix 无滞后。
+    第一天还没有可见的收益率，价格从第二天开始，避免把 NaN 带进拟合。
+    """
     rng = np.random.default_rng(5)
     real = pd.Series(np.cumsum(rng.normal(0.0, 0.02, len(calendar))) + 1.5, index=calendar)
     dxy = pd.Series(
@@ -23,8 +28,12 @@ def _known_answer_panel(calendar):
     )
     vix = pd.Series(np.cumsum(rng.normal(0.0, 0.1, len(calendar))) + 18.0, index=calendar)
 
-    log_price = 2.0 + 0.2 * real - 0.1 * np.log(dxy) + 0.3 * np.log(cb) - 0.02 * vix
-    close = pd.Series(np.exp(log_price), index=calendar, name=BENCHMARK_KEY)
+    real_visible = engine.publication_visible(real, 1).reindex(calendar).ffill()
+    usable = real_visible.notna()
+    log_price = (
+        2.0 + 0.2 * real_visible - 0.1 * np.log(dxy) + 0.3 * np.log(cb) - 0.02 * vix
+    )
+    close = pd.Series(np.exp(log_price[usable]), index=calendar[usable], name=BENCHMARK_KEY)
     factors = {
         "real_yield_10y": real,
         "dollar_index": dxy,

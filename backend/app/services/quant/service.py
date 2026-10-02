@@ -230,6 +230,7 @@ def _factor_payload(state: engine.FactorState) -> dict:
             "description": state.description,
             "age_days": state.age_days,
             "max_age_days": state.max_age_days,
+            "publication_lag_days": state.publication_lag_days,
         }
     )
     return payload

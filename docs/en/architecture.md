@@ -459,8 +459,11 @@ bias, and more coverage does not buy better direction. The pre-registered verdic
 17 candidates × 5 horizons, none passed, so the live version is **kept and labelled "no
 statistical edge"** (that was `quant-v4`; the second round fixed the ACI mismatch and moved it to
 `quant-v5`, the same day's engine hardening moved it to `quant-v6` (alignment no longer drops
-observations dated on a non-trading day and the alpha cap came down to 0.5 — the table above is
-the v6 recomputation), and the third-round C2 candidate was likewise retired by its pre-registered bar —
+observations dated on a non-trading day and the alpha cap came down to 0.5), and the 2.0.2 release
+of 2026-10-03 wrote the publication lag into the factor table (`publication_lag_days`, one business
+day for the three rate factors) and moved it to `quant-v7` — the table above is the v6
+recomputation, pending a real-stack recomputation under v7; the third-round C2 candidate was
+likewise retired by its pre-registered bar —
 details in `docs/specs/2026-10-02-研究台报告.md` and
 `docs/specs/2026-10-02-量化引擎第三轮预注册.md`, rules in `preregistered.py`).
 The page honestly shows coverage side by side with the "always long / momentum" benchmarks

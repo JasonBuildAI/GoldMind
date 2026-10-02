@@ -239,7 +239,7 @@ def test_forward_window_readiness_counts_bets_and_shortfall():
     empty = pd.date_range("2026-09-01", "2026-10-01", freq="B")
     readiness = preregistered.forward_window_readiness(empty, 20)
 
-    assert readiness["window_start"] == "2026-10-02"
+    assert readiness["window_start"] == "2026-10-03"
     assert readiness["observations"] == 0
     assert readiness["independent_bets"] == 0
     assert readiness["decidable"] is False

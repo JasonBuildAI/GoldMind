@@ -50,8 +50,8 @@
 ## 🆕 What 2.0.1 delivers
 
 2.0.1 does not swap the model. It does three things: **fix the conventions, make the evaluation
-honest, and take back claims that cannot be proven.** The live model is `quant-v6` (this round's
-engine hardening; the old `quant-v5` records are no longer comparable) —
+honest, and take back claims that cannot be proven.** The live model is `quant-v7` (this round's
+publication-lag fix; the `quant-v6` and older records are no longer comparable) —
 the third pre-registered candidate C2 needed 60-day development coverage in [0.78, 0.82];
 it landed at 0.7679, 1.2pp short, and was eliminated. The bar does not move for it.
 
@@ -333,7 +333,7 @@ carries different weights at different horizons:
 This is why each of the 14 factors carries five weights instead of one global weight: explaining
 tomorrow's gold price with central-bank buying, or next year's with VIX, gets the horizon wrong.
 
-### 3. One calibrated distribution feeds every output (`quant-v6`)
+### 3. One calibrated distribution feeds every output (`quant-v7`)
 
 The composite `score` is an **uncalibrated** input — it appears only in the factor table and the
 "factor tilt (uncalibrated)" details block. Everything on the page comes out of the same
@@ -355,11 +355,13 @@ target     = base price × (1 + μ)               base = COMEX front-month daily
 direction  = sign(μ)                            exactly 0 is reported as "flat"
 ```
 
-Model version **`quant-v6`**. Six hard conventions:
+Model version **`quant-v7`**. Six hard conventions:
 
 1. **No look-ahead.** Rolling statistics and regression samples are all shifted before t;
-   sources published after the gold close (Treasury yield curve, NY Fed EFFR, CFTC) are moved
-   one business day later as a whole.
+   sources published after the gold close carry `publication_lag_days` in the factor table
+   (Treasury yield curve and NY Fed EFFR: 1 business day each; CFTC positioning and central-bank
+   reserves are already tagged with their usable date at the source layer) — the engine aligns
+   by visibility time, and the displayed age uses the same convention.
    Guard: `backend/tests/unit/quant/test_no_lookahead.py` — replace post-t data with garbage and
    the signal at t must stay bit-for-bit identical.
 2. **No "assume unchanged" fallback.** With fewer than 60 regression pairs the horizon is
@@ -445,7 +447,7 @@ few samples are labelled "undecidable". Hit rates always sit next to three basel
 | Momentum | extrapolate the recent trend |
 | Coin flip | 50% |
 
-Measured 2026-10-02 (`quant-v6` plus this round's engine hardening, recomputed on the 26-year panel; nominal coverage 80%):
+Measured 2026-10-02 (`quant-v6` conventions, 26-year panel; pending real-stack recomputation after the v7 publication-lag fix):
 
 | Horizon | Development hit | Historical-holdout hit | Always-long (holdout) | Diff | Development coverage | Historical-holdout coverage | Full-sample coverage |
 |---|---|---|---|---|---|---|---|
@@ -475,7 +477,7 @@ then evaluates them over three sample periods. The candidates are not arbitrary:
 drift D1/D3/D5, composite S1–S4, interval P1–P4, calibration C0/C1/C2, factor-set F1–F4 and
 ensemble E0 and multivariate M1/M2 — 22 in total (defined in one place,
 `scripts/quant_lab.py`). The M family (multivariate walk-forward Ridge) is a research-bench
-comparison against "compose first, then regress" and does not change the live `quant-v6`.
+comparison against "compose first, then regress" and does not change the live `quant-v7`.
 
 **The first round (17 candidates, before 2.0) concluded "no conclusion"**: 17 candidates × 5
 horizons, none cleared the line on the holdout, and after the engine fixes they are

@@ -54,7 +54,12 @@ CATEGORY_NAMES = {
 #     收到 0.5（区间与情景重新嵌套，长尺度区间变宽）；③ 快照多带
 #     `interval_alpha` / `expected_capped`。口径变了，历史 `quant-v5` 记录里的
 #     命中率与覆盖率**不再可比** —— 需要对照时必须带版本号看。
-MODEL_VERSION = "quant-v6"
+# v7：2026-10-03 发布滞后对齐。`real_yield_10y` / `policy_expectation` /
+#     `inflation_expectation` 三个因子的观测要到「观测日 + N 个工作日」才可见
+#     （H.15 在当日收盘后发布、EFFR 在次日发布），引擎按可见时点对齐。此前它们
+#     与当日收盘价对齐使用，等于提前用了当时还看不到的数 —— 回测因此有乐观偏差。
+#     口径变了，`quant-v6` 及更早的命中率与覆盖率记录不再可比。
+MODEL_VERSION = "quant-v7"
 
 # 留出期起点：此日期起的样本只用于汇报与预注册裁决，不参与任何调参。
 # 「开发期 / 留出期 / 全样本」三列的口径见 backtest.evaluate_periods；
@@ -66,7 +71,9 @@ HOLDOUT_START = date(2023, 10, 2)
 # 不再是样本外，只能当历史记录。只有这一天之后**新增**的观测才是干净的裁决样本，
 # 所以裁决只认这一段；样本不够时状态是 pending（还差多少交易日照实报），
 # 而不是拿历史那一段顶替。屏幕层第 ③ 道闸门用的是同一个日期，只在这里定义一次。
-ACTIVE_HOLDOUT_START = date(2026, 10, 2)
+# v7 换版重新封板（2026-10-03）：发布滞后修正改写了可见性，封板前发出的 v6 注单
+# 在新口径下作废，前向窗口从这一天重新计数。
+ACTIVE_HOLDOUT_START = date(2026, 10, 3)
 
 # 用于计算收益与目标价的基准价格序列（COMEX 主力期货日收盘）
 BENCHMARK_KEY = "gold_close"
@@ -117,6 +124,10 @@ class FactorDefinition:
     # 取值按各源的发布节奏留出余量（日频 7 天覆盖长假，月度 62 天覆盖发布推迟）。
     max_age_days: int
     description: str
+    # 发布滞后（工作日）：观测日之后还要等这么久，这个数**才可见**。
+    # 0 = 收盘即可用（价格类）；1 = 次日发布（H.15 当日收盘后挂网、EFFR 次日 9 点）。
+    # 引擎按「观测日 + lag 个工作日」对齐到价格日历，展示层的年龄用同一口径。
+    publication_lag_days: int = 0
 
     def weight_for(self, horizon: Optional[int]) -> float:
         """该尺度下的权重；未列出的尺度（或 horizon=None）回落到基础权重。"""
@@ -139,6 +150,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         weight=1.0,
         horizon_weights=((1, 0.25), (5, 0.5), (20, 1.0), (60, 1.0), (250, 0.8)),
         max_age_days=7,
+        publication_lag_days=1,  # H.15 在当日收盘后发布，次日才可用于决策
         description="持有黄金的机会成本，实际利率下行通常利多金价。",
     ),
     FactorDefinition(
@@ -152,6 +164,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         weight=0.8,
         horizon_weights=((1, 0.2), (5, 0.4), (20, 1.0), (60, 0.8), (250, 0.6)),
         max_age_days=7,
+        publication_lag_days=1,  # EFFR 次日 9 点发布，2 年期收益率收盘后挂网
         description="2 年期收益率相对有效联邦基金利率的溢价，上行代表市场预期更紧。",
     ),
     FactorDefinition(
@@ -165,6 +178,7 @@ FACTORS: tuple[FactorDefinition, ...] = (
         weight=0.6,
         horizon_weights=((1, 0.1), (5, 0.2), (20, 0.5), (60, 0.5), (250, 0.4)),
         max_age_days=7,
+        publication_lag_days=1,  # 名义与实际收益率都来自 H.15，次日可见
         description="盈亏平衡通胀率，反映市场对未来通胀的定价。",
     ),
     FactorDefinition(

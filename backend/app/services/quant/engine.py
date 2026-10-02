@@ -187,25 +187,49 @@ def rolling_z(
     return (series - mean) / std.where(std > EPS)
 
 
-def align_series(
-    series: pd.Series, calendar: pd.DatetimeIndex, *, max_age_days: Optional[int] = None
-) -> pd.Series:
-    """把一个序列落到价格日历上：只向前填充，且**填充不得越过新鲜度上限**。
+def publication_visible(series: pd.Series, lag_days: int) -> pd.Series:
+    """把观测序列的索引挪到「可见时点」：观测日 + ``lag_days`` 个工作日。
 
-    两条纪律，缺一不可：
+    ``lag_days <= 0`` 原样返回。可见时点是这条数**允许被使用**的最早日期：
+    国债收益率在当日收盘后才挂网、EFFR 次日 9 点发布 —— 观测日当天就拿它做信号
+    等于用了当时还看不到的数，回测会系统性乐观。
+    """
+    if lag_days <= 0 or series is None or series.empty:
+        return series
+    visible = series.copy()
+    visible.index = visible.index + pd.tseries.offsets.BDay(lag_days)
+    return visible
+
+
+def align_series(
+    series: pd.Series,
+    calendar: pd.DatetimeIndex,
+    *,
+    max_age_days: Optional[int] = None,
+    publication_lag_days: int = 0,
+) -> pd.Series:
+    """把一个序列落到价格日历上：先按发布滞后挪到可见时点，再只向前填充。
+
+    四条纪律，缺一不可：
 
     1. t 时刻不会用到 t 之后才发布的数（只向前填充）；
-    2. 最近一条**真实观测**超过 ``max_age_days`` 之后，该因子在这一行是 NaN。
+    2. **观测日不等于可见日**：发布节奏慢的数据（H.15 收盘后挂网、EFFR 次日发布）
+       要等 ``publication_lag_days`` 个工作日才可见。先把索引挪到可见时点再对齐，
+       历史回测才会复现「当时看不到这个数」；展示层的年龄用同一口径（见
+       ``factor_states``）。
+    3. 最近一条**真实观测**超过 ``max_age_days`` 之后，该因子在这一行是 NaN。
        「陈旧」必须同时意味着「不参与合成」：历史上 ``max_age_days`` 只进了
        ``factor_states`` 的展示分支，于是月频因子断更两个月后，页面写着「陈旧」、
        得分却继续按它最高档的权重贡献 —— 显示层与计算层说的是两件事。
-    3. **日期不在价格日历里的观测不许丢**。周频 CFTC 按「报告日 +4 BDay」推可用日、
+    4. **日期不在价格日历里的观测不许丢**。周频 CFTC 按「报告日 +4 BDay」推可用日、
        月度储备按「月末 +8 天」推、BTC 有周末报价 —— 这些日期常常不是 COMEX 交易日。
        先在「日历 ∪ 观测日」的并集上向前填充、再切回日历（等价于
        ``merge_asof(direction="backward")``），否则 ``reindex(calendar)`` 会因为
        label 不匹配把整条观测丢掉，引擎只好继续用更老的一条，而 ``factor_states``
        读的是原始序列 —— 页面显示的那条与实际吃进去的那条不是同一个数。
     """
+    # 观测日在 d 的数，d + lag 个工作日之后才可见；先挪索引，后续只向前填充。
+    series = publication_visible(series, publication_lag_days)
     # 并集上落位 → 向前填充 → 切回日历；``union`` 已排序去重。
     union = series.index.union(calendar)
     raw = series.reindex(union)
@@ -232,7 +256,10 @@ def align_factors(
             continue
         definition = factor_by_key.get(key)
         aligned[key] = align_series(
-            series, calendar, max_age_days=None if definition is None else definition.max_age_days
+            series,
+            calendar,
+            max_age_days=None if definition is None else definition.max_age_days,
+            publication_lag_days=0 if definition is None else definition.publication_lag_days,
         )
     return aligned
 
@@ -249,7 +276,12 @@ def build_signals(
         series = factors.get(definition.key)
         if series is None or series.empty:
             continue
-        aligned = align_series(series, calendar, max_age_days=definition.max_age_days)
+        aligned = align_series(
+            series,
+            calendar,
+            max_age_days=definition.max_age_days,
+            publication_lag_days=definition.publication_lag_days,
+        )
         transformed = apply_transform(aligned, definition.transform)
         z = rolling_z(transformed)
         columns[definition.key] = (z * definition.sign).rename(definition.key)
@@ -779,6 +811,7 @@ class FactorState:
     obs_date: Optional[date]
     age_days: Optional[int]
     max_age_days: int
+    publication_lag_days: int
     z: Optional[float]
     signed_z: Optional[float]
     contribution: Optional[float]
@@ -891,11 +924,22 @@ def factor_states(
         obs_date = None
         age_days = None
         if series is not None and not series.empty:
-            position = int(series.index.searchsorted(as_of, side="right")) - 1
+            # 展示与计算同一口径：只在**已可见**的观测里取最新一条，年龄从可见时点起算
+            # （观测日在 d 的数，d + lag 个工作日之后才可用，见 publication_visible）。
+            visible = publication_visible(series, definition.publication_lag_days)
+            position = int(visible.index.searchsorted(as_of, side="right")) - 1
             if position >= 0:
-                obs_date = series.index[position].date()
-                value = _clean(series.iloc[position])
-                age_days = (as_of.date() - obs_date).days
+                visible_at = visible.index[position]
+                value = _clean(visible.iloc[position])
+                if definition.publication_lag_days > 0:
+                    # 回推观测日供展示；带滞后的因子都是工作日序列，BDay 可逆。
+                    observed_at = visible_at - pd.tseries.offsets.BDay(
+                        definition.publication_lag_days
+                    )
+                else:
+                    observed_at = visible_at
+                obs_date = observed_at.date()
+                age_days = (as_of.date() - visible_at.date()).days
 
         z = None
         signed_z = None
@@ -954,6 +998,7 @@ def factor_states(
                 obs_date=item["obs_date"],
                 age_days=item["age_days"],
                 max_age_days=definition.max_age_days,
+                publication_lag_days=definition.publication_lag_days,
                 z=item["z"],
                 signed_z=item["signed_z"],
                 contribution=contribution,

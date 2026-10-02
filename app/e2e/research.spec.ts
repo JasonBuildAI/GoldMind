@@ -15,14 +15,14 @@ test.describe('GoldMind 研究页端到端', () => {
     const body = await resp.json()
     expect(body.holdout_start).toBe('2023-10-02')
     // 裁决窗口自成一列：封板日之后才是干净的样本外，页面必须把这段摊开
-    expect(body.active_holdout_start).toBe('2026-10-02')
-    expect(body.model_version).toBe('quant-v6')
+    expect(body.active_holdout_start).toBe('2026-10-03')
+    expect(body.model_version).toBe('quant-v7')
     expect(['ok', 'unavailable']).toContain(body.status)
 
     if (body.status === 'ok') {
       for (const horizon of body.horizons) {
         expect(horizon.periods.forward).toBeTruthy()
-        expect(horizon.forward_readiness.window_start).toBe('2026-10-02')
+        expect(horizon.forward_readiness.window_start).toBe('2026-10-03')
         expect(horizon.forward_readiness.required_bets).toBeGreaterThan(0)
       }
     }

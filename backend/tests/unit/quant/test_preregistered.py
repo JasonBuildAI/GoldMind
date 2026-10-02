@@ -177,7 +177,7 @@ def test_readiness_prefers_the_bets_the_backtest_actually_counted():
     于是同一页面上 readiness 会报「可判」而样本量闸门同时报「不足」。
     变异验证：忽略 ``realized_bets`` 参数（只用日历折算）本测试必红。
     """
-    filled = pd.date_range("2026-10-02", periods=400, freq="B")
+    filled = pd.date_range("2026-10-03", periods=400, freq="B")
 
     calendar_only = preregistered.forward_window_readiness(filled, 20)
     assert calendar_only["independent_bets"] == 20

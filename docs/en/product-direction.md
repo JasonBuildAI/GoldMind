@@ -95,7 +95,7 @@ shows "temporarily unavailable"), and constructed uniformly through
    The 1-year horizon is the number-one problem: the systematic bias in μ cannot be repaired, and widening the interval does not buy better direction.
    The pre-registered verdict of 2026-10-02: 17 candidates × 5 horizons, none passed, so the live version is kept and labelled "no statistical edge" (that was `quant-v4`; the second round fixed the ACI
    mismatch on 2026-10-02 and moved it to `quant-v5`, which changed the interval values, and the third-round C2 candidate was likewise retired by its pre-registered bar; the same day's engine hardening moved it
-   to `quant-v6` — alignment no longer drops observations dated on a non-trading day and the ACI alpha cap came down to 0.5, so hit rates and coverage changed again and the old `quant-v5` records are no longer comparable); the page honestly shows the coverage
+   to `quant-v6` — alignment no longer drops observations dated on a non-trading day and the ACI alpha cap came down to 0.5, so hit rates and coverage changed again; the 2.0.2 release of 2026-10-03 then wrote the publication lag into the factor table (`publication_lag_days`, one business day for the three rate factors) and moved it to `quant-v7`, so the `quant-v6` and older records are no longer comparable); the page honestly shows the coverage
    side by side with the two benchmarks, always-long / momentum (see Section 11 of docs/ARCHITECTURE.md).
 6. **The message board does not fetch full articles and does not translate**. It uses only the
    title, summary and link that each source's RSS provides, does not bypass logins or paywalls,

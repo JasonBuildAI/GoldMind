@@ -369,6 +369,61 @@ def test_observation_on_a_non_trading_day_is_not_dropped(calendar):
     assert aligned.loc[before].isna().all()
 
 
+def test_publication_lag_delays_visibility(calendar):
+    """发布滞后：观测日在 d 的数，d + lag 个工作日之前不许进信号。
+
+    真实机理：H.15 在当日收盘后挂网、EFFR 次日 9 点发布。旧口径把观测日直接当
+    可见日，回测里拿当天的收益率解释当天的收盘，等于提前用了当时还看不到的数。
+
+    变异验证：删掉 ``align_series`` 里的 ``publication_visible`` 调用，
+    ``np.isnan(lagged.loc[obs_day])`` 一行立刻变红。
+    """
+    obs_day = calendar[-40]
+    series = pd.Series([4.0], index=[obs_day])
+    visible_day = obs_day + pd.tseries.offsets.BDay(2)
+
+    unlagged = engine.align_series(series, calendar)
+    lagged = engine.align_series(series, calendar, publication_lag_days=2)
+
+    assert unlagged.loc[obs_day] == 4.0
+    assert np.isnan(lagged.loc[obs_day]), "观测日当天就用上了还没发布的数"
+    assert lagged.loc[calendar[calendar < visible_day]].isna().all()
+    assert lagged.loc[visible_day] == 4.0
+
+
+def test_treasury_factors_declare_their_publication_lag():
+    """三张利率表都有发布滞后；价格类的滞后必须保持 0，不许「顺手」加滞后。"""
+    from app.services.quant.definitions import factor_by_key
+
+    for key in ("real_yield_10y", "policy_expectation", "inflation_expectation"):
+        assert factor_by_key[key].publication_lag_days == 1, key
+    for key in ("dollar_index", "vix", "momentum", "cftc_positioning", "central_bank"):
+        assert factor_by_key[key].publication_lag_days == 0, key
+
+
+def test_factor_state_age_follows_visibility_not_observation_date(panel, calendar):
+    """展示层与计算层同一口径：数值、观测日、年龄都来自同一条**已可见**的观测。
+
+    面板里 real_yield_10y 每天都有观测；最后一行 K 线是 2026-09-30，但 09-30 的
+    收益率要到 10-01 才可见，所以这一行用的是 09-29 那条，年龄从可见时点 09-30 起算。
+
+    变异验证：让 ``factor_states`` 退回读原始序列，obs_date 会变成 09-30，本用例必红。
+    """
+    factors, close = panel
+
+    snapshot = engine.build_snapshot(factors, close, horizon=5)
+
+    state = next(state for state in snapshot.states if state.key == "real_yield_10y")
+    series = factors["real_yield_10y"]
+    assert state.publication_lag_days == 1
+    assert state.obs_date == calendar[-2].date()
+    assert state.age_days == 0
+    # 展示的数值必须与展示的观测日来自**同一条**观测：09-30 的收益率还不可见，
+    # 这一行用的是 09-29 那条。只冻结日期、不冻结值的话，配对错误照样能溜过去。
+    assert state.value == pytest.approx(float(series.iloc[-2]))
+    assert state.value != pytest.approx(float(series.iloc[-1]))
+
+
 def test_stale_data_is_marked_and_excluded(panel, calendar):
     factors, close = panel
     # VIX 的更新周期是 7 天：把最后 60 天的数据删掉，它就该被判为陈旧

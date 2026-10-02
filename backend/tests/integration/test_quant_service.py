@@ -71,6 +71,7 @@ def test_stored_prediction_factor_json_is_mysql_safe(db_session):
         obs_date=date(2026, 10, 1),
         age_days=1,
         max_age_days=7,
+        publication_lag_days=1,
         z=0.4,
         signed_z=float("nan"),
         contribution=1.2,

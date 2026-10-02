@@ -25,6 +25,7 @@ class FactorSnapshot(BaseModel):
     obs_date: Optional[date] = None
     age_days: Optional[int] = None
     max_age_days: int
+    publication_lag_days: int
     z: Optional[float] = None
     signed_z: Optional[float] = None
     contribution: Optional[float] = None

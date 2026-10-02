@@ -113,5 +113,9 @@ def test_report_registers_reversed_hypotheses_and_rechecks_them():
 
 @pytest.mark.unit
 def test_window_start_is_the_announcement_date_not_a_moving_target():
-    """窗口起点写死为第二轮结论公布日；挪它等于作废整轮预注册，所以钉进测试。"""
-    assert screen.FORWARD_WINDOW_START == date(2026, 10, 2)
+    """窗口起点写死为封板日；挪它等于作废整轮预注册，所以钉进测试。
+
+    2026-10-02 是第二/三轮的封板日；2.0.2 的 quant-v7 发布滞后修正重新封板到
+    2026-10-03（见 definitions.ACTIVE_HOLDOUT_START），屏幕层必须跟着同一处定义走。
+    """
+    assert screen.FORWARD_WINDOW_START == date(2026, 10, 3)

@@ -57,6 +57,11 @@ class RegressorSpec:
         """新鲜度上限沿用因子表的定义，不在这里抄第二份。"""
         return factor_by_key[self.key].max_age_days
 
+    @property
+    def publication_lag_days(self) -> int:
+        """发布滞后同样沿用因子表定义：分解与信号用同一套可见性口径。"""
+        return factor_by_key[self.key].publication_lag_days
+
 
 REGRESSORS: tuple[RegressorSpec, ...] = (
     RegressorSpec("real_yield_10y", "level", "anchor"),
@@ -133,7 +138,12 @@ def _regressor_frame(factors: dict[str, pd.Series], calendar: pd.DatetimeIndex) 
         series = factors.get(spec.key)
         if series is None or series.empty:
             continue
-        aligned = engine.align_series(series, calendar, max_age_days=spec.max_age_days)
+        aligned = engine.align_series(
+            series,
+            calendar,
+            max_age_days=spec.max_age_days,
+            publication_lag_days=spec.publication_lag_days,
+        )
         if spec.transform == "log":
             aligned = np.log(aligned.where(aligned > 0))
         columns[spec.key] = aligned.astype("float64")
