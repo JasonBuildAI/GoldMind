@@ -8,6 +8,7 @@ import json
 import logging
 import re
 
+from app.services.analysis_input import CAPABILITY_NOTE
 from app.services.news_service import NEWS_PROMPT_LIMIT, format_news_for_prompt
 from app.utils import timeutil
 from app.config import settings
@@ -247,6 +248,8 @@ class MarketSummaryAnalyzer:
         )
 
         prompt = f"""你是一位资深的黄金市场分析师，拥有20年以上的贵金属市场研究经验。
+
+{CAPABILITY_NOTE}
 
 请基于以下全面的市场数据，生成一份详尽的黄金市场综合分析报告。
 

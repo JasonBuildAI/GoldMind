@@ -137,7 +137,8 @@ Public sources ──► factor observations ──► rolling z ──► per-h
 
 > The news input merges `gold_news` with the message board's high-authority items, deduplicated by
 > normalised URL (message-board items win); every prompt line carries a title plus a cleaned,
-> truncated summary. Implementation: `backend/app/services/analysis_input.py`.
+> truncated summary. News, price context and the capability statement come from one shared input
+> packet (`build_analysis_input`, same window, same definitions): `backend/app/services/analysis_input.py`.
 
 ---
 
@@ -1055,7 +1056,7 @@ GoldMind/
 │   │   │   ├── llm_provider.py                     # **the only LLM entry point**
 │   │   │   ├── institution_prediction_service.py   # institutional views (incl. registry)
 │   │   │   ├── news_digest.py                      # message board: crawl / deterministic scoring / per-window top 10 (no LLM)
-│   │   │   ├── analysis_input.py                   # analysis input: merges the message board with RSS for the LLM services
+│   │   │   ├── analysis_input.py                   # input packet: merged news + price context + capability note
 │   │   │   └── quant/                              # quant engine: sources / derive / storage /
 │   │   │                                           #   sync / engine / decompose / scenarios /
 │   │   │                                           #   backtest / monitor / screen /

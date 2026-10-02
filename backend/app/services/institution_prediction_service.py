@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.analysis import InstitutionView
 from app.services.ai_payload import with_last_updated
-from app.services.analysis_input import load_analysis_news
+from app.services.analysis_input import build_analysis_input, load_analysis_news
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.llm_provider import (
     describe_completion,
@@ -322,6 +322,8 @@ class InstitutionPredictionAnalyzer:
         self.web_search_service = get_web_search_service()
         self.prompt_template = """你是一位专业的金融市场数据分析师，专注于追踪华尔街顶级投行对黄金价格的预测。
 
+{capability_note}
+
 你的任务是从下面的新闻材料中**提取**以下四家机构对黄金的**最近一次可核实**预测：
 1. 高盛 (Goldman Sachs)
 2. 瑞银 (UBS)
@@ -486,8 +488,10 @@ class InstitutionPredictionAnalyzer:
         **不调用 LLM**，直接返回空结构（红线 1：没有依据就不让模型凭记忆编）。
         """
         window_days = self.lookback_days
-        news = self.fetch_recent_news(db)
-        selected = self._select_news_for_institutions(news)
+        packet = build_analysis_input(
+            db, news_hours=window_days * 24, include_prices=False
+        )
+        selected = self._select_news_for_institutions(packet.news_items)
 
         if selected:
             news_content = format_news_for_prompt(selected, limit=30)
@@ -507,6 +511,7 @@ class InstitutionPredictionAnalyzer:
         # 构建prompt并调用LLM
         prompt = self.prompt_template.format(
             news_content=news_content,
+            capability_note=packet.capability_note,
             current_time=timeutil.now_str(),
             lookback_days=window_days,
         )

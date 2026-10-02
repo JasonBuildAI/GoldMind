@@ -18,7 +18,14 @@ import pytest
 
 from app.models.news import GoldNews
 from app.models.news_digest import NewsDigestItem
-from app.services.analysis_input import load_analysis_news, merge_news_entries
+from app.services.analysis_input import (
+    CAPABILITY_NOTE,
+    AnalysisInput,
+    build_analysis_input,
+    build_price_context,
+    load_analysis_news,
+    merge_news_entries,
+)
 from app.services.news_service import clean_summary_for_prompt, format_news_for_prompt
 from app.utils import timeutil
 
@@ -151,6 +158,41 @@ def test_load_analysis_news_limit_slices_after_merge(db_session):
 
 
 # --------------------------------------------------------------------------- #
+# 共享输入包：同一份价格上下文 + 同一份能力声明
+# --------------------------------------------------------------------------- #
+@pytest.mark.integration
+def test_build_price_context_reads_latest_row_and_rolling_window(db_session, seed_gold_prices):
+    seed_gold_prices(days=10, start=2600.0, step=10.0)
+
+    context = build_price_context(db_session)
+
+    assert context["current_price"] == 2690.0
+    assert context["price_change"] == pytest.approx(0.37, abs=0.01)
+    assert context["window_change"] == pytest.approx(3.46, abs=0.01)
+    assert context["window_label"]
+    assert context["as_of"] == timeutil.today()
+
+
+@pytest.mark.integration
+def test_build_price_context_is_none_without_any_price(db_session):
+    assert build_price_context(db_session) is None
+
+
+@pytest.mark.integration
+def test_build_analysis_input_returns_one_shared_packet(db_session, seed_gold_prices):
+    seed_gold_prices(days=5)
+    _digest_item(db_session, title=DIGEST_TITLE)
+
+    packet = build_analysis_input(db_session, news_hours=24, include_prices=True)
+
+    assert isinstance(packet, AnalysisInput)
+    assert packet.news_window_hours == 24
+    assert DIGEST_TITLE in packet.news_block
+    assert packet.price is not None
+    assert packet.capability_note == CAPABILITY_NOTE
+
+
+# --------------------------------------------------------------------------- #
 # 摘要清洗
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit
@@ -208,6 +250,7 @@ def test_bullish_factor_prompt_sees_digest_entry(db_session, fake_llm):
 
     assert fake_llm.calls, "有新闻却没用 LLM"
     assert DIGEST_TITLE in fake_llm.calls[0]
+    assert "能力声明" in fake_llm.calls[0]
 
 
 @pytest.mark.integration
@@ -220,6 +263,7 @@ def test_bearish_factor_prompt_sees_digest_entry(db_session, fake_llm):
 
     assert fake_llm.calls, "有新闻却没用 LLM"
     assert DIGEST_TITLE in fake_llm.calls[0]
+    assert "能力声明" in fake_llm.calls[0]
 
 
 @pytest.mark.integration
@@ -232,6 +276,7 @@ def test_institution_prompt_sees_digest_entry(db_session, fake_llm):
 
     assert fake_llm.calls, "有新闻却没用 LLM"
     assert DIGEST_TITLE in fake_llm.calls[0]
+    assert "能力声明" in fake_llm.calls[0]
 
 
 @pytest.mark.integration
@@ -244,6 +289,7 @@ def test_investment_advice_prompt_sees_digest_entry(db_session, fake_llm):
 
     assert fake_llm.calls, "有新闻却没用 LLM"
     assert DIGEST_TITLE in fake_llm.calls[0]
+    assert "能力声明" in fake_llm.calls[0]
 
 
 @pytest.mark.integration
@@ -258,3 +304,4 @@ def test_market_summary_prompt_sees_digest_entry(db_session, fake_llm):
 
     assert fake_llm.calls, "有新闻却没用 LLM"
     assert DIGEST_TITLE in fake_llm.calls[0]
+    assert "能力声明" in fake_llm.calls[0]

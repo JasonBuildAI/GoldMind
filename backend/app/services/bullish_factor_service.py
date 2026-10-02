@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 from functools import partial
 
-from app.services.analysis_input import load_analysis_news
+from app.services.analysis_input import build_analysis_input, load_analysis_news
 from app.services.news_service import format_news_for_prompt
 from app.utils import timeutil
 from app.models.analysis import MarketFactor, FactorType, ImpactLevel
@@ -34,6 +34,8 @@ class BullishFactorAnalyzer:
         self._llm = None
         self.web_search_service = get_web_search_service()
         self.prompt_template = """你是一位专业的黄金市场分析师，专注于分析影响黄金价格上涨的因素。
+
+{capability_note}
 
 当前金价数据：
 - 当前价格: {current_price} 美元/盎司
@@ -156,41 +158,6 @@ class BullishFactorAnalyzer:
         
         return all_news
     
-    def get_current_gold_data(self, db: Session) -> Dict[str, Any]:
-        """获取当前金价数据（窗口口径的唯一实现在 price_window）。
-
-        原实现写死 ``datetime(2025, 1, 1)`` 当窗口起点：进入 2026 年后，
-        「涨幅」实际是最近 21 个月的涨幅。现在锚定数据里最新的一条价格，
-        滚动 12 个月；不足 12 个月时由 label 如实说明。
-        """
-        from app.models.gold_price import GoldPrice
-        from app.services.price_window import compute_price_window
-
-        latest = db.query(GoldPrice).order_by(GoldPrice.date.desc()).first()
-        window = compute_price_window(db)
-        if latest and window:
-            # 计算今日涨跌（与昨日对比）
-            yesterday = db.query(GoldPrice).filter(
-                GoldPrice.date < latest.date
-            ).order_by(GoldPrice.date.desc()).first()
-
-            price_change = 0
-            if yesterday:
-                price_change = ((latest.close_price - yesterday.close_price) / yesterday.close_price) * 100
-
-            return {
-                "current_price": round(latest.close_price, 2),
-                "price_change": round(price_change, 2),
-                "window_change": round(window.change_pct, 2),
-                "window_label": window.label,
-            }
-
-        # 没有行情数据时返回 None。原实现返回 2800.00 / +0.5% / +15.0%
-        # 这组写死的数字，它们会被拼进 prompt 当作「当前市场数据」，
-        # 模型很可能直接引用 —— 等于用编造的行情喂出编造的分析。
-        logger.warning(f"[{self.__class__.__name__}] 数据库里没有可用金价，prompt 中标注为暂无数据")
-        return None
-    
     def analyze(self, db: Session) -> Dict[str, Any]:
         """执行分析 - 尝试联网搜索，不可用时回退数据库 / RSS"""
         # 联网搜索获取最新看涨因素（默认关闭，见 LLM_SEARCH_ENABLED）
@@ -268,10 +235,14 @@ class BullishFactorAnalyzer:
     
     def _analyze_with_traditional_llm(self, db: Session) -> Dict[str, Any]:
         """使用传统LLM分析（备用方案）"""
-        # 1. 获取24小时内新闻
-        news = self.fetch_recent_news(db, hours=24)
-        
-        # 如果数据库没有新闻，尝试从网络获取
+        # 1. 组装共享分析输入包（新闻 + 价格上下文 + 能力声明）
+        #
+        # 由 analysis_input.build_analysis_input 统一组装：新闻来自「消息板块 +
+        # gold_news」去重合并，价格上下文与能力声明只有这一份实现，多空两个
+        # 服务不再各写一份。
+        packet = build_analysis_input(db, news_hours=24, include_prices=True)
+        news = packet.news_items
+
         if not news:
             web_news = self.fetch_news_from_web()
             if web_news:
@@ -281,21 +252,18 @@ class BullishFactorAnalyzer:
                 #
                 # 原实现这时塞一句「暂无最新新闻数据，将基于当前市场状况进行分析」，
                 # 等于请模型用自己的记忆去补 —— 红线第 1 条明确禁止
-                #（docs/00-产品方向.md 第四节）。产出的因子与真实分析长得一模一样，
-                # 用户无从分辨。
-                #
-                # 而且这也省下一次没有依据的付费调用。
+                #（docs/00-产品方向.md 第四节）。而且这也省下一次没有依据的付费调用。
                 logger.warning(
                     f"[{self.__class__.__name__}] 24 小时内没有任何新闻，"
                     "不调用 LLM（没有依据可分析）"
                 )
                 return self._get_default_factors()
         else:
-            news_content = format_news_for_prompt(news)
-        
-        # 2. 获取当前金价数据
-        gold_data = self.get_current_gold_data(db)
-        
+            news_content = packet.news_block
+
+        # 2. 价格上下文（同一输入包、同一次取数）
+        gold_data = packet.price
+
         # 3. 构建prompt并调用LLM
         current_time = timeutil.now_str()
         prompt = self.prompt_template.format(
@@ -306,6 +274,7 @@ class BullishFactorAnalyzer:
             window_change=gold_data["window_change"] if gold_data else "暂无数据",
             window_label=gold_data["window_label"] if gold_data else "窗口数据不足",
             news_content=news_content,
+            capability_note=packet.capability_note,
             current_time=current_time
         )
         

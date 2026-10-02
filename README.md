@@ -129,7 +129,8 @@ RSS 新闻 ──► SQLite ──┼──► 拼装 prompt ──► llm.invok
 | 市场总结 | 上述全部 | 核心逻辑、风险、综合判断 |
 
 > 新闻输入 = `gold_news` 与消息板块（13 个高权威源）按规范化 URL 去重合并，消息板块优先；
-> prompt 里每条给「标题 + 清洗截断后的摘要」。实现见 `backend/app/services/analysis_input.py`。
+> prompt 里每条给「标题 + 清洗截断后的摘要」。新闻、价格上下文与能力声明由同一份
+> 「分析输入包」组装（`build_analysis_input`，同窗口、同口径），见 `backend/app/services/analysis_input.py`。
 
 ---
 
@@ -972,7 +973,7 @@ GoldMind/
 │   │   │   ├── llm_provider.py                     # **LLM 调用的唯一入口**
 │   │   │   ├── institution_prediction_service.py   # 机构观点（含机构注册表）
 │   │   │   ├── news_digest.py                      # 消息板块：抓取 / 确定性评分 / 三窗口 Top10（不调用 LLM）
-│   │   │   ├── analysis_input.py                   # 分析输入：消息板块 + RSS 去重合并，供 LLM 分析服务共用
+│   │   │   ├── analysis_input.py                   # 分析输入包：新闻去重合并 + 价格上下文 + 能力声明
 │   │   │   └── quant/                              # 量化引擎：sources / derive / storage /
 │   │   │                                           #   sync / engine / decompose / scenarios /
 │   │   │                                           #   backtest / monitor / screen /

@@ -88,6 +88,12 @@ SQLite(gold_news, news_digest_items, gold_prices)
         └── optional: plugin-style web_search (LLM_SEARCH_ENABLED, off by default)
 ```
 
+News and the price context are assembled into one shared input packet by
+`services/analysis_input.py` (`build_analysis_input`: `news_items` / `news_block` / `price` /
+capability statement), consumed by the factor, institutional-view, advice and summary services.
+Every prompt states explicitly that the call is single-turn with no web or tool access and that
+missing data must be reported as such, so the model cannot fill gaps from memory.
+
 | Service | File | Output |
 |---|---|---|
 | Bullish factors | `services/bullish_factor_service.py` | 5 factors + summary |

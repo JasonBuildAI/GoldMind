@@ -84,6 +84,11 @@ SQLite(gold_news, news_digest_items, gold_prices)
         └── 可选：插件式 web_search（LLM_SEARCH_ENABLED，默认关）
 ```
 
+新闻与价格上下文由 `services/analysis_input.py` 组装成同一份「分析输入包」
+（`build_analysis_input`：`news_items` / `news_block` / `price` / 能力声明），
+多空因子、机构观点、投资建议与市场总结消费同一入口；每个 prompt 里显式声明
+「单轮调用、没有联网与工具、数据不足如实说」，避免模型拿记忆补数字。
+
 | 服务 | 文件 | 输出 |
 |---|---|---|
 | 看涨因子 | `services/bullish_factor_service.py` | 5 个因子 + 总结 |

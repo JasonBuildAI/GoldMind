@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 from app.services.news_service import NEWS_PROMPT_LIMIT, format_news_for_prompt
-from app.services.analysis_input import load_analysis_news
+from app.services.analysis_input import CAPABILITY_NOTE, load_analysis_news
 from app.utils import timeutil
 from app.models.gold_price import GoldPrice
 from app.config import settings
@@ -187,6 +187,8 @@ class InvestmentAdviceAnalyzer:
             institution_content = json.dumps(usable_institutions, ensure_ascii=False, indent=2) if usable_institutions else "暂无数据"
             
             prompt_template = f"""你是一位资深的黄金投资顾问，拥有20年以上的贵金属市场分析经验。你的投资风格偏向保守稳健，注重风险控制和长期价值投资。
+
+{CAPABILITY_NOTE}
 
 你的任务是基于当前市场数据，为不同风险偏好的投资者生成具体、实用、保守的投资策略建议。
 
