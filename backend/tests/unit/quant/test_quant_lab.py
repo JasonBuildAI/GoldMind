@@ -162,3 +162,23 @@ def test_parse_horizons_rejects_unknown_scales():
     assert quant_lab._parse_horizons("20,250") == (20, 250)
     with pytest.raises(Exception):
         quant_lab._parse_horizons("20,999")
+
+def test_bench_rows_carry_the_round_two_adjudication_metrics(make_panel, monkeypatch):
+    """研究台必须输出第二轮裁决要用的那三个指标，否则 M1/T1 规则无法执行。
+
+    这是补出来的洞：`backtest` 已经算了 `magnitude_skill_vs_flat` / `down_calls` /
+    `interval_sharpness_80`，但表格列没带上，于是「用幅度技能裁决」写在 spec 里却跑不出来。
+    变异验证：把这三列从 `COLUMNS` / 行构造里删掉，本测试必红。
+    """
+    _fast_bootstrap(monkeypatch)
+    factors, close = make_panel(_long_calendar())
+
+    rows = quant_lab.run_lab(factors, close, horizons=(20,), candidates=_subset("B0"))
+
+    for row in rows:
+        for key in ("magnitude_skill", "down_calls", "down_call_accuracy", "interval_sharpness_80"):
+            assert key in row, f"{row['period']} 缺少 {key}：第二轮规则无法裁决"
+        if row["period"] == "development":
+            assert row["magnitude_skill"] is not None
+            assert isinstance(row["down_calls"], int)
+
