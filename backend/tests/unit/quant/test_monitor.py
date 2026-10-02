@@ -150,3 +150,72 @@ def test_stale_rows_keep_the_number_but_lose_the_signal(db_session):
     assert "40 天" in stale["reason"]
     # 参照系是金价日历（红线五），不是服务器时间
     assert rows["vix"]["status"] == "ok" and rows["vix"]["signal"] == "bull"
+
+
+def test_every_info_key_is_a_real_row_and_stays_directionless():
+    """信息行的名单必须与行定义同源，且**每一条**都不许多空。
+
+    覆盖第二轮新接入的五条（GVZ / 金银比 / 铜金比 / CFTC 占比 / GPR）：它们在 26 年面板上
+    都没过筛选闸门，仪表盘只报水位。变异验证：把其中任何一个键从 ``INFO_KEYS`` 里删掉，
+    第一条断言就红（`_rule` 会对未知键直接抛）。
+    """
+    keys = {spec.key for spec in monitor.ROW_SPECS}
+
+    assert monitor.INFO_KEYS <= keys, f"INFO_KEYS 里有没定义成行的键：{monitor.INFO_KEYS - keys}"
+    for key in sorted(monitor.INFO_KEYS):
+        signal, change = monitor._rule(key, _series([100.0] * 12))
+        assert signal is None, f"{key} 是信息行，不该给出 {signal}"
+        assert change is not None
+
+
+def test_the_second_round_sources_are_on_the_dashboard():
+    """第二轮花力气接进来的信息源，必须在这张表上看得见（哪怕暂时不可用）。
+
+    它们此刻在项目库里是 0 行（实测），所以正确的表现是「不可用 + 原因」，
+    而不是从仪表盘上消失 —— 消失了就等于没人再关心它有没有数。
+    """
+    new_keys = {"gvz", "gold_silver_ratio", "copper_gold_ratio", "cftc_net_oi_ratio", "gpr_daily"}
+    by_key = {spec.key: spec for spec in monitor.ROW_SPECS}
+    assert new_keys <= set(by_key), f"仪表盘缺这些第二轮信息源：{sorted(new_keys - set(by_key))}"
+
+    close = _series(np.linspace(2000.0, 2600.0, 400))
+    for key in sorted(new_keys):
+        row = monitor._build_row(by_key[key], None, close)
+        assert row.status == "unavailable", row.to_dict()
+        assert row.signal is None and row.signal_label == "不可用"
+        assert row.reason, f"{key} 的不可用行必须写清原因"
+        assert by_key[key].note.startswith("信息行"), by_key[key].note
+        assert "实测" in by_key[key].note or "测不到" in by_key[key].note, (
+            f"{key} 的说明要写清「为什么不给方向」的实测依据：{by_key[key].note}"
+        )
+
+
+def test_monitor_rows_only_reference_series_the_data_layer_actually_defines():
+    """行定义里的 key 必须在数据层有真源 —— 拼错一个键的故障是「永远不可用」，很隐蔽。
+
+    变异验证：把某个 RowSpec 的 key 改成一个不存在的名字，本测试红。
+    """
+    from app.services.quant.definitions import EXTRA_SERIES, FACTORS
+
+    computed = {"ma200", "cny_gold"}  # 由本模块自己算，不是入库序列
+    defined = {factor.key for factor in FACTORS} | {item.key for item in EXTRA_SERIES}
+
+    orphans = {spec.key for spec in monitor.ROW_SPECS} - defined - computed - {"shanghai_premium"}
+    assert not orphans, f"这些监控行的 key 在数据层没有定义：{sorted(orphans)}"
+
+
+def test_an_info_row_with_thin_history_still_shows_its_water_level():
+    """信息行的意义就在「只有几条观测」的阶段：值照给，只是没有方向。
+
+    这钉的是 ``INFO_KEYS`` 的作用 —— 不在名单里的键历史不足时会被标成「样本不足」，
+    于是刚接入、只有两三条观测的新序列在仪表盘上永远只有一个警告，看不到水位。
+    变异验证：把 ``gvz`` 从 ``INFO_KEYS`` 里删掉，本测试红（signal_label 变成「样本不足」）。
+    """
+    close = _series(np.linspace(2000.0, 2600.0, 400))
+    spec = next(item for item in monitor.ROW_SPECS if item.key == "gvz")
+
+    row = monitor._build_row(spec, _series([24.0, 25.0, 24.5]), close)
+
+    assert row.status == "ok", row.to_dict()
+    assert row.signal is None and row.signal_label == "信息"
+    assert row.value == pytest.approx(24.5)

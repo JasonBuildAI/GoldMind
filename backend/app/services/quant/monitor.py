@@ -20,8 +20,18 @@ from app.services.quant.definitions import BENCHMARK_KEY
 SIGNAL_BULL = "bull"
 SIGNAL_BEAR = "bear"
 SIGNAL_NEUTRAL = "neutral"
-# 信息型指标：不参与多空判断（signal 保持 null）
-INFO_KEYS = {"usdcny", "cny_gold", "cftc_oi"}
+# 信息型指标：不参与多空判断（signal 保持 null）。第二轮新接入的五条也在这一组里 ——
+# 它们在 26 年面板上都没过筛选闸门（spec 第二轮 §五），给方向就是编造。
+INFO_KEYS = {
+    "usdcny",
+    "cny_gold",
+    "cftc_oi",
+    "gvz",
+    "gold_silver_ratio",
+    "copper_gold_ratio",
+    "cftc_net_oi_ratio",
+    "gpr_daily",
+}
 
 SIGNAL_LABELS = {SIGNAL_BULL: "看涨", SIGNAL_BEAR: "看跌", SIGNAL_NEUTRAL: "中性"}
 
@@ -113,6 +123,29 @@ ROW_SPECS: tuple[RowSpec, ...] = (
     RowSpec(
         "cftc_oi", "COMEX 黄金未平仓合约", "周", "CFTC 持仓报告", "张",
         "信息行：衡量市场参与度，不直接给方向",
+    ),
+    # 以下五条是第二轮新接入的信息源。它们的「有没有方向信息」已经在 26 年面板上
+    # 用严格闸门测过（spec 第二轮 §五），结论是一律未过线 —— 所以这五行**一律不给多空**，
+    # 只当水位展示。等前向窗口攒够观测、真过了闸门，再谈加规则。
+    RowSpec(
+        "gvz", "黄金隐含波动率（^GVZ）", "日", "Yahoo Finance（^GVZ）", "点",
+        "信息行：18 年面板实测水平值五个尺度 |t| 全 < 0.6，63 日变化最长尺度也只到 |t| = 1.81",
+    ),
+    RowSpec(
+        "gold_silver_ratio", "金银比（金价 ÷ 银价）", "日", "Yahoo Finance（GC=F ÷ SI=F）", "倍",
+        "信息行：相对价值信号，26 年实测最好一格 60 日 t=+2.30（iid +10.76），未过闸门",
+    ),
+    RowSpec(
+        "copper_gold_ratio", "铜金比（铜价 ÷ 金价）", "日", "Yahoo Finance（HG=F ÷ GC=F）", "倍",
+        "信息行：增长/通胀相对偏好，26 年实测 250 日 t=+1.27，未过闸门",
+    ),
+    RowSpec(
+        "cftc_net_oi_ratio", "CFTC 净多头占未平仓比", "周", "CFTC 持仓报告（净头寸 ÷ 未平仓）", "%",
+        "信息行：拥挤度的占比口径，26 年实测 250 日 t=+0.73，未过闸门",
+    ),
+    RowSpec(
+        "gpr_daily", "地缘风险指数（GPR 官方日度）", "日", "Iacoviello & Papaioannou GPR", "点",
+        "信息行：26 年实测 20 日 t=−2.64（反向），离 |t| ≥ 3 的门槛还差，不给方向",
     ),
 )
 
@@ -243,6 +276,7 @@ def change_of(series: pd.Series, spec: RowSpec) -> Optional[float]:
     pct_keys = {"dollar_index", "cny_gold"}
     periods = {
         "central_bank": 1, "etf_shares": 1, "cftc_positioning": 1, "cftc_oi": 1,
+        "cftc_net_oi_ratio": 1,  # 周频：上一次报告就是「环比」
         "tga": 20, "rrp": 20,
     }.get(spec.key, 5)
     if spec.key == "usdcny":
@@ -304,6 +338,10 @@ def _rule(key: str, series: pd.Series) -> tuple[Optional[str], Optional[float]]:
     if key == "cny_gold":
         return None, _pct_delta(series, 5)
     if key == "cftc_oi":
+        return None, _delta(series, 1)
+    if key in {"gvz", "gold_silver_ratio", "copper_gold_ratio", "gpr_daily"}:
+        return None, _delta(series, 5)
+    if key == "cftc_net_oi_ratio":
         return None, _delta(series, 1)
     raise AssertionError(f"没有为 {key} 定义信号规则")
 
