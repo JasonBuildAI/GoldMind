@@ -88,7 +88,18 @@ const SHOTS = [
     allowMarkers: ['暂无'],
     requireAll: ['保守', '均衡', '机会'],
   },
-  { name: 'quant-fair-value', url: '/', selector: '[data-testid="quant-fair-value"]', minChars: 120 },
+  // 块里有一行**如实标注**的「不可用原因」（正常时值是「—」），放行该词；
+  // 数字下限与必含词防它退化成空壳或降级块（降级标题同样含「不可用」）。
+  {
+    name: 'quant-fair-value',
+    url: '/',
+    selector: '[data-testid="quant-fair-value"]',
+    minChars: 120,
+    allowMarkers: ['不可用'],
+    minNumbers: 10,
+    requireAll: [/公允价/, /市场价/, /R²/],
+  },
+
   // 监测表里有一行是**如实标注**的不可用（上证溢价没有可用的免密钥接口），
   // 其余空态标记仍然照拦；另外要求表里至少有 15 个数字，防整表退化成空壳。
   {
@@ -128,11 +139,16 @@ const SHOTS = [
     minNumbers: 8,
   },
   // 研究页三段分开拍（整页 main 高 4500+px，拍出来在 README 里没法看）。
+  // 同上：裁决块里的「不可用原因」是固定字段行；必含「前向留出期」与日期，
+  // 保证拍到的是有数字的裁决正文而不是降级说明。
   {
     name: 'research-verdict',
     url: '/research.html',
     selector: 'section.section:has([data-testid="research-verdict"])',
     minChars: 150,
+    allowMarkers: ['不可用'],
+    minNumbers: 8,
+    requireAll: ['前向留出期', /20\d\d-\d\d-\d\d/],
   },
   {
     name: 'research-forward-window',
@@ -210,6 +226,21 @@ async function waitForBootstrap() {
   throw new Error(`等待 /health bootstrap 完成超时（最后状态：${last}）`)
 }
 
+/** Windows 上偶见瞬时占用（杀软 / 索引 / 同步）：写图重试三次再上报失败。 */
+async function saveWithRetry(write, file) {
+  let lastError
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await write()
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 800 * attempt))
+    }
+  }
+  throw lastError
+}
+
 async function main() {
   await mkdir(OUT_DIR, { recursive: true })
   await waitForBootstrap()
@@ -257,17 +288,21 @@ async function main() {
       const file = path.join(OUT_DIR, `${shot.name}.png`)
       if (shot.pad) {
         const box = await target.boundingBox()
-        await page.screenshot({
-          path: file,
-          clip: {
-            x: Math.max(0, box.x - 12),
-            y: Math.max(0, box.y - 12),
-            width: box.width + 24,
-            height: shot.pad + 24,
-          },
-        })
+        await saveWithRetry(
+          () =>
+            page.screenshot({
+              path: file,
+              clip: {
+                x: Math.max(0, box.x - 12),
+                y: Math.max(0, box.y - 12),
+                width: box.width + 24,
+                height: shot.pad + 24,
+              },
+            }),
+          file,
+        )
       } else {
-        await target.screenshot({ path: file })
+        await saveWithRetry(() => target.screenshot({ path: file }), file)
       }
       console.log(`captured ${shot.name} (${text.replace(/\s+/g, '').length} chars)`)
     } catch (error) {
