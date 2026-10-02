@@ -149,6 +149,9 @@ describe('ResearchPage', () => {
       '2025-07-18 → 2026-10-01 · 311 个交易日 · 约 1.2 年',
     )
     expect(screen.getByText(/对不上时以本页为准/)).toBeInTheDocument()
+    // 候选说明：M 族只进研究台，不改变线上口径
+    expect(screen.getByTestId('research-candidates')).toHaveTextContent('M 族')
+    expect(screen.getByTestId('research-candidates')).toHaveTextContent('只进研究台')
   })
 
   it('shows the honest unavailable state without fabricating numbers', async () => {

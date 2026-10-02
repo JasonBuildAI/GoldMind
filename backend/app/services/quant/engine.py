@@ -619,6 +619,7 @@ def build_prediction_frame(
     regression_window: Optional[int] = None,
     interval: str = "aci",
     calibration_mode: str = DEFAULT_CALIBRATION_MODE,
+    expected_override: Optional[pd.Series] = None,
 ) -> pd.DataFrame:
     """把得分序列变成逐日的预测：期望收益、区间、情景区间、上行概率、目标价。
 
@@ -648,6 +649,10 @@ def build_prediction_frame(
     「拟合线周围的散布」，预测误差才回答「模型自己错了多少」——
     两者的差距就是区间覆盖率与名义值（80%）之间的差距。
 
+    ``expected_override`` 供 M 族（多因子 Ridge）把调用方走查拟合好的 μ 直接接入：
+    跳过 OLS 校准那一步，封顶、误差尺度、区间与概率全部沿用同一套下游 ——
+    分布层口径不因候选不同而分叉。
+
     ``crps`` / ``crps_flat`` 是回测用的**分布级评分**（收益单位）：对每一行，
     用该行发出的那张分布与实现收益算 CRPS，基准版本把分布的均值换成 0（与
     ``magnitude_skill_vs_flat`` 同一个「零漂移」对照）。正态兜底行走解析闭式解，
@@ -659,11 +664,16 @@ def build_prediction_frame(
     if calibration_mode not in CALIBRATION_MODES:
         raise ValueError(f"未知的校准样本口径：{calibration_mode}")
     forward = close.shift(-horizon) / close - 1.0
-    alpha, beta, _, calibrated = expanding_ols(
-        score.shift(horizon), forward.shift(horizon), window=regression_window
-    )
-    # 没校准就没有期望收益：NaN 而不是 0，否则「样本不足」会被下游当成「预期不变」
-    expected_raw = (alpha + beta * score).where(calibrated)
+    if expected_override is None:
+        alpha, beta, _, calibrated = expanding_ols(
+            score.shift(horizon), forward.shift(horizon), window=regression_window
+        )
+        # 没校准就没有期望收益：NaN 而不是 0，否则「样本不足」会被下游当成「预期不变」
+        expected_raw = (alpha + beta * score).where(calibrated)
+    else:
+        # M 族：μ 已由调用方走查拟合好（multivariate.walk_forward_ridge），
+        # 这里只接管分布层 —— 封顶、误差尺度、区间与概率与线上口径完全同路。
+        expected_raw = expected_override.reindex(close.index).astype("float64")
     # 封顶：μ 不许超过「这一尺度上市场真的动过多少」的若干倍（原因见 EXPECTED_CAP_SIGMAS）
     realized_scale = forward.shift(horizon).expanding(min_periods=MIN_SCORES_FOR_SIGMA).std()
     cap = EXPECTED_CAP_SIGMAS * realized_scale

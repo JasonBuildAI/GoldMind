@@ -423,6 +423,11 @@ function VerdictPanel({ data }: { data: QuantResearchResponse }) {
         「窗口」列。README 与历史研究台报告引用的是各自时点的快照（面板长度与样本数可能
         与这里不同）—— 两者对不上时以本页为准。
       </p>
+      <p className="note" data-testid="research-candidates">
+        候选与通过线在跑数前写死（含 M 族：多因子 walk-forward Ridge，与「先合成再一元
+        回归」对照）；全档结果由 <code>scripts/quant_lab.py</code> 产出。M 族只进研究台，
+        不改变线上 {data.model_version} 口径。
+      </p>
     </div>
   )
 }

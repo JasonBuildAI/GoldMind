@@ -94,6 +94,7 @@ def prepare_evaluation(
     interval: str = "aci",
     calibration_mode: str = engine.CALIBRATION_ROW,
     score: Optional[pd.Series] = None,
+    expected: Optional[pd.Series] = None,
 ) -> dict:
     """把因子面板算成一次评估所需的全部序列。
 
@@ -105,12 +106,18 @@ def prepare_evaluation(
     ``evaluate_periods`` 在开发期 / 留出期 / 全样本三个切片上复用同一结果。
 
     ``score`` 直接给定时忽略 ``score_mode`` 的合成部分（集成候选的得分由
-    调用方先平均好）；可用因子数仍按 ``include`` 统计。
+    调用方先平均好）；可用因子数仍按 ``include`` 统计。``expected`` 直接给定时
+    （M 族 walk-forward Ridge）连一元回归也跳过：μ 由调用方走查拟合，
+    分布层口径不变。
     """
     calendar = close.index
     aligned = engine.align_factors(factors, calendar)
     signals = engine.build_signals(aligned, calendar)
-    if score is None:
+    if expected is not None:
+        # M 族：μ 由调用方走查拟合（multivariate.walk_forward_ridge），没有
+        # 「先合成得分再校准」两层 —— 未校准得分方向即 μ 的符号。
+        score = expected
+    elif score is None:
         score = engine.composite_score(
             signals, horizon=horizon, mode=score_mode, include=include
         )
@@ -121,6 +128,7 @@ def prepare_evaluation(
         regression_window=regression_window,
         interval=interval,
         calibration_mode=calibration_mode,
+        expected_override=expected,
     )
     forward = close.shift(-horizon) / close - 1.0
     outcome = np.sign(forward)
@@ -165,6 +173,7 @@ def evaluate_horizon(
     interval: str = "aci",
     calibration_mode: str = engine.CALIBRATION_ROW,
     score: Optional[pd.Series] = None,
+    expected: Optional[pd.Series] = None,
 ) -> HorizonEvaluation:
     """对一段区间做走查式回测。``start`` / ``end`` 为闭区间（按日期）。
 
@@ -184,6 +193,7 @@ def evaluate_horizon(
         interval=interval,
         calibration_mode=calibration_mode,
         score=score,
+        expected=expected,
     )
     mask = _base_mask(prepared)
     calendar = close.index
@@ -698,6 +708,7 @@ def evaluate_periods(
     interval: str = "aci",
     calibration_mode: str = engine.CALIBRATION_ROW,
     score: Optional[pd.Series] = None,
+    expected: Optional[pd.Series] = None,
 ) -> dict[str, HorizonEvaluation]:
     """开发期 / 历史留出期 / 前向留出期 / 全样本四列。
 
@@ -725,6 +736,7 @@ def evaluate_periods(
         interval=interval,
         calibration_mode=calibration_mode,
         score=score,
+        expected=expected,
     )
     base = _base_mask(prepared)
     calendar = close.index

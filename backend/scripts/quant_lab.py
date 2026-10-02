@@ -33,7 +33,13 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.services.quant import backtest, engine, preregistered, storage  # noqa: E402
+from app.services.quant import (  # noqa: E402
+    backtest,
+    engine,
+    multivariate,
+    preregistered,
+    storage,
+)
 from app.services.quant.definitions import (  # noqa: E402
     ACTIVE_HOLDOUT_START,
     CATEGORY_MONETARY,
@@ -73,6 +79,7 @@ GROUP_LABELS = {
     "calibration": "校准样本三档",
     "factor_set": "因子集四档",
     "ensemble": "集成一档",
+    "multivariate": "多因子直接建模",
 }
 
 
@@ -110,6 +117,9 @@ class Candidate:
     regression_window: Optional[int] = None
     interval: str = "aci"
     calibration_mode: str = engine.CALIBRATION_ROW
+    # M 族：多因子直接建模（walk-forward Ridge），与「先合成再一元回归」对照
+    model: str = "composite"
+    ridge_alpha: float = 1.0
 
     @property
     def is_ensemble(self) -> bool:
@@ -123,6 +133,8 @@ class Candidate:
             self.regression_window,
             self.interval,
             self.calibration_mode,
+            self.model,
+            self.ridge_alpha,
         )
 
 
@@ -164,6 +176,20 @@ def candidates() -> tuple[Candidate, ...]:
         Candidate("F3", "factor_set", "因子集 = 基础权重 ≥ 0.6（6 个）", include=FACTOR_SETS["core"]),
         Candidate("F4", "factor_set", "因子集 = 全部（控制，与 B0 同口径）", include=None),
         Candidate("E0", "ensemble", "集成 = 0.5×加权 + 0.5×等权 的得分平均", score_modes=("weighted", "equal")),
+        Candidate(
+            "M1",
+            "multivariate",
+            "多因子直接建模 = walk-forward Ridge（α=1.0，全因子；与「先合成再一元回归」对照）",
+            model="ridge",
+            ridge_alpha=1.0,
+        ),
+        Candidate(
+            "M2",
+            "multivariate",
+            "多因子直接建模 = walk-forward Ridge（α=10.0，同一份数据上更强收缩的对照）",
+            model="ridge",
+            ridge_alpha=10.0,
+        ),
     )
 
 
@@ -242,6 +268,15 @@ def evaluate_candidate(
     holdout_start=HOLDOUT_START,
 ) -> dict:
     """一个候选在一个尺度上的三列评估（开发期 / 留出期 / 全样本）。"""
+    expected = None
+    if candidate.model == "ridge":
+        # M 族：μ 直接由多因子走查 Ridge 给出，不走「先合成再一元回归」
+        signals = engine.build_signals(
+            engine.align_factors(factors, close.index), close.index
+        )
+        expected = multivariate.walk_forward_ridge(
+            signals, close, horizon=horizon, alpha=candidate.ridge_alpha
+        )
     return backtest.evaluate_periods(
         factors,
         close,
@@ -253,6 +288,7 @@ def evaluate_candidate(
         interval=candidate.interval,
         calibration_mode=candidate.calibration_mode,
         score=ensemble_score(factors, close, candidate, horizon=horizon),
+        expected=expected,
     )
 
 

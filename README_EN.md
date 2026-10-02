@@ -473,7 +473,9 @@ fewer than 30).
 `scripts/quant_lab.py` **freezes the candidate list and the pass lines before running the numbers**,
 then evaluates them over three sample periods. The candidates are not arbitrary: baseline B0,
 drift D1/D3/D5, composite S1–S4, interval P1–P4, calibration C0/C1/C2, factor-set F1–F4 and
-ensemble E0 — 20 in total (defined in one place, `scripts/quant_lab.py`).
+ensemble E0 and multivariate M1/M2 — 22 in total (defined in one place,
+`scripts/quant_lab.py`). The M family (multivariate walk-forward Ridge) is a research-bench
+comparison against "compose first, then regress" and does not change the live `quant-v6`.
 
 **The first round (17 candidates, before 2.0) concluded "no conclusion"**: 17 candidates × 5
 horizons, none cleared the line on the holdout, and after the engine fixes they are
