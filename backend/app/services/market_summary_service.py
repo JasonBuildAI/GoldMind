@@ -6,12 +6,18 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import json
 import logging
+import re
 
 from app.services.news_service import NEWS_PROMPT_LIMIT, format_news_for_prompt
 from app.utils import timeutil
 from app.config import settings
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
+from app.services.institution_prediction_service import (
+    INSTITUTIONS,
+    _normalize_text,
+    match_institution,
+)
 from app.services.llm_provider import (
     describe_completion,
     get_chat_llm,
@@ -20,6 +26,136 @@ from app.services.llm_provider import (
 from loguru import logger
 
 logger = logging.getLogger(__name__)
+
+# --------------------------------------------------------------------------- #
+# 机构数据的诚实性守卫
+#
+# `institution_predictions` 里「暂无最新预测」的占位行（target_price 为空、
+# rating 缺省为 neutral、reasoning 是固定文案）只表示「窗口期内没有可核实
+# 预测」，**不代表**机构给出中性评级。把占位行当评级喂给 LLM，会产出
+# 「四大投行集体中性」这类不存在的机构判断 —— 缓存里真实发生过。
+# --------------------------------------------------------------------------- #
+
+PLACEHOLDER_INSTITUTION_REASONINGS = {"暂无最新预测"}
+
+# 泛指机构的词：无法映射到具体机构时也按「不可核实」处理。
+# 「机构」从严保留在表内：宁可少展示一条要点，不展示无法核实的机构判断。
+GENERIC_INSTITUTION_TERMS = ("投行", "机构", "华尔街", "wall street")
+
+
+def usable_institution_predictions(
+    predictions: Optional[List[Dict]],
+) -> List[Dict]:
+    """只保留可核实的机构行；占位行（无目标价、无日期、占位理由）不算数据。"""
+    usable: List[Dict] = []
+    for pred in predictions or []:
+        if not isinstance(pred, dict):
+            continue
+        reasoning = str(pred.get("reasoning") or "").strip()
+        if (
+            pred.get("target_price") is not None
+            or pred.get("as_of_date")
+            or (reasoning and reasoning not in PLACEHOLDER_INSTITUTION_REASONINGS)
+        ):
+            usable.append(pred)
+    return usable
+
+
+def _text_of(item: Any) -> str:
+    """把要点条目（字符串 / 字典 / 列表）拼成可扫描的文本。"""
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        return " ".join(_text_of(value) for value in item.values())
+    if isinstance(item, (list, tuple)):
+        return " ".join(_text_of(value) for value in item)
+    return "" if item is None else str(item)
+
+
+def _alias_matcher(alias: str):
+    """把注册表别名编译成扫描器；两字母拉丁缩写不参与（误报多于收益）。"""
+    normalized = _normalize_text(alias)
+    has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in normalized)
+    if not normalized or (not has_cjk and len(normalized) < 3):
+        return None
+    if has_cjk:
+        return ("substring", normalized)
+    return ("regex", re.compile(rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])"))
+
+
+def _build_institution_alias_matchers():
+    matchers = []
+    for inst in INSTITUTIONS:
+        for alias in inst.aliases:
+            matcher = _alias_matcher(alias)
+            if matcher is not None:
+                matchers.append((matcher[0], matcher[1], inst.key))
+    return tuple(matchers)
+
+
+_INSTITUTION_ALIAS_MATCHERS = _build_institution_alias_matchers()
+
+
+def _institutions_mentioned(text: str) -> set:
+    normalized = _normalize_text(text)
+    mentioned = set()
+    for kind, matcher, key in _INSTITUTION_ALIAS_MATCHERS:
+        if kind == "substring":
+            if matcher in normalized:
+                mentioned.add(key)
+        elif matcher.search(normalized):
+            mentioned.add(key)
+    return mentioned
+
+
+def _entry_is_verifiable(text: str, allowed_keys: set) -> bool:
+    """条目里的机构指称必须全部可核实；泛指机构（投行/机构）同样不行。"""
+    mentioned = _institutions_mentioned(text)
+    if mentioned:
+        return mentioned <= allowed_keys
+    normalized = _normalize_text(text)
+    return not any(term in normalized for term in GENERIC_INSTITUTION_TERMS)
+
+
+def sanitize_institution_claims(
+    result: Dict[str, Any],
+    institution_predictions: Optional[List[Dict]],
+) -> Dict[str, Any]:
+    """机构数据缺失时清掉 LLM 输出里的机构判断；有数据时只保留可核实机构。
+
+    - `institution_targets`：仅保留名称可匹配到「可核实机构」的条目；
+      数据缺失时结果必然为空数组。
+    - 列表字段（核心看涨逻辑 / 主要风险 / 市场共识）：删除提及不可核实机构
+      或泛指机构的条目。宁可少一条要点，不展示无法核实的内容。
+    """
+    cleaned = dict(result) if isinstance(result, dict) else {}
+
+    allowed_keys = set()
+    for pred in usable_institution_predictions(institution_predictions):
+        inst = match_institution(pred.get("name"))
+        if inst is not None:
+            allowed_keys.add(inst.key)
+
+    for field in ("core_bullish_logic", "main_risks", "market_consensus"):
+        items = cleaned.get(field)
+        if isinstance(items, list):
+            cleaned[field] = [
+                item
+                for item in items
+                if _entry_is_verifiable(_text_of(item), allowed_keys)
+            ]
+
+    targets = cleaned.get("institution_targets")
+    kept = []
+    for target in targets if isinstance(targets, list) else []:
+        claimed = target.get("institution") if isinstance(target, dict) else target
+        inst = match_institution(claimed)
+        if inst is not None and inst.key in allowed_keys:
+            kept.append(target)
+    cleaned["institution_targets"] = kept
+
+    return cleaned
+
 
 # 全局线程池
 _executor = ThreadPoolExecutor(max_workers=2)
@@ -74,9 +210,9 @@ class MarketSummaryAnalyzer:
             response = retry_on_content_filter(self.llm, prompt)
             analysis_text = response.content
 
-            # 解析分析结果
+            # 解析分析结果；提示词之外再用确定性规则兜一道机构数据诚实性
             result = self._parse_analysis_result(analysis_text, response)
-            return result
+            return sanitize_institution_claims(result, institution_predictions)
 
         except Exception as e:
             logger.error(f"LLM 分析失败: {e}")
@@ -105,13 +241,15 @@ class MarketSummaryAnalyzer:
             for factor in bearish_factors[:8]
         ]) if bearish_factors else "暂无数据"
 
-        # 整理机构预测
+        # 整理机构预测：只喂可核实行 —— 占位行（rating 缺省 neutral、理由
+        # 「暂无最新预测」）代表的不是观点，喂进去只会被误读成机构评级。
+        usable_institutions = usable_institution_predictions(institution_predictions)
         institution_text = "\n".join([
             f"- {pred.get('name', '')}: 目标价${pred.get('target_price', 'N/A')}, "
             f"评级: {pred.get('rating', 'N/A')}, 时间框架: {pred.get('timeframe', 'N/A')}, "
             f"理由: {pred.get('reasoning', 'N/A')[:100]}..."
-            for pred in institution_predictions[:6]
-        ]) if institution_predictions else "暂无数据"
+            for pred in usable_institutions[:6]
+        ]) if usable_institutions else "暂无数据"
 
         # 整理新闻（统一入口）
         #
@@ -191,10 +329,11 @@ class MarketSummaryAnalyzer:
 要求：
 1. 基于真实数据进行分析，不要编造信息
 2. 提炼要点要简洁有力，每条不超过30字
-3. 机构目标价要基于提供的预测数据
-4. 综合判断要有深度洞察，体现专业性
-5. 核心观点要鲜明，给出明确的市场方向判断
-6. 必须返回有效的JSON格式"""
+3. 机构目标价要基于提供的预测数据；未提供可核实预测的机构，不得描述其评级、方向或目标价
+4. 若「机构预测汇总」为「暂无数据」，institution_targets 必须为空数组，所有字段都不得出现机构名称、机构评级或机构共识判断
+5. 综合判断要有深度洞察，体现专业性
+6. 核心观点要鲜明，给出明确的市场方向判断
+7. 必须返回有效的JSON格式"""
 
         return prompt
 
@@ -318,6 +457,9 @@ class MarketSummaryService:
         # 1. 首先尝试文件缓存
         cached_data = self.cache.get()
         if cached_data:
+            # 缓存可能是在机构数据不可用时生成的；按当前输入重新清洗，不能把
+            # 「四大投行集体中性」这类无法核实的判断继续对外展示。
+            cached_data = sanitize_institution_claims(cached_data, institution_predictions)
             # 用实时价格覆盖缓存中的价格
             cached_data["current_price"] = realtime_price
             cached_data["metadata"] = {
