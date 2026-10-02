@@ -1,6 +1,6 @@
 """投资建议分析服务 - 优化版（支持快速缓存响应）"""
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
@@ -56,10 +56,6 @@ class InvestmentAdviceAnalyzer:
 
         return NewsService(db).get_recent_news(hours=hours)[:20]
 
-    def _fetch_latest_price(self, db: Session) -> Optional[GoldPrice]:
-        """获取最新金价"""
-        return db.query(GoldPrice).order_by(GoldPrice.date.desc()).first()
-
     def _fetch_recent_prices(self, db: Session, days: int = 10) -> List[GoldPrice]:
         """获取最近N天的价格数据"""
         cutoff_date = timeutil.now_naive() - timedelta(days=days)
@@ -67,41 +63,32 @@ class InvestmentAdviceAnalyzer:
             GoldPrice.date >= cutoff_date
         ).order_by(GoldPrice.date.desc()).limit(days).all()
 
-    def _fetch_ytd_data(self, db: Session) -> Dict[str, Any]:
-        """获取2025年至今的数据"""
-        start_of_year = datetime(2025, 1, 1)
-        
-        start_price = db.query(GoldPrice).filter(
-            GoldPrice.date >= start_of_year
-        ).order_by(GoldPrice.date.asc()).first()
-        
-        current_price = self._fetch_latest_price(db)
-        
-        period_high = db.query(GoldPrice).filter(
-            GoldPrice.date >= start_of_year
-        ).order_by(GoldPrice.close_price.desc()).first()
-        
-        period_low = db.query(GoldPrice).filter(
-            GoldPrice.date >= start_of_year
-        ).order_by(GoldPrice.close_price.asc()).first()
-        
-        if start_price and current_price:
-            ytd_change = ((current_price.close_price - start_price.close_price) / start_price.close_price) * 100
-            volatility_range = ((period_high.close_price - period_low.close_price) / period_low.close_price) * 100 if period_high and period_low else 0
-            
-            return {
-                "current_price": current_price.close_price,
-                "start_price": start_price.close_price,
-                "ytd_change": ytd_change,
-                "period_high": period_high.close_price if period_high else current_price.close_price,
-                "period_low": period_low.close_price if period_low else current_price.close_price,
-                "volatility_range": volatility_range
-            }
-        
-        # 没有行情数据时返回 None。原实现返回 2800/2650 这组写死的价格，
-        # 会被拼进 prompt 当作「实时金价数据」，模型可能直接引用。
-        logger.warning("[InvestmentAdvice] 数据库里没有可用金价，prompt 中标注为暂无数据")
-        return None
+    def _fetch_window_data(self, db: Session):
+        """按**滚动 12 个月**取价格统计（口径的唯一实现在 price_window）。
+
+        原实现写死 ``datetime(2025, 1, 1)``：进入 2026 年后，所谓「年内涨幅」
+        实际是最近 21 个月的涨幅，被当成事实写进 prompt。窗口现在锚定在数据里
+        最新的一条价格上，跨年不失效；数据不足 12 个月时如实标注实际长度。
+        没有行情数据时返回 None（不造数）。
+        """
+        from app.services.price_window import compute_price_window
+
+        window = compute_price_window(db)
+        if window is None:
+            logger.warning("[InvestmentAdvice] 数据库里没有可用金价，prompt 中标注为暂无数据")
+        return window
+
+    @staticmethod
+    def _format_window_block(window) -> str:
+        """把窗口统计拼成 prompt 里的一段。涨跌幅与高低振幅分名，禁止混用。"""
+        return (
+            f"- 当前金价（最新收盘）: ${window.end_price:.2f} 美元/盎司\n"
+            f"- {window.label}涨跌（首尾收盘比较，{window.window_start.isoformat()} 至 "
+            f"{window.window_end.isoformat()}）: {window.change_pct:+.2f}%\n"
+            f"- 期间最高: ${window.high:.2f}（{window.high_date.isoformat()}）\n"
+            f"- 期间最低: ${window.low:.2f}（{window.low_date.isoformat()}）\n"
+            f"- 高低振幅: {window.amplitude_pct:.2f}%（(最高−最低)/最低，非波动率、非年化）"
+        )
 
     def _format_news(self, news_list: List[GoldNews]) -> str:
         """格式化新闻内容。
@@ -132,16 +119,12 @@ class InvestmentAdviceAnalyzer:
         """分析市场数据并生成投资建议"""
         try:
             recent_news = self._fetch_recent_news(db)
-            ytd_data = self._fetch_ytd_data(db)
+            window = self._fetch_window_data(db)
             recent_prices = self._fetch_recent_prices(db)
             
             price_block = (
-                f"- 当前金价: ${ytd_data['current_price']:.2f} 美元/盎司\n"
-                f"- 2025年至今涨幅: {ytd_data['ytd_change']:+.2f}%\n"
-                f"- 期间最高: ${ytd_data['period_high']:.2f}\n"
-                f"- 期间最低: ${ytd_data['period_low']:.2f}\n"
-                f"- 波动区间: {ytd_data['volatility_range']:.2f}%"
-            ) if ytd_data else "暂无行情数据（数据库里没有可用的金价记录）"
+                self._format_window_block(window)
+            ) if window else "暂无行情数据（数据库里没有可用的金价记录）"
 
             news_content = self._format_news(recent_news)
             prices_content = self._format_prices(recent_prices)

@@ -4,9 +4,9 @@
 
 1. 路由从 `bullish_result` 里读 `"factors"`，而服务返回的键是
    `"bullish_factors"` —— 多空因子永远是空列表，LLM 拿不到任何因子。
-2. 拼给 LLM 的市场描述读 `ytd_change` / `volatility_range`，而
-   `GoldService.get_statistics()` 返回的是 `ytd_return` / `volatility`
-   —— 每次分析都被告知「涨幅 +0.00%，波动区间 0.00%」。
+2. 拼给 LLM 的市场描述读的键名与 `GoldService.get_statistics()` 返回的不一致
+   —— 每次分析都被告知「涨幅 +0.00%」。现在还钉住第三件事：窗口口径与命名
+   （`window_return` / `amplitude`）在路由层不许再出现「年内 / 波动区间」。
 """
 import pytest
 
@@ -18,12 +18,15 @@ from app.services.market_summary_service import MarketSummaryService
 STATS = {
     "current_price": 2710.80,
     "start_price": 2600.0,
-    "ytd_return": 4.26,
+    "window_label": "近 12 个月",
+    "window_start": "2025-10-02",
+    "window_end": "2026-10-01",
+    "window_return": 4.26,
     "max_price": 2750.0,
     "min_price": 2580.0,
     "max_date": "2025-06-01",
     "min_date": "2025-01-02",
-    "volatility": 6.59,
+    "amplitude": 6.59,
     "market_status": "上涨",
     "market_status_desc": "趋势向好",
     "updated_at": "2026-02-03T10:00:00",

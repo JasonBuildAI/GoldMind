@@ -172,12 +172,18 @@ export interface CorrelationData {
 export interface GoldStats {
   current_price: number;
   start_price: number;
-  ytd_return: number;
+  /** 窗口口径：滚动 12 个月；不足时 label 如实说明实际跨度 */
+  window_label: string;
+  window_start: string;
+  window_end: string;
+  /** 窗口涨跌幅 = (窗口末收盘 − 窗口首收盘) / 窗口首收盘 */
+  window_return: number;
   max_price: number;
   min_price: number;
   max_date: string;
   min_date: string;
-  volatility: number;
+  /** 高低振幅 = (期间最高 − 期间最低) / 期间最低；**不是波动率**，也非年化 */
+  amplitude: number;
   market_status: string;
   market_status_desc: string;
   updated_at: string;

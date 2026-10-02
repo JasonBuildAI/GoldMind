@@ -1,6 +1,6 @@
 """看涨因子分析服务 - 优化版（联网搜索可选，默认走数据库 / RSS）"""
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from concurrent.futures import ThreadPoolExecutor
@@ -39,7 +39,7 @@ class BullishFactorAnalyzer:
 当前金价数据：
 - 当前价格: {current_price} 美元/盎司
 - 今日涨跌: {price_change}%
-- 2025年至今涨幅: {ytd_change}%
+- {window_label}涨跌（首尾收盘比较）: {window_change}%
 
 以下是从24小时内收集的黄金相关新闻资讯：
 {news_content}
@@ -164,35 +164,34 @@ class BullishFactorAnalyzer:
         return all_news
     
     def get_current_gold_data(self, db: Session) -> Dict[str, Any]:
-        """获取当前金价数据"""
+        """获取当前金价数据（窗口口径的唯一实现在 price_window）。
+
+        原实现写死 ``datetime(2025, 1, 1)`` 当窗口起点：进入 2026 年后，
+        「涨幅」实际是最近 21 个月的涨幅。现在锚定数据里最新的一条价格，
+        滚动 12 个月；不足 12 个月时由 label 如实说明。
+        """
         from app.models.gold_price import GoldPrice
-        
-        # 获取最新价格
+        from app.services.price_window import compute_price_window
+
         latest = db.query(GoldPrice).order_by(GoldPrice.date.desc()).first()
-        
-        # 获取2025年第一天的价格
-        start_of_2025 = db.query(GoldPrice).filter(
-            GoldPrice.date >= datetime(2025, 1, 1)
-        ).order_by(GoldPrice.date.asc()).first()
-        
-        if latest and start_of_2025:
-            ytd_change = ((latest.close_price - start_of_2025.close_price) / start_of_2025.close_price) * 100
-            
+        window = compute_price_window(db)
+        if latest and window:
             # 计算今日涨跌（与昨日对比）
             yesterday = db.query(GoldPrice).filter(
                 GoldPrice.date < latest.date
             ).order_by(GoldPrice.date.desc()).first()
-            
+
             price_change = 0
             if yesterday:
                 price_change = ((latest.close_price - yesterday.close_price) / yesterday.close_price) * 100
-            
+
             return {
                 "current_price": round(latest.close_price, 2),
                 "price_change": round(price_change, 2),
-                "ytd_change": round(ytd_change, 2)
+                "window_change": round(window.change_pct, 2),
+                "window_label": window.label,
             }
-        
+
         # 没有行情数据时返回 None。原实现返回 2800.00 / +0.5% / +15.0%
         # 这组写死的数字，它们会被拼进 prompt 当作「当前市场数据」，
         # 模型很可能直接引用 —— 等于用编造的行情喂出编造的分析。
@@ -311,7 +310,8 @@ class BullishFactorAnalyzer:
             # 而不是解引用一个编造的默认值
             current_price=gold_data["current_price"] if gold_data else "暂无数据",
             price_change=gold_data["price_change"] if gold_data else "暂无数据",
-            ytd_change=gold_data["ytd_change"] if gold_data else "暂无数据",
+            window_change=gold_data["window_change"] if gold_data else "暂无数据",
+            window_label=gold_data["window_label"] if gold_data else "窗口数据不足",
             news_content=news_content,
             current_time=current_time
         )

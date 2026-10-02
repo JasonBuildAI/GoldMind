@@ -2,7 +2,7 @@
 import re
 import requests
 import threading
-from datetime import datetime, date
+from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 from requests.adapters import HTTPAdapter
@@ -10,6 +10,7 @@ from urllib3.util.retry import Retry
 from app.services.cache_manager import CacheManager, REALTIME_PRICE_CACHE_TTL
 from app.utils import timeutil
 from app.models.gold_price import GoldPrice, DollarIndex
+from app.services.price_window import compute_price_window
 from loguru import logger
 
 # 创建带重试机制的HTTP Session（提升API稳定性）
@@ -49,6 +50,22 @@ def get_http_session():
             if _http_session is None:
                 _http_session = create_retry_session()
     return _http_session
+
+
+def format_market_status(stats: Optional[Dict]) -> str:
+    """把 `get_statistics()` 的结果拼成给 LLM / 接口看的一行市场描述。
+
+    统计口径的唯一来源是 `get_statistics()`（窗口实现见 `price_window`）；
+    这里不再出现「年内 / 波动区间」这类会随日历失效的说法。
+    """
+    if not stats:
+        return "暂无行情数据（数据库里没有可用的金价记录）"
+    label = stats.get("window_label") or "滚动窗口"
+    return (
+        f"当前金价: ${stats.get('current_price', 0):.2f}, "
+        f"{label}涨跌（首尾收盘比较）: {stats.get('window_return', 0):+.2f}%, "
+        f"高低振幅（非波动率）: {stats.get('amplitude', 0):.2f}%"
+    )
 
 
 class GoldService:
@@ -155,16 +172,11 @@ class GoldService:
         原先带一个 `limit` 参数却从不使用 —— 调用方以为限制了条数，实际拿到全部。
         裁剪统一放在 router 里：只有那里能看到补完实时点之后的最终序列。
         """
-        # 获取2025年1月1日之后的数据
-        start_date = date(2025, 1, 1)
-        
-        gold_prices = self.db.query(GoldPrice).filter(
-            GoldPrice.date >= start_date
-        ).order_by(GoldPrice.date.asc()).all()
-        
-        dollar_prices = self.db.query(DollarIndex).filter(
-            DollarIndex.date >= start_date
-        ).order_by(DollarIndex.date.asc()).all()
+        # 取全量后按日期对齐；时间窗裁剪统一由 router 的 days 参数负责
+        # （最长 10 年）。这里原先写死「2025-01-01 之后」—— 与统计窗口同类的
+        # 硬编码日历，会让更早的历史数据在「最近 N 天」的请求里被悄悄截断。
+        gold_prices = self.db.query(GoldPrice).order_by(GoldPrice.date.asc()).all()
+        dollar_prices = self.db.query(DollarIndex).order_by(DollarIndex.date.asc()).all()
         
         gold_dict = {p.date.strftime("%Y-%m-%d"): p.close_price for p in gold_prices}
         dollar_dict = {p.date.strftime("%Y-%m-%d"): p.close_price for p in dollar_prices}
@@ -225,94 +237,76 @@ class GoldService:
             "source_name": "数据库历史数据",
         }
     
-    def get_2025_start_price(self) -> float:
-        """获取 2025 年第一个交易日的开盘价，如果没有则使用默认值"""
-        start_date = date(2025, 1, 2)
-        price = self.db.query(GoldPrice).filter(
-            GoldPrice.date >= start_date
-        ).order_by(GoldPrice.date.asc()).first()
-        
-        if price:
-            # 使用开盘价作为YTD计算基准
-            return price.open_price if price.open_price else price.close_price
-        
-        # 如果没有2025年数据，使用2025年初的参考价（约2633美元/盎司）
-        # 这是基于2025年1月2日伦敦金的实际开盘价
-        return 2633.0
-    
     def get_statistics(self) -> Optional[Dict]:
-        """获取 2025 年至今的统计数据 - 优化版"""
+        """获取**滚动窗口**统计数据（窗口口径的唯一实现在 `price_window`）。
+
+        原实现把窗口起点写死在 ``date(2025, 1, 1)``，并把 2633.0 当作
+        「没有 2025 年数据时」的兜底起始价 —— 进入 2026 年后，所谓「年涨幅」
+        实际是最近 21 个月的涨幅，而兜底价会被当成真实行情展示给用户。
+        现在：
+
+        - 窗口 = 数据里最新价往前推 12 个月，跨年不失效；
+          不足 12 个月时 label 如实说明实际长度；
+        - 「高低振幅」= (期间最高 − 期间最低) / 最低，**不是波动率**；
+        - 库里没有任何历史价时返回 None（不造数）。
+        """
         # 获取实时金价（带缓存）
         realtime_info = self.get_realtime_price_info()
         if not realtime_info:
             return None
-        
+
+        window = compute_price_window(self.db)
+        if window is None:
+            logger.warning("[GoldService] 数据库里没有任何金价，统计不可用")
+            return None
+
         current_price = realtime_info["price"]
-        
-        # 获取 2025 年起始价（确保有默认值）
-        start_price = self.get_2025_start_price()
-        
-        # 计算年涨幅
-        ytd_return = ((current_price - start_price) / start_price * 100)
-        
-        # 获取 2025 年所有历史数据
-        start_of_2025 = date(2025, 1, 1)
-        prices_2025 = self.db.query(GoldPrice).filter(
-            GoldPrice.date >= start_of_2025
-        ).all()
-        
-        if prices_2025:
-            # 使用每日最高价计算期间最高，使用每日最低价计算期间最低
-            high_prices = [p.high_price for p in prices_2025 if p.high_price]
-            low_prices = [p.low_price for p in prices_2025 if p.low_price]
-            close_prices = [p.close_price for p in prices_2025]
-            
-            # 将当前实时价格也加入计算
-            all_highs = high_prices + [current_price]
-            all_lows = low_prices + [current_price]
-            
-            max_price = max(all_highs)
-            min_price = min(all_lows)
-            
-            # 判断最高价是历史数据还是当前实时价格
-            if max_price == current_price:
-                max_date = timeutil.today_str()
-            else:
-                max_price_obj = max(prices_2025, key=lambda x: x.high_price or 0)
-                max_date = max_price_obj.date.strftime("%Y-%m-%d")
-            
-            # 判断最低价是历史数据还是当前实时价格
-            if min_price == current_price:
-                min_date = timeutil.today_str()
-            else:
-                min_price_obj = min(prices_2025, key=lambda x: x.low_price or float('inf'))
-                min_date = min_price_obj.date.strftime("%Y-%m-%d")
-        else:
-            max_price = current_price
-            min_price = start_price
-            max_date = timeutil.today_str()
-            min_date = "2025-01-02"
-        
+        start_price = window.start_price
+        window_return = (
+            (current_price - start_price) / start_price * 100 if start_price else 0.0
+        )
+
+        # 实时价可能高于/低于窗口内的极值；严格越界时才把日期记到今天，
+        # 相等时保留真实的历史极值日期（避免把旧高点标成「今天」）。
+        max_price = max(window.high, current_price)
+        min_price = min(window.low, current_price)
+        max_date = (
+            timeutil.today_str()
+            if max_price > window.high
+            else window.high_date.strftime("%Y-%m-%d")
+        )
+        min_date = (
+            timeutil.today_str()
+            if min_price < window.low
+            else window.low_date.strftime("%Y-%m-%d")
+        )
+
         # 计算市场状态
         previous_close = realtime_info["previous_close"]
         market_status = self._calculate_market_status(
-            current_price, previous_close, ytd_return, max_price, min_price
+            current_price, previous_close, window_return, max_price, min_price
         )
-        
+
         return {
             "current_price": round(current_price, 2),
             "start_price": round(start_price, 2),
-            "ytd_return": round(ytd_return, 2),
+            "window_label": window.label,
+            "window_start": window.window_start.isoformat(),
+            "window_end": window.window_end.isoformat(),
+            "window_return": round(window_return, 2),
             "max_price": round(max_price, 2),
             "min_price": round(min_price, 2),
             "max_date": max_date,
             "min_date": min_date,
-            "volatility": round(((max_price - min_price) / min_price * 100), 1),
+            # 「振幅」= 期间最高与最低之差占最低的百分比。
+            # 不是收益率标准差（波动率），也不是年化值。
+            "amplitude": round(
+                ((max_price - min_price) / min_price * 100) if min_price else 0.0, 1
+            ),
             "market_status": market_status["status"],
             "market_status_desc": market_status["description"],
             "updated_at": realtime_info["updated_at"],
             # 数据来源与新鲜度：前端据此决定显示「实时」还是「历史数据」。
-            # 原先这个字段既没进响应模型、也没人读，属于白算。
             "data_source": realtime_info.get("source_name")
             or realtime_info.get("source", "未知"),
             "is_realtime": realtime_info.get("source") != "database",
@@ -322,17 +316,17 @@ class GoldService:
         self, 
         current_price: float, 
         previous_close: float,
-        ytd_return: float,
+        window_return: float,
         max_price: float,
         min_price: float
     ) -> Dict[str, str]:
-        """计算市场状态"""
+        """计算市场状态（阈值口径 = 滚动窗口涨跌幅，不再叫「年涨幅」）。"""
         daily_change = ((current_price - previous_close) / previous_close * 100) if previous_close else 0
         distance_from_high = ((max_price - current_price) / max_price * 100) if max_price else 0
         
-        if daily_change > 1 and ytd_return > 20:
+        if daily_change > 1 and window_return > 20:
             return {"status": "强势上涨", "description": "牛市延续"}
-        elif daily_change > 0 and ytd_return > 10:
+        elif daily_change > 0 and window_return > 10:
             return {"status": "上涨", "description": "趋势向好"}
         elif -1 <= daily_change <= 1:
             if distance_from_high < 3:
@@ -341,7 +335,7 @@ class GoldService:
                 return {"status": "震荡", "description": "方向不明"}
         elif daily_change < 0 and distance_from_high < 5:
             return {"status": "回调", "description": "正常调整"}
-        elif daily_change < -1 or ytd_return < 0:
+        elif daily_change < -1 or window_return < 0:
             return {"status": "下跌", "description": "短期承压"}
         else:
             return {"status": "震荡", "description": "观望为主"}

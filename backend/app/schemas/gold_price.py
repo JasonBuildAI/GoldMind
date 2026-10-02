@@ -16,12 +16,18 @@ class CorrelationDataResponse(BaseModel):
 class GoldStatsResponse(BaseModel):
     current_price: float
     start_price: float
-    ytd_return: float
+    # 窗口口径：滚动 12 个月（不足时 window_label 如实说明实际跨度）。
+    window_label: str
+    window_start: str
+    window_end: str
+    # 窗口涨跌幅 = (窗口末收盘 − 窗口首收盘) / 窗口首收盘。
+    window_return: float
     max_price: float
     min_price: float
     max_date: str
     min_date: str
-    volatility: float
+    # 高低振幅 = (期间最高 − 期间最低) / 期间最低。**不是波动率**，也非年化。
+    amplitude: float
     market_status: str
     market_status_desc: str
     updated_at: str

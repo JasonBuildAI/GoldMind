@@ -61,7 +61,7 @@
 | `GET` | `/api/gold/quant/predictions` | 量化预测：方向、上行概率、目标价与逐因子贡献。 |
 | `POST` | `/api/gold/quant/refresh` | 立即抓取因子、重算预测并追加一次回测（耗时数十秒，已按付费档限流）。 （**重操作**，限流更严） |
 | `GET` | `/api/gold/quant/research` | 研究页：技能总览、可靠性分桶、覆盖率、分段成绩、因子拆解与预注册裁决。 |
-| `GET` | `/api/gold/stats` | 获取 2025 年至今的金价统计（当前价、涨跌幅、波动区间等）。 |
+| `GET` | `/api/gold/stats` | 获取滚动窗口（默认近 12 个月）的金价统计（当前价、涨跌幅、高低振幅等）。 |
 
 ### 其他
 
@@ -75,7 +75,7 @@
 ## 响应字段以代码为准
 
 各接口的响应模型定义在 `backend/app/schemas/`，字段名请以那里为准。
-举例：`GET /api/gold/stats` 返回的是 `ytd_return` 与 `volatility`，
-而不是早期文档里写的 `ytd_change` 与 `volatility_range`。
+举例：`GET /api/gold/stats` 返回 `window_return`（滚动窗口涨跌幅）与
+`amplitude`（高低振幅，**不是波动率**）；窗口长度见同响应里的 `window_label`。
 
 前端对应的类型定义在 `app/src/services/api.ts`，两侧必须保持一致。

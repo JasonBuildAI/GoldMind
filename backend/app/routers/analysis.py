@@ -316,18 +316,14 @@ async def get_investment_advice_analysis(
     from app.services.bullish_factor_service import BullishFactorService
     from app.services.bearish_factor_service import BearishFactorService
     from app.services.institution_prediction_service import InstitutionPredictionService
-    from app.services.gold_service import GoldService
+    from app.services.gold_service import GoldService, format_market_status
 
     # 获取市场状态
     gold_service = GoldService(db)
     # get_statistics() 在既无实时行情又无历史数据时返回 None，这里必须兜底，
     # 否则下面取字段会抛 AttributeError 让接口直接 500。
     stats = gold_service.get_statistics() or {}
-    market_status = (
-        f"当前金价: ${stats.get('current_price', 0):.2f}, "
-        f"2025年至今涨幅: {stats.get('ytd_return', 0):+.2f}%, "
-        f"波动区间: {stats.get('volatility', 0):.2f}%"
-    )
+    market_status = format_market_status(stats)
 
     # 获取看涨因子
     bullish_service = BullishFactorService(db)
@@ -368,18 +364,14 @@ async def refresh_investment_advice_analysis(db: Session = Depends(get_db)):
     from app.services.bullish_factor_service import BullishFactorService
     from app.services.bearish_factor_service import BearishFactorService
     from app.services.institution_prediction_service import InstitutionPredictionService
-    from app.services.gold_service import GoldService
+    from app.services.gold_service import GoldService, format_market_status
 
     # 获取市场状态
     gold_service = GoldService(db)
     # get_statistics() 在既无实时行情又无历史数据时返回 None，这里必须兜底，
     # 否则下面取字段会抛 AttributeError 让接口直接 500。
     stats = gold_service.get_statistics() or {}
-    market_status = (
-        f"当前金价: ${stats.get('current_price', 0):.2f}, "
-        f"2025年至今涨幅: {stats.get('ytd_return', 0):+.2f}%, "
-        f"波动区间: {stats.get('volatility', 0):.2f}%"
-    )
+    market_status = format_market_status(stats)
 
     # 获取看涨因子（强制刷新）
     bullish_service = BullishFactorService(db)
@@ -434,18 +426,14 @@ async def get_market_summary_analysis(
     from app.services.bullish_factor_service import BullishFactorService
     from app.services.bearish_factor_service import BearishFactorService
     from app.services.institution_prediction_service import InstitutionPredictionService
-    from app.services.gold_service import GoldService
+    from app.services.gold_service import GoldService, format_market_status
 
     # 获取市场状态
     gold_service = GoldService(db)
     # get_statistics() 在既无实时行情又无历史数据时返回 None，这里必须兜底，
     # 否则下面取字段会抛 AttributeError 让接口直接 500。
     stats = gold_service.get_statistics() or {}
-    market_status = (
-        f"当前金价: ${stats.get('current_price', 0):.2f}, "
-        f"2025年至今涨幅: {stats.get('ytd_return', 0):+.2f}%, "
-        f"波动区间: {stats.get('volatility', 0):.2f}%"
-    )
+    market_status = format_market_status(stats)
 
     # 获取看涨因子
     bullish_service = BullishFactorService(db)
@@ -486,18 +474,14 @@ async def refresh_market_summary_analysis(db: Session = Depends(get_db)):
     from app.services.bullish_factor_service import BullishFactorService
     from app.services.bearish_factor_service import BearishFactorService
     from app.services.institution_prediction_service import InstitutionPredictionService
-    from app.services.gold_service import GoldService
+    from app.services.gold_service import GoldService, format_market_status
 
     # 获取市场状态
     gold_service = GoldService(db)
     # get_statistics() 在既无实时行情又无历史数据时返回 None，这里必须兜底，
     # 否则下面取字段会抛 AttributeError 让接口直接 500。
     stats = gold_service.get_statistics() or {}
-    market_status = (
-        f"当前金价: ${stats.get('current_price', 0):.2f}, "
-        f"2025年至今涨幅: {stats.get('ytd_return', 0):+.2f}%, "
-        f"波动区间: {stats.get('volatility', 0):.2f}%"
-    )
+    market_status = format_market_status(stats)
 
     # 获取看涨因子（强制刷新）
     bullish_service = BullishFactorService(db)

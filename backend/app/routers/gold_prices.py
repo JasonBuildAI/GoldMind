@@ -217,7 +217,7 @@ async def get_dollar_realtime():
 @router.get("/stats", response_model=GoldStatsResponse)
 async def get_gold_stats():
     # 在线程池中执行同步数据库操作
-    """获取 2025 年至今的金价统计（当前价、涨跌幅、波动区间等）。"""
+    """获取滚动窗口（默认近 12 个月）的金价统计（当前价、涨跌幅、高低振幅等）。"""
     def fetch_stats():
         with get_db_context() as db:
             service = GoldService(db)

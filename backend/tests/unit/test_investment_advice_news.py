@@ -19,7 +19,7 @@
 其余四个服务用的是 `NewsService.get_recent_news()`（按 `published_at`），
 这里现在也统一走它。
 """
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 
@@ -86,3 +86,37 @@ def test_respects_the_limit(db_session):
     result = InvestmentAdviceAnalyzer()._fetch_recent_news(db_session, hours=24)
 
     assert len(result) == 20, f"应当只取 20 条，实际 {len(result)}"
+
+
+# --------------------------------------------------------------------------- #
+# 价格窗口：滚动 12 个月，命名如实
+# --------------------------------------------------------------------------- #
+@pytest.mark.integration
+def test_window_block_uses_a_rolling_window_not_a_hardcoded_year(db_session):
+    """拼给 LLM 的价格块必须是滚动窗口，且不许再出现「波动区间 / 2025年至今」。
+
+    数据停在 2025-06-30 而不是「今天」：窗口应当锚定这一行，而不是运行日；
+    这正是原来写死 `datetime(2025, 1, 1)` 时做不到的事。
+    """
+    from app.models.gold_price import GoldPrice
+
+    for day, close in [("2024-06-15", 600.0), ("2024-07-01", 700.0), ("2025-06-30", 900.0)]:
+        db_session.add(GoldPrice(date=date.fromisoformat(day), close_price=close))
+    db_session.commit()
+
+    analyzer = InvestmentAdviceAnalyzer()
+    window = analyzer._fetch_window_data(db_session)
+    block = analyzer._format_window_block(window)
+
+    assert window.window_end == date(2025, 6, 30)
+    assert "近 12 个月" in block
+    assert "+28.57%" in block                 # (900 − 700) / 700
+    assert "非波动率" in block
+    assert "波动区间" not in block
+    assert "2025年至今" not in block
+
+
+@pytest.mark.integration
+def test_window_data_is_none_when_the_database_is_empty(db_session):
+    """没有行情就返回 None，让 prompt 如实写「暂无行情数据」而不是造数。"""
+    assert InvestmentAdviceAnalyzer()._fetch_window_data(db_session) is None

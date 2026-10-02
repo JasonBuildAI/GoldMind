@@ -219,10 +219,15 @@ def test_full_user_journey(client, seed_gold_prices, seed_news, smart_llm):
     # 最新收盘 2690（2600 + 10*9），起始 2600
     assert stats["current_price"] == 2690.0
     assert stats["start_price"] == 2600.0
-    assert stats["ytd_return"] == pytest.approx(3.46, abs=0.01)
+    assert stats["window_return"] == pytest.approx(3.46, abs=0.01)
+    # 只有 10 天数据，必须如实标注「不足 12 个月」，不许假装满窗
+    assert stats["window_label"].startswith("全部可得数据")
+    assert "不足 12 个月" in stats["window_label"]
     # 最高 = max(high) = 2695；最低 = min(low) = 2595
     assert stats["max_price"] == 2695.0
     assert stats["min_price"] == 2595.0
+    # 振幅 =(最高−最低)/最低 =(2695−2595)/2595 ≈ 3.85%，接口保留 1 位小数
+    assert stats["amplitude"] == pytest.approx(3.9, abs=0.05)
     assert stats["market_status"]
 
     correlation = client.get("/api/gold/prices/correlation").json()

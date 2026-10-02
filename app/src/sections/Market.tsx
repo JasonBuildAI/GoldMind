@@ -182,8 +182,8 @@ export default function Market() {
             <Quote
               label="纽约黄金"
               value={formatUsd(stats.current_price)}
-              change={stats.ytd_return}
-              changeNote="年初至今"
+              change={stats.window_return}
+              changeNote={`${stats.window_label}涨跌`}
               meta={`${stats.data_source} · 数据时间 ${displayStamp(stats.updated_at) ?? '未提供'}`}
               title={stats.data_source}
             />
@@ -202,7 +202,7 @@ export default function Market() {
             )}
 
             <div className="panel">
-              <h3 className="panel__title">关键数据</h3>
+              <h3 className="panel__title">关键数据（{stats.window_label}）</h3>
               <dl className="metrics">
                 <div>
                   <dt>期间最高</dt>
@@ -215,9 +215,9 @@ export default function Market() {
                   <dd className="metrics__note">{stats.min_date}</dd>
                 </div>
                 <div>
-                  <dt>波动区间</dt>
-                  <dd>{formatShare(stats.volatility)}</dd>
-                  <dd className="metrics__note">期间最高与最低之差</dd>
+                  <dt>高低振幅</dt>
+                  <dd>{formatShare(stats.amplitude)}</dd>
+                  <dd className="metrics__note">(最高−最低)/最低，非波动率</dd>
                 </div>
                 <div>
                   <dt>市场状态</dt>

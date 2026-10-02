@@ -61,7 +61,7 @@ The running service also serves interactive documentation at `http://localhost:8
 | `GET` | `/api/gold/quant/predictions` | Quant forecast: direction, upside probability, target price and per-factor contributions. |
 | `POST` | `/api/gold/quant/refresh` | Fetch factors, recompute predictions and append one backtest run now (takes tens of seconds). (**heavy operation**, stricter rate limit) |
 | `GET` | `/api/gold/quant/research` | Research page: skill overview, reliability bins, coverage, regime scores, factor breakdown and the pre-registered verdict. |
-| `GET` | `/api/gold/stats` | Gold price statistics since 2025 (current price, return, volatility range, ...). |
+| `GET` | `/api/gold/stats` | Rolling 12-month gold price statistics (current price, window return, high-low amplitude, ...). |
 
 ### other
 
@@ -75,7 +75,7 @@ The running service also serves interactive documentation at `http://localhost:8
 ## Response fields follow the code
 
 Response models live in `backend/app/schemas/`; field names follow that source.
-For example `GET /api/gold/stats` returns `ytd_return` and `volatility`, not the
-`ytd_change` / `volatility_range` an early hand-written doc claimed.
+For example `GET /api/gold/stats` returns `window_return` (rolling-window change)
+and `amplitude` (high-low range, **not volatility**); see `window_label` for the window length.
 
 The matching frontend types live in `app/src/services/api.ts`; the two must agree.

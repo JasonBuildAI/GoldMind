@@ -163,7 +163,10 @@ def is_trading_day(date=None) -> bool:
 
 async def calculate_period_statistics(db, today: date) -> dict:
     """
-    计算期间统计信息（期间最高、期间最低、波动区间）
+    计算**全历史**统计信息（自最早数据至今：期间最高、期间最低、高低振幅）。
+
+    注意口径：这里是全历史，不是滚动窗口；「高低振幅」=(最高−最低)/最低，
+    不是波动率也不是年化值。展示与日志里都必须写清楚这个范围。
     
     Args:
         db: 数据库会话
@@ -186,10 +189,10 @@ async def calculate_period_statistics(db, today: date) -> dict:
     period_high = result.period_high or 0
     period_low = result.period_low or 0
     
-    # 计算波动区间（百分比）
-    volatility_range = 0
+    # 计算高低振幅（百分比）：(最高−最低)/最低，非波动率、非年化
+    amplitude_range = 0
     if period_low > 0:
-        volatility_range = ((period_high - period_low) / period_low) * 100
+        amplitude_range = ((period_high - period_low) / period_low) * 100
     
     # 获取期间最高和最低对应的日期
     high_date_record = db.query(GoldPrice).filter(
@@ -205,7 +208,7 @@ async def calculate_period_statistics(db, today: date) -> dict:
         'period_high_date': high_date_record.date if high_date_record else None,
         'period_low': period_low,
         'period_low_date': low_date_record.date if low_date_record else None,
-        'volatility_range': round(volatility_range, 2)
+        'amplitude_range': round(amplitude_range, 2)
     }
     
     return stats
@@ -226,7 +229,7 @@ async def update_prices_job():
     1. 判断是否为交易日（周末跳过）
     2. 获取当日完整OHLC数据（开盘价、最高价、最低价、收盘价）
     3. 保存到数据库，如果已有记录则更新
-    4. 重新计算期间统计（期间最高、期间最低、波动区间）
+    4. 重新计算全历史统计（期间最高、期间最低、高低振幅）
     """
     from datetime import datetime, date
 
@@ -317,16 +320,16 @@ async def update_prices_job():
             db.commit()
             logger.info(f"✅ 金价数据已成功保存到数据库: OHLC (${open_price:.2f}, ${high_price:.2f}, ${low_price:.2f}, ${price:.2f})")
             
-            # 5. 重新计算期间统计
-            logger.info("开始计算期间统计信息...")
+            # 5. 重新计算全历史统计
+            logger.info("开始计算全历史统计信息...")
             stats = await calculate_period_statistics(db, today)
             
             logger.info("=" * 60)
-            logger.info("📊 期间统计信息（每日更新）")
+            logger.info("📊 全历史统计信息（自最早数据至今，每日更新）")
             logger.info("=" * 60)
             logger.info(f"  期间最高: ${stats['period_high']:.2f} ({stats['period_high_date']})")
             logger.info(f"  期间最低: ${stats['period_low']:.2f} ({stats['period_low_date']})")
-            logger.info(f"  波动区间: {stats['volatility_range']:.2f}%")
+            logger.info(f"  高低振幅（非波动率）: {stats['amplitude_range']:.2f}%")
             logger.info("=" * 60)
             
             # 这里原本还会把统计结果写进 cache/period_statistics.json，

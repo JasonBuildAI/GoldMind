@@ -49,7 +49,8 @@ async def test_calculate_period_statistics(db_session, seed_gold_prices):
     assert stats["period_low"] == 2595.0
     assert stats["period_high_date"] is not None
     assert stats["period_low_date"] is not None
-    assert stats["volatility_range"] == pytest.approx(1.93, abs=0.05)
+    # 口径是「高低振幅」：(最高−最低)/最低。
+    assert stats["amplitude_range"] == pytest.approx(1.93, abs=0.05)
 
 
 @pytest.mark.integration
@@ -61,7 +62,7 @@ async def test_calculate_period_statistics_on_empty_database(db_session):
 
     assert stats["period_high"] == 0
     assert stats["period_low"] == 0
-    assert stats["volatility_range"] == 0
+    assert stats["amplitude_range"] == 0
 
 
 # --------------------------------------------------------------------------- #

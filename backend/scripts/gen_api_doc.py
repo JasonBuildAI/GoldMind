@@ -3,8 +3,7 @@
 
 **为什么要生成而不是手写**：手写的接口文档已经与实现严重脱节 ——
 前缀写成 `/api/analysis/*`（实际全在 `/api/gold` 下）、
-`/gold/stats` 的字段名写成 `ytd_change`/`volatility_range`
-（实际返回 `ytd_return`/`volatility`）、限流规则也与代码不符。
+`/gold/stats` 的字段名与实际响应不一致、限流规则也与代码不符。
 手写文档会持续漂移；从路由表生成则不会。
 
 **为什么两份一起生成**：英文版若靠人工翻译，第一天就会与中文版分叉。
@@ -146,7 +145,7 @@ SUMMARY_EN: dict[str, str] = {
         "factor breakdown and the pre-registered verdict."
     ),
     "GET /api/gold/stats": (
-        "Gold price statistics since 2025 (current price, return, volatility range, ...)."
+        "Rolling 12-month gold price statistics (current price, window return, high-low amplitude, ...)."
     ),
     "GET /": "Service information and documentation entry points.",
     "GET /health": "Enhanced health check covering every critical dependency.",
@@ -191,8 +190,8 @@ LABELS = {
         "fields_title": "## 响应字段以代码为准",
         "fields": [
             "各接口的响应模型定义在 `backend/app/schemas/`，字段名请以那里为准。",
-            "举例：`GET /api/gold/stats` 返回的是 `ytd_return` 与 `volatility`，",
-            "而不是早期文档里写的 `ytd_change` 与 `volatility_range`。",
+            "举例：`GET /api/gold/stats` 返回 `window_return`（滚动窗口涨跌幅）与",
+            "`amplitude`（高低振幅，**不是波动率**）；窗口长度见同响应里的 `window_label`。",
             "",
             "前端对应的类型定义在 `app/src/services/api.ts`，两侧必须保持一致。",
         ],
@@ -228,8 +227,8 @@ LABELS = {
         "fields_title": "## Response fields follow the code",
         "fields": [
             "Response models live in `backend/app/schemas/`; field names follow that source.",
-            "For example `GET /api/gold/stats` returns `ytd_return` and `volatility`, not the",
-            "`ytd_change` / `volatility_range` an early hand-written doc claimed.",
+            "For example `GET /api/gold/stats` returns `window_return` (rolling-window change)",
+            "and `amplitude` (high-low range, **not volatility**); see `window_label` for the window length.",
             "",
             "The matching frontend types live in `app/src/services/api.ts`; the two must agree.",
         ],

@@ -15,12 +15,15 @@ function stats(overrides: Partial<GoldStats> = {}): GoldStats {
   return {
     current_price: 2700,
     start_price: 2600,
-    ytd_return: 3.85,
+    window_label: '近 12 个月',
+    window_start: '2025-10-02',
+    window_end: '2026-10-01',
+    window_return: 3.85,
     max_price: 2750,
     min_price: 2580,
     max_date: '2025-06-01',
     min_date: '2025-01-02',
-    volatility: 6.59,
+    amplitude: 6.59,
     market_status: '上涨',
     market_status_desc: '趋势向好',
     updated_at: '2026-02-03T10:00:00',
@@ -94,12 +97,25 @@ describe('Market 不编造数据', () => {
 
 describe('Market 的涨跌表达', () => {
   it('涨跌同时给出符号与文字，不只靠颜色', () => {
-    const { container } = renderMarket({ stats: stats({ ytd_return: 3.85 }) })
+    const { container } = renderMarket({ stats: stats({ window_return: 3.85 }) })
 
     const change = container.querySelector('.quote__change')
     expect(change).not.toBeNull()
     expect(change?.textContent).toContain('▲')
     expect(change?.textContent).toContain('涨')
     expect(change?.textContent).toContain('+3.85%')
+  })
+})
+
+describe('Market 的窗口口径', () => {
+  it('标注窗口长度，不把高低振幅叫成波动率', () => {
+    renderMarket({ stats: stats() })
+
+    expect(screen.getAllByText(/近 12 个月涨跌/).length).toBeGreaterThan(0)
+    expect(screen.getByText('关键数据（近 12 个月）')).toBeInTheDocument()
+    expect(screen.getByText('高低振幅')).toBeInTheDocument()
+    expect(screen.getByText('(最高−最低)/最低，非波动率')).toBeInTheDocument()
+    expect(screen.queryByText('波动区间')).not.toBeInTheDocument()
+    expect(screen.queryByText('年初至今')).not.toBeInTheDocument()
   })
 })

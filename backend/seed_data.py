@@ -207,7 +207,7 @@ def fetch_gold_from_eastmoney() -> Optional[List[Dict]]:
                     'close_price': safe_float(parts[2]),
                     # 东财 klines 的字段顺序是 date,open,close,HIGH,LOW,volume,amount。
                     # 原实现把 [3] 当最低价、[4] 当最高价，两者正好写反，
-                    # 导致最高价低于最低价，期间高低点与波动区间全部失真。
+                    # 导致最高价低于最低价，期间高低点与高低振幅全部失真。
                     'high_price': safe_float(parts[3]),
                     'low_price': safe_float(parts[4]),
                     'volume': int(safe_float(parts[5], 0)),
