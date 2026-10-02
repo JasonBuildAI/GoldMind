@@ -41,6 +41,7 @@ from app.services.quant.definitions import (  # noqa: E402
     FACTORS,
     HOLDOUT_START,
     HORIZONS,
+    MODEL_VERSION,
 )
 from app.services.quant.preregistered import (  # noqa: E402
     INTERVAL_NOMINAL,
@@ -347,7 +348,8 @@ def decide(rows: list[dict]) -> dict[str, dict]:
     """按预注册规则给出每个候选的裁决（留出期）。
 
     入选 = ≥3/5 个尺度过线，或目标尺度（250 日）过线且其它尺度对
-    「永远看多」的命中率差不低于 −2pp。全部落空 → 保留 ``quant-v4``。
+    「永远看多」的命中率差不低于 −2pp。全部落空 → 保留当前线上版本
+    （``definitions.MODEL_VERSION``，报告里按实际值打印，不写死在文案里）。
     """
     horizons = sorted({row["horizon_days"] for row in rows})
     index = {(row["candidate"], row["horizon_days"], row["period"]): row for row in rows}
@@ -524,7 +526,7 @@ def format_markdown(
         flags = "；".join(
             f"{horizon}:{_verdict_cell(verdict['flags'][horizon])}" for horizon in sorted(verdict["flags"])
         )
-        conclusion = "入选" if verdict["selected"] else "未过线（保留 v4）"
+        conclusion = "入选" if verdict["selected"] else "未过线（保留线上版本）"
         lines.append(
             f"| {candidate.key} | {flags} | {len(verdict['passed_scales'])}/{len(verdict['flags'])} | "
             f"{'是' if verdict['target_ok'] else '否'} | {'是' if verdict['others_ok'] else '否'} | {conclusion} |"
@@ -535,7 +537,10 @@ def format_markdown(
         (
             f"**裁决：候选 {', '.join(selected)} 过线**（落地前需按 spec 复核）。"
             if selected
-            else "**裁决：无候选过线 → 保留 `quant-v4`，页面与文档标注「无统计优势」。**"
+            else (
+                f"**裁决：无候选过线 → 保留 `{MODEL_VERSION}`，"
+                "页面与文档标注「无统计优势」。**"
+            )
         ),
         "",
         "## 候选口径",

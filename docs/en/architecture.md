@@ -430,8 +430,11 @@ direction hit rates are 56.3% / 62.2% / 68.2% / 83.3% / 100%, matching "always l
 (+0.0pp), with a negative Brier skill score — the model has no directional edge in the holdout. The
 1-year horizon is the number-one problem: interval-width calibration cannot repair the centre (μ)
 bias, and more coverage does not buy better direction. The pre-registered verdict of 2026-10-02:
-17 candidates × 5 horizons, none passed, so `quant-v4` is **kept and labelled "no statistical
-edge"** (details in `docs/specs/2026-10-02-研究台报告.md`, rules in `preregistered.py`).
+17 candidates × 5 horizons, none passed, so the live version is **kept and labelled "no
+statistical edge"** (that was `quant-v4`; the second round fixed the ACI mismatch and moved it to
+`quant-v5`, and the third-round C2 candidate was likewise retired by its pre-registered bar —
+details in `docs/specs/2026-10-02-研究台报告.md` and
+`docs/specs/2026-10-02-量化引擎第三轮预注册.md`, rules in `preregistered.py`).
 The page honestly shows coverage side by side with the "always long / momentum" benchmarks
 (see section 4 of docs/00-产品方向.md).
 Guard: `tests/unit/quant/test_engine.py` (four criteria — direction / probability / σ / empirical

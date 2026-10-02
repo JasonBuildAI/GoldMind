@@ -202,7 +202,8 @@ def test_research_verdict_separates_undecidable_scales_from_failures():
     assert verdict["status"] == "no_edge"
     assert "不可判定" in verdict["detail"]
     assert "250 日" in verdict["detail"]
-    assert "保留 quant-v4" in verdict["detail"]
+    # 版本号不写死在断言里：它是 MODEL_VERSION 的镜像，升版时这里应当自动跟着走
+    assert f"保留 {MODEL_VERSION}" in verdict["detail"]
     # 判不了的尺度必须顺带说清还要等多久，而不是只丢一句「样本不足」
     assert "还需约 4971 个交易日" in verdict["detail"]
     # 可判定的尺度不许被顺带标成不可判定

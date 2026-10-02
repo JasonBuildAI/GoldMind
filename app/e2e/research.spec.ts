@@ -16,7 +16,7 @@ test.describe('GoldMind 研究页端到端', () => {
     expect(body.holdout_start).toBe('2023-10-02')
     // 裁决窗口自成一列：封板日之后才是干净的样本外，页面必须把这段摊开
     expect(body.active_holdout_start).toBe('2026-10-02')
-    expect(body.model_version).toBe('quant-v4')
+    expect(body.model_version).toBe('quant-v5')
     expect(['ok', 'unavailable']).toContain(body.status)
 
     if (body.status === 'ok') {

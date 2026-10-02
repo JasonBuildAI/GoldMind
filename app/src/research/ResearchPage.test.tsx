@@ -41,7 +41,7 @@ function period(overrides: Partial<ResearchPeriod> = {}): ResearchPeriod {
 
 function response(): QuantResearchResponse {
   return {
-    model_version: 'quant-v4',
+    model_version: 'quant-v5',
     status: 'ok',
     reason: null,
     as_of: '2026-10-01',
@@ -52,7 +52,7 @@ function response(): QuantResearchResponse {
     verdict: {
       status: 'no_edge',
       label: '无统计优势',
-      detail: '留出期没有尺度满足预注册规则 ①/②，按预注册规则保留 quant-v4。',
+      detail: '留出期没有尺度满足预注册规则 ①/②，按预注册规则保留 quant-v5。',
     },
     horizons: [
       {
@@ -122,7 +122,7 @@ describe('ResearchPage', () => {
     expect(screen.getAllByText('56.3%').length).toBeGreaterThan(0)
     expect(screen.getAllByText('78.9%').length).toBeGreaterThan(0)
     // 模型版本与样本外起点是裁决的关键字段
-    expect(screen.getAllByText('quant-v4').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('quant-v5').length).toBeGreaterThan(0)
     expect(screen.getByText('2023-10-02')).toBeInTheDocument()
     // 裁决窗口：起点、还差多少个交易日、以及「尚不可判」的状态
     expect(screen.getByTestId('research-forward-window')).toBeInTheDocument()
