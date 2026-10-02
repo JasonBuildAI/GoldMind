@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 
 import type { ApiMetadata } from '@/lib/placeholder';
 
@@ -17,14 +18,102 @@ const api = axios.create({
   },
 });
 
-// 请求重试配置
-const MAX_RETRIES = 2;
-const RETRY_DELAY = 1000;
+// --------------------------------------------------------------------------- #
+// 重试与在飞去重
+// --------------------------------------------------------------------------- #
+//
+// 为什么要对 429 / 5xx 也重试：限流是**瞬态**失败 —— 窗口滑过去就好。
+// 旧实现只重试「连响应都没拿到」的错误，429 直接判死：看板整片红，
+// 过一会儿刷新又好了。退避 + 抖动把重试错峰，429 优先听服务端的
+// Retry-After（它知道窗口还有多久），比我们拍一个间隔准。
+const MAX_RETRIES = 2; // 首发之外最多再试 2 次 = 最多 3 次尝试
+const BASE_RETRY_DELAY_MS = 500;
+const MAX_RETRY_DELAY_MS = 10000;
+
+type RetryConfig = AxiosRequestConfig & { retry?: number };
+
+/** 429 优先按 Retry-After（秒）等待；普通失败走指数退避 + 抖动。 */
+function expectedRetryDelayMs(error: {
+  response?: {
+    status?: number;
+    headers?: Record<string, unknown>;
+    data?: { retry_after?: number };
+  };
+}, retryNumber: number): number {
+  const headers = error.response?.headers ?? {};
+  if (error.response?.status === 429) {
+    const raw =
+      headers['retry-after'] ??
+      headers['Retry-After'] ??
+      error.response?.data?.retry_after;
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
+    }
+  }
+  const backoff = Math.min(BASE_RETRY_DELAY_MS * 2 ** (retryNumber - 1), MAX_RETRY_DELAY_MS);
+  // ±25% 抖动：多个区块同时重试时错开，别第二次又一起撞上限流窗口
+  return backoff * (0.75 + Math.random() * 0.5);
+}
+
+/**
+ * 只有幂等请求才允许重试 —— 并且要排除「会触发付费 LLM 分析」的 GET。
+ *
+ * `GET ...-ai?refresh=true` 与 `POST .../refresh` 一样会真花钱：重试可能在
+ * 服务端其实已经跑完的情况下再买一次。后端限流就按这条口径把两者归进
+ * 同一档（见 `backend/app/main.py` 的 `_is_ai_path`），前端保持同一判据。
+ */
+function isRetryableRequest(config: RetryConfig): boolean {
+  const method = (config.method || 'get').toLowerCase();
+  if (!(method === 'get' || method === 'head' || method === 'options')) {
+    return false;
+  }
+  return !/([?&])refresh=(true|1)(&|$)/i.test(config.url || '');
+}
+
+/** 网络层失败、超时、408/429/5xx 可重试；501 与其余 4xx 是确定性失败。 */
+function isRetryableError(error: { code?: string; response?: { status?: number } }): boolean {
+  if (!error.response) {
+    return true; // 无响应：断网 / 连接被拒 / CORS 预检失败
+  }
+  if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+    return true;
+  }
+  const status = error.response.status ?? 0;
+  if (status === 408 || status === 425 || status === 429) {
+    return true;
+  }
+  return status >= 500 && status <= 599 && status !== 501;
+}
+
+/**
+ * 同一时刻、同一 URL 的 GET 只发一次。
+ *
+ * 开发态 StrictMode 会把 effect 跑两遍，轮询与手动刷新也会撞车；
+ * 请求量翻倍后最容易顶到限流上限。并发的调用方共享同一个 Promise
+ * （成功/失败结果一致），请求结束后立刻从表里清掉。
+ */
+const inflightGets = new Map<string, Promise<unknown>>();
+
+function getJson<T>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  const key = `${config?.baseURL ?? API_BASE_URL}|${config?.timeout ?? ''}|${url}`;
+  const existing = inflightGets.get(key);
+  if (existing) {
+    return existing as Promise<AxiosResponse<T>>;
+  }
+  const request = api.get<T>(url, config).finally(() => {
+    if (inflightGets.get(key) === request) {
+      inflightGets.delete(key);
+    }
+  });
+  inflightGets.set(key, request);
+  return request;
+}
 
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const config = error.config;
+    const config = error.config as RetryConfig | undefined;
 
     // 没有 config 就无法重试（例如请求还没构造完成就失败了）。
     // 原实现会继续往下执行 `config.retry = 0`，抛
@@ -40,26 +129,23 @@ api.interceptors.response.use(
       config.retry = 0;
     }
     
-    // 检查是否应该重试
-    //
-    // **只重试幂等请求。** POST 不重试：
-    // `POST /api/gold/*/refresh` 会真实触发一次**付费**的 LLM 分析，
+    // **只重试幂等且不含付费语义的请求。** POST /refresh 与
+    // GET ...?refresh=true 会真实触发一次**付费**的 LLM 分析：
     // 超时后重试可能在服务端其实已经跑完的情况下再跑一次，费用直接翻倍。
     // 后端那层 single_flight 只挡得住「同时进行」的那一次，
     // 挡不住「第一次已完成、第二次随后到达」。
-    const method = (config.method || 'get').toLowerCase();
-    const isIdempotent = method === 'get' || method === 'head' || method === 'options';
-
-    const shouldRetry = isIdempotent &&
-      config.retry < MAX_RETRIES && 
-      (!error.response || error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK');
+    const shouldRetry =
+      isRetryableRequest(config) && config.retry < MAX_RETRIES && isRetryableError(error);
     
     if (shouldRetry) {
       config.retry += 1;
-      console.warn(`API请求失败，正在重试 (${config.retry}/${MAX_RETRIES}):`, error.message);
+      const delay = expectedRetryDelayMs(error, config.retry);
+      console.warn(
+        `API 请求失败，${Math.round(delay)}ms 后重试 (${config.retry}/${MAX_RETRIES}):`,
+        error.message,
+      );
       
-      // 延迟后重试
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * config.retry));
+      await new Promise(resolve => setTimeout(resolve, delay));
       return api(config);
     }
     
@@ -129,17 +215,17 @@ export const goldApi = {
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     
-    const response = await api.get<DailyPrice[]>(`/api/gold/prices/daily?${params}`);
+    const response = await getJson<DailyPrice[]>(`/api/gold/prices/daily?${params}`);
     return response.data;
   },
 
   getCorrelation: async (days: number = 180): Promise<CorrelationData[]> => {
-    const response = await api.get<CorrelationData[]>(`/api/gold/prices/correlation?days=${days}`);
+    const response = await getJson<CorrelationData[]>(`/api/gold/prices/correlation?days=${days}`);
     return response.data;
   },
 
   getStats: async (): Promise<GoldStats> => {
-    const response = await api.get<GoldStats>('/api/gold/stats');
+    const response = await getJson<GoldStats>('/api/gold/stats');
     return response.data;
   },
 
@@ -152,7 +238,7 @@ export const goldApi = {
   },
 
   getDollarRealtime: async (): Promise<DollarRealtime> => {
-    const response = await api.get<DollarRealtime>('/api/gold/dollar-realtime');
+    const response = await getJson<DollarRealtime>('/api/gold/dollar-realtime');
     return response.data;
   },
 };
@@ -193,7 +279,7 @@ export interface BearishFactorsResponse {
 export const analysisApi = {
   getBullishFactors: async (refresh: boolean = false): Promise<BullishFactorsResponse> => {
     // AI 分析可能需要较长时间，设置 120 秒超时
-    const response = await api.get<BullishFactorsResponse>(`/api/gold/bullish-factors-ai?refresh=${refresh}`, {
+    const response = await getJson<BullishFactorsResponse>(`/api/gold/bullish-factors-ai?refresh=${refresh}`, {
       timeout: 120000,
     });
     return response.data;
@@ -209,7 +295,7 @@ export const analysisApi = {
 
   getBearishFactors: async (refresh: boolean = false): Promise<BearishFactorsResponse> => {
     // AI 分析可能需要较长时间，设置 120 秒超时
-    const response = await api.get<BearishFactorsResponse>(`/api/gold/bearish-factors-ai?refresh=${refresh}`, {
+    const response = await getJson<BearishFactorsResponse>(`/api/gold/bearish-factors-ai?refresh=${refresh}`, {
       timeout: 120000,
     });
     return response.data;
@@ -250,7 +336,7 @@ export interface InstitutionPredictionsResponse {
 export const institutionApi = {
   getInstitutionPredictions: async (refresh: boolean = false): Promise<InstitutionPredictionsResponse> => {
     // AI 分析可能需要较长时间，设置 120 秒超时
-    const response = await api.get<InstitutionPredictionsResponse>(`/api/gold/institution-predictions-ai?refresh=${refresh}`, {
+    const response = await getJson<InstitutionPredictionsResponse>(`/api/gold/institution-predictions-ai?refresh=${refresh}`, {
       timeout: 120000,
     });
     return response.data;
@@ -317,7 +403,7 @@ export interface InvestmentAdviceResponse {
 export const investmentAdviceApi = {
   getInvestmentAdvice: async (refresh: boolean = false): Promise<InvestmentAdviceResponse> => {
     // AI 分析可能需要较长时间，设置 120 秒超时
-    const response = await api.get<InvestmentAdviceResponse>(`/api/gold/investment-advice-ai?refresh=${refresh}`, {
+    const response = await getJson<InvestmentAdviceResponse>(`/api/gold/investment-advice-ai?refresh=${refresh}`, {
       timeout: 120000,
     });
     return response.data;
@@ -359,7 +445,7 @@ export interface MarketSummaryResponse {
 export const marketSummaryApi = {
   getMarketSummary: async (refresh: boolean = false): Promise<MarketSummaryResponse> => {
     // AI 分析可能需要较长时间，设置 120 秒超时
-    const response = await api.get<MarketSummaryResponse>(`/api/gold/market-summary-ai?refresh=${refresh}`, {
+    const response = await getJson<MarketSummaryResponse>(`/api/gold/market-summary-ai?refresh=${refresh}`, {
       timeout: 120000,
     });
     return response.data;
@@ -705,7 +791,7 @@ export const quantApi = {
     const url = category
       ? `/api/gold/quant/factors?category=${encodeURIComponent(category)}`
       : '/api/gold/quant/factors'
-    const response = await api.get<QuantFactorsResponse>(url)
+    const response = await getJson<QuantFactorsResponse>(url)
     return response.data
   },
 
@@ -713,23 +799,23 @@ export const quantApi = {
     const url = horizonDays
       ? `/api/gold/quant/predictions?horizon_days=${horizonDays}`
       : '/api/gold/quant/predictions'
-    const response = await api.get<QuantPredictionsResponse>(url)
+    const response = await getJson<QuantPredictionsResponse>(url)
     return response.data
   },
 
   getAccuracy: async (): Promise<QuantAccuracyResponse> => {
-    const response = await api.get<QuantAccuracyResponse>('/api/gold/quant/accuracy')
+    const response = await getJson<QuantAccuracyResponse>('/api/gold/quant/accuracy')
     return response.data
   },
 
   getMonitor: async (): Promise<QuantMonitorResponse> => {
-    const response = await api.get<QuantMonitorResponse>('/api/gold/quant/monitor')
+    const response = await getJson<QuantMonitorResponse>('/api/gold/quant/monitor')
     return response.data
   },
 
   // 研究页：技能总览 / 可靠性 / 因子拆解 / 预注册裁决；首次约数秒，后端缓存 1 小时
   getResearch: async (): Promise<QuantResearchResponse> => {
-    const response = await api.get<QuantResearchResponse>('/api/gold/quant/research', {
+    const response = await getJson<QuantResearchResponse>('/api/gold/quant/research', {
       timeout: 60000,
     })
     return response.data

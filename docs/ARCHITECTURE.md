@@ -180,6 +180,10 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 > 测试默认跑内存 SQLite；想验 MySQL 时用 `conftest.py` 的 `GOLDMIND_TEST_DATABASE_URL`
 > 开关拿同一套用例再跑一遍（指向独立的测试库，用例会清空所有表）。两者在枚举存储、
 > JSON 列与字符串比较大小写上都有差异。
+>
+> **硬护栏**（2026-10-02 事故后加）：该 URL 的库名必须含 `test`（SQLite 文件同理），
+> 否则测试在导入期就拒跑并点名库名 —— 用例会 `drop_all`，而事故现场正是它被指向了
+> 开发库 `gold_analysis`，一次会话删光 9 张业务表。实现见 `backend/tests/safety.py`。
 
 ---
 
@@ -287,6 +291,15 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 - **限流**：按客户端 IP 的滑动窗口；普通接口与「会调用 LLM」的接口分开计数，
   后者上限更严。`/health` 不限流。过期键会被清理，内存不会无界增长。
 - **CORS**：显式来源列表；若来源里出现 `*`，中间件会强制关闭凭证。
+- **失败传播**（2026-10-02 加固）：
+  - 缺库/缺表（MySQL 1146/1049、SQLite `no such table`）统一翻译成
+    **503 + `python init_db.py` 修复指引**，不再是裸 500；启动时做 schema 自检，
+    缺表打 ERROR。其余 SQL 错误仍是 500，不被这句指引掩盖。
+  - 前端对幂等 GET 的 **429 / 5xx / 网络错误**做指数退避（±25% 抖动）重试，最多 3 次
+    尝试；429 优先按 `Retry-After`（其次 body `retry_after`）等待。`POST` 与
+    `GET ...?refresh=true` 一律不重试 —— 它们可能触发一次付费 LLM 调用。
+  - 同一 URL 的在飞 GET 合并成一个请求（StrictMode 双挂载、轮询与手动刷新撞车不再
+    翻倍请求量）；看板轮询 30 秒一档、`document.hidden` 时暂停、恢复立即补一次。
 
 > 本项目**没有鉴权**。若要公开部署，请在反向代理层加访问控制，
 > 否则任何人都能触发会消耗 LLM 额度的 `/refresh` 接口。
@@ -323,7 +336,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 
 | 环节 | 位置 | 要点 |
 |---|---|---|
-| 数据源 | `sources/*.py` | 全部免费、无需密钥（含财政部 DTS 的 TGA、纽约联储 RRP、CFTC 未平仓量、Yahoo 的 USDCNY）；HTTP 客户端可注入，测试永不真出网 |
+| 数据源 | `sources/*.py` | 全部免费、无需密钥（含财政部 DTS 的 TGA、纽约联储 RRP、CFTC 未平仓量、Yahoo 的 USDCNY）；HTTP 客户端可注入，测试永不真出网。**外部行情源（Yahoo）失败时**，金价基准与美元因子改用本地 `gold_prices` / `dollar_index` 表兜底（来源如实标注「本地行情表…兜底」），只换数据来路，不改因子集与权重 |
 | 派生 | `derive.py` | 原始序列 → 因子值，单位与口径只在这一层固定 |
 | 落库 | `storage.py` | `factor_observations`，唯一约束 `(factor_key, obs_date)`，幂等；每次首见或回修同时向 `factor_observation_revisions` 追加一行（值没变不追加） |
 | 候选闸门 | `screen.py` + `scripts/screen_factors.py` | 新信息要进因子集必须过三道事先写死的检验：① 去均值后的 `z × h 日前瞻收益` 协方差做 Newey–West 单尾检验（滞后 h−1）且 p < α/整轮检验数、\|t\| ≥ 3；② ≥2 个尺度同号；③ 结论公布日之后的前向窗口确认。本模块**没有采纳权**：正向过线只能给「待前向确认」，反向显著（同一条 \|t\| 下限＋双侧 p）只登记成「反向假设」等闸门 ③，**不许当场翻号** |

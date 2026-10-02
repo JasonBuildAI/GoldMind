@@ -102,6 +102,16 @@ INCREMENTAL_LOOKBACK_DAYS = 10
 # 长历史，而不是永远只积累最近 3 个月。
 YAHOO_COVERAGE_KEYS = (BENCHMARK_KEY, "gvz", "gold_silver_ratio", "copper_gold_ratio")
 
+# 外部行情源（Yahoo）不可用时的本地兜底。主数据管道每个交易日把腾讯行情的
+# 纽约金价与美元指数写进 gold_prices / dollar_index 表；Yahoo 被限流或宕机时
+# （实测：连续回填后 Yahoo 会返回 YFRateLimitError: Too Many Requests），
+# 量化引擎不该因此整片「缺少黄金价格序列」—— 基准价、动量、季节性与美元因子
+# 都可以用本地日线照常算。只决定「数据从哪来」，不改因子集合/权重/变换。
+_LOCAL_PRICE_FALLBACKS = (
+    ("gold_close", BENCHMARK_KEY, "本地行情表（腾讯-纽约黄金；Yahoo 不可用时的兜底）"),
+    ("dxy", "dollar_index", "本地行情表（腾讯-美元指数；Yahoo 不可用时的兜底）"),
+)
+
 
 def source_label(name: str) -> str:
     return SOURCE_LABELS.get(name, name)
@@ -246,6 +256,58 @@ class SyncReport:
         }
 
 
+def _local_price_series(db: Session, raw_key: str) -> pd.Series:
+    """从本地行情表读一条「日期 → 收盘价」序列；空表返回空 Series。"""
+    from sqlalchemy import select
+
+    from app.models.gold_price import DollarIndex, GoldPrice
+
+    model = GoldPrice if raw_key == "gold_close" else DollarIndex
+    rows = db.execute(select(model.date, model.close_price).order_by(model.date)).all()
+    rows = [(row[0], float(row[1])) for row in rows if row[1] is not None]
+    if not rows:
+        return pd.Series(dtype="float64")
+    index = pd.DatetimeIndex([pd.Timestamp(day) for day, _ in rows])
+    return pd.Series([value for _, value in rows], index=index, name=raw_key)
+
+
+def _apply_local_price_fallbacks(
+    db: Session, raw: Dict[str, pd.Series], report: SyncReport
+) -> Dict[str, str]:
+    """外部行情源不可用时，用本地已同步日线兜底；返回 {序列名: 实际来源标签}。
+
+    报告里会多出一行 `local_prices`，且**不覆盖**外部源自己的 error 状态 ——
+    「Yahoo 不可用」与「本轮用了本地基准」两件事同时可见，不遮掩。
+    """
+    # 只在本轮**真的尝试过且失败**时兜底。源被节流跳过（未到期）的轮次里
+    # raw 本来就没有行情序列，那时注入本地数据会让「跳过」变成一次真实写入，
+    # 报告也会被污染成「有源可用」。
+    if report.source_status.get("yahoo", {}).get("status") != "error":
+        return {}
+
+    used: Dict[str, str] = {}
+    for raw_key, series_key, label in _LOCAL_PRICE_FALLBACKS:
+        current = raw.get(raw_key)
+        if current is not None and not current.empty:
+            continue
+        local = _local_price_series(db, raw_key)
+        if local.empty:
+            continue
+        raw[raw_key] = local
+        used[series_key] = label
+
+    if used:
+        report.source_status["local_prices"] = {
+            "status": "ok",
+            "label": "本地行情表（外部行情源不可用时的兜底）",
+            "note": "改用本地已同步日线：" + "、".join(sorted(used)),
+        }
+        logger.warning(
+            "[量化] 外部行情源不可用，以下序列改用本地行情表兜底：" + "、".join(sorted(used))
+        )
+    return used
+
+
 def run_sync(
     db: Session,
     *,
@@ -288,6 +350,7 @@ def run_sync(
                 "error": f"{type(exc).__name__}: {exc}",
             }
 
+    fallback_sources = _apply_local_price_fallbacks(db, raw, report)
     derived = derive_factors(raw)
 
     for factor in FACTORS:
@@ -300,7 +363,11 @@ def run_sync(
             }
             continue
         inserted, updated = storage.upsert_series(
-            db, factor.key, series, source=factor.source, commit=False
+            db,
+            factor.key,
+            series,
+            source=fallback_sources.get(factor.key, factor.source),
+            commit=False,
         )
         report.factor_status[factor.key] = {
             "status": "ok",
@@ -312,7 +379,13 @@ def run_sync(
 
     benchmark = derived.get(BENCHMARK_KEY)
     if benchmark is not None and not benchmark.empty:
-        storage.upsert_series(db, BENCHMARK_KEY, benchmark, source="Yahoo Finance（GC=F 收盘）", commit=False)
+        storage.upsert_series(
+            db,
+            BENCHMARK_KEY,
+            benchmark,
+            source=fallback_sources.get(BENCHMARK_KEY, "Yahoo Finance（GC=F 收盘）"),
+            commit=False,
+        )
 
     for extra in EXTRA_SERIES:
         series = derived.get(extra.key)

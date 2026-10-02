@@ -309,6 +309,17 @@ Middleware in `app/main.py`, implemented in `app/utils/rate_limit.py`:
   Expired keys are cleaned up, so memory does not grow without bound.
 - **CORS**: an explicit origin list; if `*` appears among the origins, the middleware forces
   credentials off.
+- **Failure propagation** (hardened on 2026-10-02):
+  - Missing databases/tables (MySQL 1146/1049, SQLite `no such table`) are translated into a
+    **503 + `python init_db.py` guidance** instead of a bare 500; startup runs a schema self-check
+    and logs an ERROR when tables are missing. Other SQL errors still surface as 500 and are not
+    masked by that guidance.
+  - The frontend retries idempotent GETs on **429 / 5xx / network errors** with exponential backoff
+    (±25% jitter), at most 3 attempts; 429 prefers `Retry-After` (then body `retry_after`).
+    `POST` and `GET ...?refresh=true` are never retried — they may trigger a paid LLM call.
+  - In-flight GETs for the same URL are merged into one request (StrictMode double-mount and
+    polling/manual-refresh collisions no longer double the request rate); dashboard polling runs
+    every 30 s, pauses while `document.hidden`, and catches up immediately on return.
 
 > This project has **no authentication**. For a public deployment, add access control at the
 > reverse proxy; otherwise anyone can trigger the `/refresh` endpoints, which consume LLM quota.
@@ -349,7 +360,7 @@ it — documentation does not copy a second version.
 
 | Stage | Location | Key points |
 |---|---|---|
-| Data sources | `sources/*.py` | all free, no keys required (including the Treasury DTS TGA, the New York Fed RRP, CFTC open interest, Yahoo USDCNY); the HTTP client is injectable, and tests never really go online |
+| Data sources | `sources/*.py` | all free, no keys required (including the Treasury DTS TGA, the New York Fed RRP, CFTC open interest, Yahoo USDCNY); the HTTP client is injectable, and tests never really go online. When the external quote source (Yahoo) fails, the gold benchmark and the dollar factor fall back to the locally synced `gold_prices` / `dollar_index` tables (source labelled "本地行情表…兜底"): only the provenance changes, never the factor set or weights |
 | Derivation | `derive.py` | raw series → factor values; units and conventions are fixed in this layer only |
 | Persistence | `storage.py` | `factor_observations`, unique constraint `(factor_key, obs_date)`, idempotent |
 | Sync | `sync.py` | per-source throttling (6h ~ 24h), incremental fetching, per-source degradation, and a sync report |

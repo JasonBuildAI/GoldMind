@@ -1,5 +1,5 @@
 import { describeApiError } from '@/lib/apiError';
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { goldApi, type GoldStats, type DailyPrice, type CorrelationData, type DollarRealtime } from '@/services/api';
 
 interface GoldDataContextType {
@@ -35,24 +35,38 @@ const GoldDataContext = createContext<GoldDataContextType | undefined>(undefined
 // 缓存时间（毫秒）
 const CACHE_DURATION = 5000; // 5秒内不重复请求
 
+// 轮询间隔（毫秒）。从 10 秒放宽到 30 秒：一个打开的看板原先每 10 秒
+// 拉 stats / daily / correlation / dollar 各一次（外加首屏约 15 个区块请求、
+// 开发态 StrictMode 再翻倍），首分钟就逼近后端 60 次/分钟的限流上限；
+// 一旦 429，整片报错，过一会儿刷新又好。30 秒档位下空闲请求 ≤ 8 次/分钟。
+const POLL_INTERVAL = 30000;
+
+/** 标签页被切到后台时跳过本轮 —— 没人看的数据不值得占用限流额度。 */
+function isPageHidden(): boolean {
+  return typeof document !== 'undefined' && document.hidden;
+}
+
 export function GoldDataProvider({ children }: { children: ReactNode }) {
   // 统计数据
   const [stats, setStats] = useState<GoldStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
-  const [statsLastFetch, setStatsLastFetch] = useState<number>(0);
+  // 「上次取值时间」放 ref 而不是 state：它只是缓存判据，不参与渲染。
+  // 用 state 会让 refreshStats/refreshCharts 每次取数后换一个函数身份，
+  // 定时器随之被清掉重建 —— 节拍漂移，重订阅的中间态还可能丢一次轮询。
+  const statsLastFetch = useRef<number>(0);
   
   // 日线数据
   const [dailyPrices, setDailyPrices] = useState<DailyPrice[]>([]);
   const [dailyLoading, setDailyLoading] = useState(false);
   const [dailyError, setDailyError] = useState<string | null>(null);
-  const [dailyLastFetch, setDailyLastFetch] = useState<number>(0);
+  const dailyLastFetch = useRef<number>(0);
   
   // 相关性数据
   const [correlationData, setCorrelationData] = useState<CorrelationData[]>([]);
   const [correlationLoading, setCorrelationLoading] = useState(false);
   const [correlationError, setCorrelationError] = useState<string | null>(null);
-  const [correlationLastFetch, setCorrelationLastFetch] = useState<number>(0);
+  const correlationLastFetch = useRef<number>(0);
   
   // 实时美元指数
   const [dollarRealtime, setDollarRealtime] = useState<DollarRealtime | null>(null);
@@ -62,7 +76,7 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
   // 获取统计数据
   const refreshStats = useCallback(async (force = false) => {
     const now = Date.now();
-    if (!force && now - statsLastFetch < CACHE_DURATION) {
+    if (!force && now - statsLastFetch.current < CACHE_DURATION) {
       return; // 使用缓存
     }
     
@@ -71,7 +85,7 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
     try {
       const data = await goldApi.getStats();
       setStats(data);
-      setStatsLastFetch(now);
+      statsLastFetch.current = now;
       setLastUpdated(new Date());
     } catch (err) {
       // 统一翻译：原先固定写「获取统计数据失败」，把 429 限流、后端 503、
@@ -81,13 +95,13 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
     } finally {
       setStatsLoading(false);
     }
-  }, [statsLastFetch]);
+  }, []);
 
   // 获取图表数据（日线 + 相关性）
   const refreshCharts = useCallback(async (force = false) => {
     const now = Date.now();
-    const shouldFetchDaily = force || now - dailyLastFetch >= CACHE_DURATION;
-    const shouldFetchCorrelation = force || now - correlationLastFetch >= CACHE_DURATION;
+    const shouldFetchDaily = force || now - dailyLastFetch.current >= CACHE_DURATION;
+    const shouldFetchCorrelation = force || now - correlationLastFetch.current >= CACHE_DURATION;
 
     if (!shouldFetchDaily && !shouldFetchCorrelation) {
       return; // 都使用缓存
@@ -113,7 +127,7 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
 
       if (shouldFetchDaily) {
         setDailyPrices(results[resultIndex++]);
-        setDailyLastFetch(now);
+        dailyLastFetch.current = now;
       }
       if (shouldFetchCorrelation) {
         const correlation = results[resultIndex++];
@@ -146,7 +160,7 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
         }
 
         setCorrelationData(correlation);
-        setCorrelationLastFetch(now);
+        correlationLastFetch.current = now;
       }
 
       setLastUpdated(new Date());
@@ -159,7 +173,7 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
       setDailyLoading(false);
       setCorrelationLoading(false);
     }
-  }, [dailyLastFetch, correlationLastFetch]);
+  }, []);
 
   // 刷新所有数据
   const refreshAll = useCallback(async () => {
@@ -211,26 +225,43 @@ export function GoldDataProvider({ children }: { children: ReactNode }) {
     refreshCharts();
   }, []);
 
-  // 定时刷新统计数据和图表数据（每10秒）
+  // 定时刷新统计数据和图表数据（每 30 秒；页面隐藏时暂停，恢复时立即补一次）
   useEffect(() => {
-    const interval = setInterval(() => {
+    const tick = () => {
+      if (isPageHidden()) return;
       refreshStats(true);
       refreshCharts(true);
-    }, 10000); // 每10秒刷新
-    
-    return () => clearInterval(interval);
+    };
+    const interval = setInterval(tick, POLL_INTERVAL);
+    // 切回来的那一刻补一次：不必干等下一个 30 秒，用户看到的是新数据
+    const onVisibilityChange = () => {
+      if (!isPageHidden()) tick();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [refreshStats, refreshCharts]);
 
-  // 定时刷新美元指数（每10秒，独立刷新）
+  // 定时刷新美元指数（同一档位；页面隐藏时同样暂停）
   useEffect(() => {
     // 立即执行一次
     refreshDollarRealtime();
-    
-    const interval = setInterval(() => {
+
+    const tick = () => {
+      if (isPageHidden()) return;
       refreshDollarRealtime();
-    }, 10000); // 每10秒刷新
-    
-    return () => clearInterval(interval);
+    };
+    const interval = setInterval(tick, POLL_INTERVAL);
+    const onVisibilityChange = () => {
+      if (!isPageHidden()) tick();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [refreshDollarRealtime]);
 
   const value: GoldDataContextType = {

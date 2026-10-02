@@ -213,7 +213,7 @@ describe('GoldDataProvider', () => {
     expect(screen.getByTestId('corr-count')).toHaveTextContent('2')
   })
 
-  it('每 10 秒轮询一次统计数据', async () => {
+  it('每 30 秒轮询一次统计数据（不是 10 秒）', async () => {
     vi.useFakeTimers()
     renderProvider()
 
@@ -221,9 +221,36 @@ describe('GoldDataProvider', () => {
     const initialCalls = mocked.getStats.mock.calls.length
     expect(initialCalls).toBeGreaterThan(0)
 
-    await vi.advanceTimersByTimeAsync(10000)
-    await vi.advanceTimersByTimeAsync(10000)
+    // 第 29 秒还不该有第二轮 —— 原实现 10 秒一档，20 秒内已经打了 2 次
+    await vi.advanceTimersByTimeAsync(29000)
+    expect(mocked.getStats.mock.calls.length).toBe(initialCalls)
 
-    expect(mocked.getStats.mock.calls.length).toBeGreaterThan(initialCalls + 1)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mocked.getStats.mock.calls.length).toBe(initialCalls + 1)
+
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(mocked.getStats.mock.calls.length).toBe(initialCalls + 2)
+  })
+
+  it('页面隐藏时暂停轮询，恢复可见时立即补一次', async () => {
+    // 切到后台的标签页还在每 10 秒打后端，是限流额度被吃光的另一半原因。
+    const hiddenSpy = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    vi.useFakeTimers()
+    renderProvider()
+
+    await vi.advanceTimersByTimeAsync(0)
+    const initialCalls = mocked.getStats.mock.calls.length
+
+    // 隐藏着：跨过两个轮询周期也不许发请求
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(mocked.getStats.mock.calls.length).toBe(initialCalls)
+
+    // 切回前台：不等下一个周期，立刻补一次
+    hiddenSpy.mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocked.getStats.mock.calls.length).toBe(initialCalls + 1)
+
+    hiddenSpy.mockRestore()
   })
 })

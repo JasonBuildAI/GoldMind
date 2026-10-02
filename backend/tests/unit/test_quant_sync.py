@@ -152,6 +152,9 @@ def test_sync_derives_and_stores_every_available_factor(db_session):
 
 @pytest.mark.unit
 def test_source_failure_degrades_only_its_own_factors(db_session):
+    # 纯降级场景：外部行情源挂了、本地行情表也没有数据 —— 这时才真没有
+    # 基准价可用。（本地有数据时的兜底路径见下一个用例。）
+    _clear_local_prices(db_session)
     report = quant_sync.run_sync(db_session, force=True, fetchers=_fetchers(failing=("yahoo",)))
 
     assert report.source_status["yahoo"]["status"] == "error"
@@ -167,6 +170,58 @@ def test_source_failure_degrades_only_its_own_factors(db_session):
     assert "gold_close" not in stored
     assert "usdcny" not in stored
     assert "cny_gold" not in stored
+
+
+def _clear_local_prices(db) -> None:
+    from app.models.gold_price import DollarIndex, GoldPrice
+
+    db.query(GoldPrice).delete()
+    db.query(DollarIndex).delete()
+    db.commit()
+
+
+@pytest.mark.unit
+def test_yahoo_failure_falls_back_to_local_price_tables(db_session, seed_gold_prices):
+    """Yahoo 被限流时（实测 YFRateLimitError），用主数据管道已同步的本地日线兜底。
+
+    量化引擎不该因为第三方行情站限流就整片「缺少黄金价格序列」—— 基准价、
+    动量、季节性与美元因子都能用本地行情照常算，来源如实标注为兜底。
+    """
+    seed_gold_prices(days=120, start=2600.0, step=5.0)
+
+    report = quant_sync.run_sync(db_session, force=True, fetchers=_fetchers(failing=("yahoo",)))
+
+    assert report.source_status["yahoo"]["status"] == "error"
+    assert report.source_status["local_prices"]["status"] == "ok"
+    assert "gold_close" in report.source_status["local_prices"]["note"]
+
+    stored = storage.load_all(db_session)
+    assert not stored["gold_close"].empty, "基准价必须可用"
+    assert not stored["dollar_index"].empty, "美元因子必须可用"
+    assert not stored["momentum"].empty, "基准价到位后动量应能算出来"
+
+    from app.models.analysis import FactorObservation
+
+    sources = {
+        row[0]
+        for row in db_session.query(FactorObservation.source)
+        .filter(FactorObservation.factor_key.in_(["gold_close", "dollar_index"]))
+        .distinct()
+    }
+    assert sources, "兜底数据必须落库"
+    assert all("本地行情表" in source for source in sources), "来源必须如实标注为兜底"
+
+
+@pytest.mark.unit
+def test_skipped_yahoo_round_does_not_inject_local_fallback(db_session, seed_gold_prices):
+    """源被节流跳过（未到期）时不许注入本地兜底：那不是「失败」，也不该写入。"""
+    seed_gold_prices(days=120)
+    quant_sync.run_sync(db_session, force=True, fetchers=_fetchers())
+
+    second = quant_sync.run_sync(db_session, force=False, fetchers=_fetchers(failing=("yahoo",)))
+
+    assert second.source_status["yahoo"]["status"] == "skipped"
+    assert "local_prices" not in second.source_status
 
 
 @pytest.mark.unit
