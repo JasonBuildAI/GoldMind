@@ -30,10 +30,15 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from loguru import logger  # noqa: E402
-from sqlalchemy import Engine, inspect, text  # noqa: E402
+from sqlalchemy import Engine, inspect, select, text  # noqa: E402
 
 import app.models  # noqa: F401,E402  确保所有模型都已注册到 metadata
 from app.database import Base, engine as default_engine  # noqa: E402
+from app.models.analysis import (  # noqa: E402
+    FactorObservation,
+    FactorObservationRevision,
+)
+from app.utils import timeutil  # noqa: E402
 
 
 QUANT_TABLES = (
@@ -92,6 +97,47 @@ LEDGER_INSERT = (
 )
 
 
+def seed_ledger(bind: Engine) -> int:
+    """把观测表里还没有流水行的观测补进流水，返回补写行数。
+
+    为什么不用一条 ``INSERT ... SELECT``：``created_at`` 是
+    ``server_default=func.now()``，**SQLite 下那是 UTC**，而应用写 ``recorded_at``
+    用的是项目时区。纯 SQL 抄过去就把两个时钟混进了同一列：凌晨 0–8 点写入的值
+    会被算到前一天，`--as-of` 于是把「今天才知道的值」放进昨天的面板 ——
+    正是流水表要防的前视（红线五）。所以在 Python 侧逐行换算。
+    """
+    observation = FactorObservation.__table__
+    revision = FactorObservationRevision.__table__
+    with bind.connect() as conn:
+        existing = {
+            (row[0], row[1])
+            for row in conn.execute(select(revision.c.factor_key, revision.c.obs_date))
+        }
+        pending = [
+            row
+            for row in conn.execute(select(observation)).mappings()
+            if (row["factor_key"], row["obs_date"]) not in existing
+        ]
+    if not pending:
+        return 0
+
+    rows = [
+        {
+            "factor_key": row["factor_key"],
+            "obs_date": row["obs_date"],
+            "value": row["value"],
+            "source": row["source"],
+            "meta": row["meta"],
+            "recorded_at": timeutil.from_utc_naive(row["created_at"] or row["updated_at"])
+            or timeutil.now_naive(),
+        }
+        for row in pending
+    ]
+    with bind.begin() as conn:
+        conn.execute(revision.insert(), rows)
+    return len(rows)
+
+
 def _count(bind: Engine, table: str) -> int:
     """SQLAlchemy 2.x：Engine 上没有 execute，必须开连接。"""
     with bind.connect() as conn:
@@ -133,9 +179,8 @@ def apply_migration(bind: Engine, dry_run: bool = False) -> list[str]:
     # 老库的观测补写流水（只在流水表为空时执行，重复运行安全）。
     pending = ledger_backfill_rows(bind)
     if pending:
-        with bind.begin() as conn:
-            conn.execute(text(LEDGER_INSERT))
-        statements.append(f"INSERT INTO factor_observation_revisions SELECT ... ({pending} 行)")
+        seeded = seed_ledger(bind)
+        statements.append(f"INSERT INTO factor_observation_revisions SELECT ... ({seeded} 行)")
 
     return statements
 

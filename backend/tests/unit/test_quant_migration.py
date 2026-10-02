@@ -9,10 +9,14 @@
 from __future__ import annotations
 
 import importlib.util
+from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, select, text
+
+from app.models.analysis import FactorObservationRevision
+from app.utils import timeutil
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -171,13 +175,21 @@ def test_migration_seeds_the_ledger_from_existing_observations(migration, popula
     from sqlalchemy import inspect as sa_inspect
 
     assert "factor_observation_revisions" in sa_inspect(populated_engine).get_table_names()
-    with populated_engine.begin() as conn:
+    revision = FactorObservationRevision.__table__
+    with populated_engine.connect() as conn:
         rows = conn.execute(
-            text("SELECT factor_key, obs_date, value, recorded_at FROM factor_observation_revisions "
-                 "ORDER BY factor_key, obs_date")
+            select(
+                revision.c.factor_key,
+                revision.c.obs_date,
+                revision.c.value,
+                revision.c.recorded_at,
+            ).order_by(revision.c.factor_key, revision.c.obs_date)
         ).all()
     assert len(rows) == 3
-    assert {str(row[3]) for row in rows} == {"2026-03-01 08:00:00"}, "recorded_at 必须取写入时点"
+    # created_at 是 server_default（SQLite = UTC）：抄进流水前必须换算成项目时区，
+    # 否则同一列里混两个时钟，凌晨 0–8 点写入的值会被算进前一天的面板
+    expected = timeutil.from_utc_naive(datetime(2026, 3, 1, 8, 0, 0))
+    assert {row[3] for row in rows} == {expected}, "recorded_at 必须是项目时区的写入时点"
     assert [row[0] for row in rows] == ["real_yield_10y", "real_yield_10y", "vix"]
 
     # 重复运行不再补写（幂等）
