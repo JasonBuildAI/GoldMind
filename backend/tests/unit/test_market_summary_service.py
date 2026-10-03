@@ -40,6 +40,19 @@ def _real(name: str = "摩根士丹利 (Morgan Stanley)", target: float = 4000.0
     }
 
 
+def _price_meta(price: float | None = 4200.0) -> dict | None:
+    """`_realtime_price_meta` 的形状：价格与它的时间 / 口径 / 来源一起给。"""
+    if price is None:
+        return None
+    return {
+        "price": price,
+        "as_of": "2026-10-03T12:40:00",
+        "basis": "realtime",
+        "basis_label": "实时报价",
+        "source": "腾讯财经-纽约黄金",
+    }
+
+
 def _fabricated_summary() -> dict:
     """复刻缓存里真实出现过的幻觉输出（含不存在的机构目标价）。"""
     return {
@@ -204,7 +217,7 @@ def test_cached_summary_is_sanitized_with_current_institution_data(monkeypatch):
     from app.services.market_summary_service import MarketSummaryService
 
     service = MarketSummaryService(db=None)
-    monkeypatch.setattr(service, "_get_realtime_price", lambda: 4200.0)
+    monkeypatch.setattr(service, "_realtime_price_meta", lambda: _price_meta(4200.0))
     monkeypatch.setattr(service.cache, "get", lambda: _fabricated_summary())
 
     result = service.get_market_summary(institution_predictions=[_placeholder()])
@@ -212,6 +225,8 @@ def test_cached_summary_is_sanitized_with_current_institution_data(monkeypatch):
     assert result["institution_targets"] == []
     assert result["market_consensus"] == ["市场波动加大"]
     assert result["current_price"] == 4200.0, "实时价格仍应覆盖缓存价格"
+    # 时间不跟着价格更新的话，页面就会「新价格 + 旧时间」——比不给时间更糟
+    assert result["price_as_of"] == "2026-10-03T12:40:00"
 
 
 @pytest.mark.unit
@@ -224,7 +239,7 @@ def test_forced_path_passes_the_force_flag_to_the_gate(monkeypatch):
     from app.services.market_summary_service import MarketSummaryService
 
     service = MarketSummaryService(db=None)
-    monkeypatch.setattr(service, "_get_realtime_price", lambda: 4200.0)
+    monkeypatch.setattr(service, "_realtime_price_meta", lambda: _price_meta(4200.0))
     monkeypatch.setattr(service.cache, "set", lambda result: None)
     seen = {}
 
@@ -246,7 +261,7 @@ def test_cached_summary_keeps_targets_with_real_predictions(monkeypatch):
     from app.services.market_summary_service import MarketSummaryService
 
     service = MarketSummaryService(db=None)
-    monkeypatch.setattr(service, "_get_realtime_price", lambda: 4200.0)
+    monkeypatch.setattr(service, "_realtime_price_meta", lambda: _price_meta(4200.0))
     monkeypatch.setattr(service.cache, "get", lambda: _fabricated_summary())
 
     result = service.get_market_summary(institution_predictions=[_real()])

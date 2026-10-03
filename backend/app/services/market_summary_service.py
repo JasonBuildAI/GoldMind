@@ -13,6 +13,7 @@ from app.services.news_service import NEWS_PROMPT_LIMIT, format_news_for_prompt
 from app.utils import timeutil
 from app.config import settings
 from app.services import llm_gate
+from app.services import price_basis
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.institution_prediction_service import (
@@ -419,19 +420,48 @@ class MarketSummaryService:
         self.analyzer = MarketSummaryAnalyzer()
         self.cache = CacheManager("market_summary", ttl=AI_ANALYSIS_CACHE_TTL)
 
-    def _get_realtime_price(self) -> float:
-        """获取实时金价"""
+    def _realtime_price_meta(self) -> Optional[Dict[str, Any]]:
+        """实时金价 + 它自己的时间 / 口径 / 来源 —— 四者同源同刻。
+
+        为什么必须一起取（而不是各取各的）：金价在页面上出现在五处，
+        只给数字不给时间，读者无法判断「$4,170 是刚才的，还是昨天的收盘」。
+        时间取**这个价格自己的** as-of 字段，不拿当前时间顶替。
+
+        取不到金价时整个返回 None —— 不编价格，也不编时间。
+        """
         try:
             from app.services.gold_service import GoldService
-            gold_service = GoldService(self.db)
-            stats = gold_service.get_statistics()
-            if stats:
-                # 不要在这里兜一个写死的数字：取不到就该是 None，
-                # 否则 5067 会被当成真实金价写进 prompt 与响应。
-                return stats.get("current_price")
+
+            stats = GoldService(self.db).get_statistics()
         except Exception as e:
             logger.error(f"[MarketSummary] 获取实时价格失败: {e}")
-        return None
+            return None
+        if not stats:
+            return None
+        # 不要在这里兜一个写死的数字：取不到就该是 None，
+        # 否则 5067 会被当成真实金价写进 prompt 与响应。
+        price = stats.get("current_price")
+        if price is None:
+            return None
+        # 口径与 /api/gold/stats 同一套判定（实时源全挂时退回日收盘）。
+        basis = price_basis.REALTIME if stats.get("is_realtime") else price_basis.CLOSE
+        return {
+            "price": price,
+            "as_of": stats.get("price_as_of") or stats.get("updated_at"),
+            "basis": basis,
+            "basis_label": price_basis.label(basis),
+            "source": stats.get("data_source"),
+        }
+
+    @staticmethod
+    def _apply_price_meta(target: Dict[str, Any], meta: Optional[Dict[str, Any]]) -> None:
+        """把金价与它的时间 / 口径 / 来源一起写进响应（三个分支共用一处口径）。"""
+        meta = meta or {}
+        target["current_price"] = meta.get("price")
+        target["price_as_of"] = meta.get("as_of")
+        target["price_basis"] = meta.get("basis")
+        target["price_basis_label"] = meta.get("basis_label")
+        target["price_source"] = meta.get("source")
 
     def get_market_summary(
         self,
@@ -457,8 +487,9 @@ class MarketSummaryService:
         Returns:
             市场综合分析结果
         """
-        # 获取实时金价（用于覆盖结果中的价格）
-        realtime_price = self._get_realtime_price()
+        # 获取实时金价（用于覆盖结果中的价格）—— 价格与它的时间 / 口径 / 来源
+        # 一次取全：三处响应分支都靠 `_apply_price_meta` 写同一组字段。
+        price_meta = self._realtime_price_meta()
 
         # 不走缓存时执行实时 LLM 分析；`force` 决定是否无视输入指纹门控。
         # 启动引导必须传 force=False：重启时输入没变就不该再花一次调用
@@ -475,8 +506,8 @@ class MarketSummaryService:
                     recent_news or [],
                     force=force,
                 )
-                # 用实时价格覆盖AI生成的价格
-                result["current_price"] = realtime_price
+                # 用实时价格覆盖AI生成的价格（连它的时间 / 口径 / 来源一起写）
+                self._apply_price_meta(result, price_meta)
                 self.cache.set(result)
                 result["metadata"] = {
                     "cached": False,
@@ -496,8 +527,9 @@ class MarketSummaryService:
             # 缓存可能是在机构数据不可用时生成的；按当前输入重新清洗，不能把
             # 「四大投行集体中性」这类无法核实的判断继续对外展示。
             cached_data = sanitize_institution_claims(cached_data, institution_predictions)
-            # 用实时价格覆盖缓存中的价格
-            cached_data["current_price"] = realtime_price
+            # 用实时价格覆盖缓存中的价格（同样要覆盖时间 / 口径 / 来源：
+            # 缓存里的价格与它的时间可能来自上一轮，不能只换数字留下旧时间）
+            self._apply_price_meta(cached_data, price_meta)
             cached_data["metadata"] = {
                 "cached": True,
                 "cache_source": "file",
@@ -518,8 +550,8 @@ class MarketSummaryService:
             "status": "analyzing",
             "message": "AI分析进行中，首次加载可能需要1-2分钟",
         }
-        # 实时价是真实取到的，可以填进去（取不到时 realtime_price 为 None）
-        default_data["current_price"] = realtime_price
+        # 实时价是真实取到的，可以填进去（取不到时四个字段一起为 None）
+        self._apply_price_meta(default_data, price_meta)
 
         # 触发后台分析
         self._trigger_background_analysis(

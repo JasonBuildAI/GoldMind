@@ -11,6 +11,7 @@ from app.utils import timeutil
 from app.models.gold_price import GoldPrice
 from app.config import settings
 from app.services import llm_gate
+from app.services import price_basis
 from app.services.cache_manager import CacheManager, AI_ANALYSIS_CACHE_TTL
 from app.services.single_flight import single_flight
 from app.services.institution_prediction_service import usable_institution_predictions
@@ -174,6 +175,8 @@ class InvestmentAdviceAnalyzer:
         """降级结果：只给行情统计与「数据不足」说明，不给任何策略与点位。"""
         snapshot = None
         if window is not None:
+            # 快照里的价格是窗口末的**日收盘**（`gold_prices`），口径与来源
+            # 跟价格一起给：页面上「最新价」这一个数字必须能回答「这是哪天的」。
             snapshot = {
                 "label": window.label,
                 "window_start": window.window_start.isoformat(),
@@ -184,6 +187,10 @@ class InvestmentAdviceAnalyzer:
                 "low": round(window.low, 2),
                 "amplitude_pct": round(window.amplitude_pct, 2),
                 "full_window": window.full_window,
+                "as_of": window.window_end.isoformat(),
+                "basis": price_basis.CLOSE,
+                "basis_label": price_basis.label(price_basis.CLOSE),
+                "source": "gold_prices 日线",
             }
         detail = (
             "当前没有可分析的数据输入（多空因子 / 可核实机构预测 / 近期新闻均为空），"

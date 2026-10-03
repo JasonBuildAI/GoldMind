@@ -110,6 +110,13 @@ class MarketSummaryAIResponse(BaseModel):
     market_consensus: List[str]
     institution_targets: List[Dict[str, Any]]
     current_price: Optional[float] = None
+    # 当前价的时间 / 口径 / 来源：与 current_price 同源同刻写入。
+    # 没有它们，页面上的「$4,170」无法判断是刚才的报价还是昨天的收盘。
+    # 金价取不到时四个字段一起为 null（不编价格，也不编时间）。
+    price_as_of: Optional[str] = None
+    price_basis: Optional[str] = None
+    price_basis_label: Optional[str] = None
+    price_source: Optional[str] = None
     comprehensive_judgment: Dict[str, Any]
     core_view: str
     investment_recommendation: str
