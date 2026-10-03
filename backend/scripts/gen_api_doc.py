@@ -109,7 +109,9 @@ SUMMARY_EN: dict[str, str] = {
     ),
     "POST /api/gold/news/digest/refresh": (
         "Crawl every configured source now and store new items, returning the fetch report "
-        "(sources ok/failed, new items, skipped entries). No LLM calls."
+        "(sources ok/failed, new items, skipped entries, translated items). Crawling and scoring "
+        "make no LLM calls, but this endpoint does trigger one batch of Chinese translation "
+        "(a single chat call, spending from the daily LLM budget)."
     ),
     "GET /api/gold/news/{news_id}": "Single news item.",
     "GET /api/gold/predictions": (

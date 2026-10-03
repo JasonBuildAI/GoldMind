@@ -85,7 +85,11 @@ async def refresh_news_digest(db: Session = Depends(get_db)):
     """立即抓取一轮全部来源并落库，返回本次抓取报告。
 
     网络 IO 在线程池执行，不阻塞事件循环；路径以 `/refresh` 结尾，
-    自动落到更严的重操作限流档（本接口不调用 LLM，不产生付费调用）。
+    自动落到更严的重操作限流档。
+    抓取与评分本身不调用 LLM，但**会**触发一次批量中文翻译（`NEWS_TRANSLATE_ENABLED`
+    为真且 LLM 已配置时，一次 chat 调用，见 `services/news_translation.py`）——
+    因此本接口会消耗每日 LLM 预算；报告里的 `translated` / `translation_reason`
+    如实说明这一批翻了几条、没翻成的原因。
     """
     report = await run_in_threadpool(NewsDigestService(db).fetch_all_sources)
     return DigestRefreshResponse(success=report["ok_sources"] > 0, **report)

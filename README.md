@@ -1076,7 +1076,8 @@ GoldMind/
 │   │   ├── services/            # 业务逻辑
 │   │   │   ├── llm_provider.py                     # **LLM 调用的唯一入口**
 │   │   │   ├── institution_prediction_service.py   # 机构观点（含机构注册表）
-│   │   │   ├── news_digest.py                      # 消息板块：抓取 / 确定性评分 / 三窗口 Top10（不调用 LLM）
+│   │   │   ├── news_digest.py                      # 消息板块：抓取 / 确定性评分 / 三窗口 Top10（评分不调用 LLM）
+│   │   │   ├── news_translation.py                 # 消息中文化：批量翻译标题与摘要（唯一新增的 LLM 调用点）
 │   │   │   ├── analysis_input.py                   # 分析输入包：新闻去重合并 + 价格上下文 + 能力声明
 │   │   │   └── quant/                              # 量化引擎：sources / derive / storage /
 │   │   │                                           #   sync / engine / decompose / scenarios /
