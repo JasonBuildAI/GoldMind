@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v2.0.2-brightgreen?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-v2.0.3-brightgreen?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/released-2026--10--03-success?style=flat-square" alt="Release date">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/SQLite-zero--config%20repro-003B57?style=flat-square&logo=sqlite" alt="SQLite">
@@ -26,47 +26,44 @@
 
 <!-- ⬇️⬇️⬇️ Release banner: update these lines together with the version ⬇️⬇️⬇️ -->
 
-<h1 align="center">🎉 GoldMind 2.0.2 is here</h1>
+<h1 align="center">🎉 GoldMind 2.0.3 is here</h1>
 
-<h2 align="center">GoldMind 2.0.2 正式发布</h2>
+<h2 align="center">GoldMind 2.0.3 正式发布</h2>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v2.0.2-FFD700?style=for-the-badge" alt="v2.0.2">
+  <img src="https://img.shields.io/badge/release-v2.0.3-FFD700?style=for-the-badge" alt="v2.0.3">
   <img src="https://img.shields.io/badge/released-2026--10--03-2EA043?style=for-the-badge" alt="2026-10-03">
 </p>
 
 <p align="center">
-  <strong>Configure <code>backend/.env</code> once; everything else runs itself — schema, backfill, analysis, backups, health checks.</strong><br>
-  <em>填一次 <code>backend/.env</code>，剩下全部自动：建库、迁移、回填、分析、备份、自检。</em><br><br>
+  <strong>The UI is rewritten in Vue 3 as a macOS two-column shell: a persistent sidebar with the brief and data freshness, messages as a first-class section, and a "when was this?" stamp on every price.</strong><br>
+  <em>界面重写为 Vue 3 的 macOS 双栏：左侧栏常驻速览与数据新鲜度，消息升为一等板块，每个价格都标出「什么时候的」。</em><br><br>
   📋 <a href="./CHANGELOG_EN.md">Changelog</a> ·
   🌍 <a href="./CHANGELOG.md">更新日志</a> ·
-  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.2">GitHub Release v2.0.2</a>
+  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.3">GitHub Release v2.0.3</a>
 </p>
 
 <!-- ⬆️⬆️⬆️ Release banner ends ⬆️⬆️⬆️ -->
 
 ---
 
-## 🆕 What 2.0.2 delivers
+## 🆕 What 2.0.3 delivers
 
-2.0.2 has one goal: **configure `backend/.env` once, then touch nothing**. Around it, the
-high-value items of the 20-point review that could be delivered independently are all in, the
-frontend was rewritten, and "every number states its provenance" now reaches the price basis
-itself.
+2.0.3 has one goal: **rewrite the frontend in Vue 3 as a macOS two-column shell, and make every
+number say when it is from**. The information architecture moved with it, and the README's
+screenshots were re-shot against the new UI as tabulated cards.
 
-| Area | 2.0.1 | 2.0.2 |
+| Area | 2.0.2 | 2.0.3 |
 |---|---|---|
-| Start-up | You ran `init_db.py` / backfill / first analysis by hand | The bootstrapper creates the schema, applies migrations, backfills by coverage and warms the first analyses; `/health.bootstrap` shows "step N of M", failures retry on the next boot, and a restart never double-backfills |
-| Configuration | Editing `.env` required a restart | LLM settings hot-reload (`CONFIG_WATCH`): the watcher picks up changes, resets the client cache and immediately runs a fresh analysis round |
-| Scheduling | A missed cron window was simply missed | Missed jobs are caught up at start-up; every job runs with `coalesce` + `misfire_grace_time`; daily automatic backup (7 SQLite copies) and data sanity check (safe fixes only, after a backup) |
-| Price basis | Three different "gold prices" on one page, unlabelled | Every price carries its `basis` (realtime quote / daily close / quant benchmark), source and as-of; a same-day realtime-vs-close divergence above 3% is named by the sanity check |
-| Quant | Every horizon published a direction | The 250-day horizon stops publishing one (`direction_status: not_published` plus the reason, keeping the fair-value gap and the calibrated interval); the first-class metrics are now "edge over always-long (with CI)" and "down-call quality"; the forward verdict gained a Beta posterior next to CRPS; factors align on their publication lag (`quant-v7`, forward window resealed 2026-10-03) |
-| Paid calls | Every refresh really called the LLM | An unchanged input fingerprint skips the recomputation (a forced refresh is exempt); `LLM_DAILY_CALL_BUDGET` defaults to 200/day and exhaustion shows "temporarily unavailable" instead of invented content |
-| Frontend | Seven dense sections with a flat hierarchy | Rewritten as "masthead (today's glance + data freshness) -> today's verdict -> market -> drivers -> quant -> strategy -> data & methods"; every section is "one-sentence conclusion + key numbers + one details layer", and every API field has a slot |
-| Reproducibility | Service store vs research long store divergences were reconciled by hand | The bootstrapper aligns the two stores automatically; the measured 10,902 diverging rows dropped to zero, `check_data_sanity --strict` passes, and every fetch channel keeps an attempt log (`/api/gold/sources/status`) |
+| Frontend | React 19, centred body narrowed to 1180px | **Rewritten in Vue 3 + Pinia**: sidebar + content column filling the page, macOS / HIG visual language (layered surfaces, hairlines, system font stack); frontend JS 863 kB → 312 kB |
+| Messages | A block under "drivers" | **A first-class section** (`#messages`): the 24-hour / 7-day / 30-day windows each return the top 10; every English source gets a **Chinese headline and a 2–3 sentence summary** (the model compresses only facts already in the source, the English original stays for item-by-item checking) |
+| Price provenance | Every price carried `basis` and as-of | Adds the **refresh time**: the sidebar brief, the quote cards, the verdict and the fair-value block all say when the price is from |
+| Research page | Going back meant finding one text link in the nav | A "‹ 返回看板" button at the top of the sidebar, and the wordmark on both entries links home |
+| UI self-check | happy-dom unit tests only (no layout engine) | A real-browser layout check, `verify_layout.mjs` (measured at 1440×900 / 390×844), plus three render guards (forbidden copy, page structure, design tokens) |
+| Screenshots | 14 shots of the old React layout | **15 shots of the current UI**: the old tall `price-chart` split into "market" + "price trend", `market-summary` folded into the masthead, "messages" added; the README section rebuilt as an overview table plus card tables, and institution marks rendered as text badges instead of broken images |
 
-2.0.1's changes (the distribution conventions, independent bets, the forward window, ...) live in
-the `[2.0.1]` section of the [Changelog](./CHANGELOG_EN.md).
+2.0.2's changes (fully automatic operation, the LLM gate, price basis, ...) live in
+[CHANGELOG](./CHANGELOG_EN.md) under `[2.0.2]`.
 
 ---
 
@@ -175,28 +172,56 @@ If this project helps or inspires you, a ⭐ **Star** is the best thank-you.
 
 ## 📸 Screenshots
 
-> All 14 screenshots were taken on **2026-10-02 against a real running stack** (real backend,
+> All 15 screenshots were taken on **2026-10-03 against a real running stack** (real backend,
 > real data, real LLM endpoint) by
 > [`app/scripts/capture_screenshots.mjs`](app/scripts/capture_screenshots.mjs). Before saving,
 > the script checks every block for substantial text and for the absence of empty-state markers;
 > if any block degrades into "loading" / "unavailable", it exits with an error and **never writes
 > a half-empty image**. You can reproduce them exactly (see "Common commands").
 
-### Masthead and market data
-<p align="center">
-  <img src="docs/images/screenshots/dashboard.png" alt="Masthead and market data" width="800">
-</p>
+**The groups below follow the page's reading order** (order is priority). The "Where" column names
+the anchor in the left sidebar; the research page is a separate entry (`research.html`).
 
-### Chart and key figures
-<p align="center">
-  <img src="docs/images/screenshots/price-chart.png" alt="Price chart and key figures" width="800">
-</p>
+| # | Group | Where | What this shot shows | Shots |
+|---|---|---|---|:--:|
+| ① | Masthead · conclusion | sidebar + `#conclusion` | Gold price / dollar index, per-block data freshness, the day's conclusion with its confidence, the target-price reference | 1 |
+| ② | Market | `#market` | The two quote cards (each with its basis and data as-of) and the all-fields snapshot table | 1 |
+| ③ | Price trend | `#market` → trend (collapsed) | The last 100 trading days of New York gold, with its source | 1 |
+| ④ | Bullish vs bearish | `#drivers` | Both sides of the same news flow, factor by factor | 2 |
+| ⑤ | Institutional views | `#drivers` | The four institutions' latest verifiable target price, forecast date and confidence | 1 |
+| ⑥ | Messages | `#messages` | High-authority messages in the 24-hour window, ranked by importance | 1 |
+| ⑦ | Quantitative forecast | `#quant` | 1-year probabilities and scenarios, fair-value decomposition, the 22-row monitor, the 1-quarter backtest | 4 |
+| ⑧ | Investment strategy | `#strategy` | Conservative / balanced / opportunity strategies and their execution rules | 1 |
+| ⑨ | Research page | `research.html` | Pre-registered verdict, how many trading days the forward window still needs, five-horizon skill overview | 3 |
+| | **Total** | | | **15** |
 
-### Bullish vs bearish factors
-<p align="center">
-  <img src="docs/images/screenshots/news-analysis-up.png" alt="Bullish factors" width="400">
-  <img src="docs/images/screenshots/news-analysis-down.png" alt="Bearish factors" width="400">
-</p>
+### ① Masthead · conclusion
+
+| Sidebar (today's brief + data freshness) and the conclusion |
+|:--:|
+| <img src="docs/images/screenshots/dashboard.png" width="820" alt="Masthead: the sidebar brief and the day's conclusion"> |
+| The sidebar permanently shows **today's brief** (gold price, 12-month move, dollar index) and **data freshness** (each block's own date and whether it is current); the main column carries one headline conclusion plus current price / confidence / time frame / advice, and the target-price reference. |
+
+### ② Market
+
+| New York gold and dollar-index quote cards, plus the all-fields snapshot |
+|:--:|
+| <img src="docs/images/screenshots/market.png" width="800" alt="Market: quote cards and the all-fields snapshot table"> |
+| Every price carries its basis (`basis`), source and data as-of; when a source is down the page says so instead of substituting a built-in series. |
+
+### ③ Price trend
+
+| The last 100 trading days of New York gold |
+|:--:|
+| <img src="docs/images/screenshots/price-trend.png" width="800" alt="Market: the last 100 trading days"> |
+| The chart lives inside the collapsed "trend" disclosure on the market section (expanded before the shot); its footer states the window length and the source. |
+
+### ④ Bullish vs bearish factors
+
+| Bullish factors | Bearish factors |
+|:--:|:--:|
+| <img src="docs/images/screenshots/news-analysis-up.png" width="440" alt="Drivers: bullish factors"> | <img src="docs/images/screenshots/news-analysis-down.png" width="440" alt="Drivers: bearish factors"> |
+| Each factor with its source and data as-of | The same fields, fetched independently |
 
 > The two sides fetch and refresh independently; one side failing does not affect the other.
 > The prompt explicitly says "rather return fewer items than pad the list with common-sense
@@ -205,10 +230,12 @@ If this project helps or inspires you, a ⭐ **Star** is the best thank-you.
 > structure check (max 5 factors / dedupe by id / allowed-id enum / best-effort numeric
 > citation); a factor that fails is dropped entirely (`services/factor_validation.py`).
 
-### Institutional views
-<p align="center">
-  <img src="docs/images/screenshots/institutional-views.png" alt="Institutional views" width="800">
-</p>
+### ⑤ Institutional views
+
+| The four institutions' latest verifiable target price |
+|:--:|
+| <img src="docs/images/screenshots/institutional-views.png" width="800" alt="Institutional views: target prices and forecast dates"> |
+| The `GS` / `UBS` / `MS` / `C` marks are **text badges, not images**: the API's `logo` field is an abbreviation by design, and since 2.0.3 it renders as a badge (it used to be fed to an image tag, which put a broken-image icon in every row). |
 
 > The only verifiable forecast that day was **Morgan Stanley: $4,000 is the support after the
 > pullback, with a long-term view of $5,000 in H2 2027** (forecast date 2026-10-01, from real
@@ -220,69 +247,78 @@ If this project helps or inspires you, a ⭐ **Star** is the best thank-you.
 > `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`
 > (reproducible with `backend/scripts/smoke_llm.py`).
 
-### Investment strategy
-<p align="center">
-  <img src="docs/images/screenshots/investment-advice.png" alt="Investment strategy" width="620">
-</p>
+### ⑥ Messages
+
+| High-authority messages in the 24-hour window, ranked by importance |
+|:--:|
+| <img src="docs/images/screenshots/messages.png" width="800" alt="Messages: high-authority items in the 24-hour window"> |
+| Messages are a first-class section in the sidebar (`#messages`): sources are limited to central banks, wire services, industry bodies and specialist financial media; the 24-hour / 7-day / 30-day windows each return the top 10, and every item carries importance, confidence, publish time, source tier and same-story grouping. |
+
+> The sources are all English, so every item shows a **Chinese headline and a 2–3 sentence Chinese
+> summary** in its collapsed state (the model compresses only facts already present in the source
+> title and summary; the English original is kept verbatim for item-by-item checking); when
+> translation fails the page says "Chinese translation unavailable (reason)". If fetching fails,
+> the page says so with the reason instead of showing built-in copy.
+
+### ⑦ Quantitative forecast
+
+| 1-year horizon: probabilities, base / target price and the three scenarios | Fair-value decomposition |
+|:--:|:--:|
+| <img src="docs/images/screenshots/quant-prediction.png" width="440" alt="Quant forecast: 1-year probabilities and scenarios"> | <img src="docs/images/screenshots/quant-fair-value.png" width="440" alt="Fair-value decomposition"> |
+| The 1-year **direction is deliberately not published** (with the reason); probabilities, target price, uncertainty and the scenarios are | Fair value vs market price, the deviation, R² and the four blocks |
+
+| Monitor dashboard (22 rows) | Backtest: hit rate, baselines and coverage (1 quarter) |
+|:--:|:--:|
+| <img src="docs/images/screenshots/quant-monitor.png" width="440" alt="Monitor dashboard (22 rows)"> | <img src="docs/images/screenshots/quant-accuracy.png" width="440" alt="Backtest accuracy, baselines and coverage (1 quarter)"> |
+| Six of the 22 rows are information-only: values and observation dates, no bull/bear label | Hit rate, the always-bullish and momentum baselines, Brier / CRPS skill and coverage |
+
+> The quantitative engine calls no LLM: all 14 factors come from free public sources; missing
+> factors and indicators are marked "unavailable" with a reason, and fewer than 3 usable factors
+> means "forecast unavailable". On the capture day 12/14 factors were usable (geopolitical
+> strength and GLD shares lacked samples); forecast and backtest share one horizon tab strip,
+> so the shots above are the 1-year and 1-quarter tabs, and the definitions live in the
+> "Quant strategy" section. Six of the 22 monitor rows are **information-only** (the second
+> round's five series plus the 2.0.2 digest-derived message intensity): none cleared the gates,
+> so they show values and dates but no bull/bear label. Stored forecasts keep one row per
+> (model version, horizon, as_of): same-day recomputes update in place, a new day appends,
+> so the table is the forecast archive.
+
+### ⑧ Investment strategy
+
+| Conservative / balanced / opportunity strategies and their execution rules |
+|:--:|
+| <img src="docs/images/screenshots/investment-advice.png" width="620" alt="Investment strategy: three strategies and execution rules"> |
+| The three strategies line up field by field (position sizing, entry, stop, pros and cons, who it suits); each card ends with its execution steps. |
 
 > The three strategies come from one LLM call; the output budget is `LLM_MAX_TOKENS`
 > (default 8192, raise it for your endpoint). Too small a budget truncates the large JSON and
 > parsing fails — the page then says "temporarily unavailable" instead of showing a built-in
 > strategy; the backend logs `finish_reason` and token usage to make the next diagnosis easy.
 
-### Quantitative forecast
-<p align="center">
-  <img src="docs/images/screenshots/quant-prediction.png" alt="Quant forecast: 1-year direction, probability and scenarios" width="800">
-</p>
+### ⑨ Research page (pre-registered verdict + skill overview)
 
-<p align="center">
-  <img src="docs/images/screenshots/quant-fair-value.png" alt="Fair-value decomposition" width="800">
-</p>
+| Verdict (forward window not yet decidable) | How many trading days the forward window still needs |
+|:--:|:--:|
+| <img src="docs/images/screenshots/research-verdict.png" width="440" alt="Research page: verdict"> | <img src="docs/images/screenshots/research-forward-window.png" width="440" alt="Research page: the forward window countdown"> |
+| The verdict counts only independent bets in the forward holdout; the historical holdout is record-only | Per horizon, how many trading days are still missing; below it sits the Beta posterior table (all dashes today, so the shot stops here) |
 
-<p align="center">
-  <img src="docs/images/screenshots/quant-monitor.png" alt="Monitor dashboard (22 rows)" width="800">
-</p>
-
-<p align="center">
-  <img src="docs/images/screenshots/quant-accuracy.png" alt="Backtest accuracy, baselines and coverage (1 quarter)" width="800">
-</p>
-
-> The quantitative engine calls no LLM: all 14 factors come from free public sources; missing
-> factors and indicators are marked "unavailable" with a reason, and fewer than 3 usable factors
-> means "forecast unavailable". On the capture day 12/14 factors were usable (geopolitical
-> strength and GLD shares lacked samples); forecast and backtest share one horizon tab strip,
-> so the shots above are the 1-year and 1-quarter tabs. Six of the 22 monitor rows are
-> **information-only** (the second round's five series plus the 2.0.2 digest-derived message
-> intensity): none cleared the gates, so they show values and dates but no bull/bear label.
-> Stored forecasts keep one row per
-> (model version, horizon, as_of): same-day recomputes update in place, a new day appends,
-> so the table is the forecast archive.
-
-### Research page (pre-registered verdict + skill overview)
-<p align="center">
-  <img src="docs/images/screenshots/research-verdict.png" alt="Research page: verdict (forward window not yet decidable)" width="800">
-</p>
-
-<p align="center">
-  <img src="docs/images/screenshots/research-forward-window.png" alt="Research page: how many trading days the forward window still needs" width="800">
-</p>
-
-<p align="center">
-  <img src="docs/images/screenshots/research-overview.png" alt="Research page: skill overview across five horizons" width="800">
-</p>
+| Skill overview across five horizons |
+|:--:|
+| <img src="docs/images/screenshots/research-overview.png" width="800" alt="Research page: skill overview across five horizons"> |
+| Direction hit rate, the always-bullish baseline, Brier / CRPS skill scores and interval coverage, horizon by horizon; results that did not clear the gate are listed too. |
 
 > The research page spells out why no edge can be claimed yet: the verdict only counts independent
-> bets in the forward holdout (from 2026-10-02). The 1-day horizon has 1/20 bets and needs about
-> 19 more trading days; the 5-day horizon needs about 99. The historical-holdout column is
-> explicitly labelled "already seen by the first two rounds — record only" and never substitutes
-> for the verdict. The page header also surfaces the **data window** (start/end, trading days,
-> years): every number is recomputed from exactly that window (1-hour cache); where the counts
-> disagree with the snapshots cited in README / historical lab reports, the research page wins.
+> bets in the forward holdout (**from 2026-10-03**, after the pre-registration seal). On the capture
+> day all five horizons still stood at 0/20 bets — the 1-day horizon needed about 20 more trading
+> days, the 5-day about 100 and the 1-year about 5000. The historical-holdout column (from
+> 2023-10-02) is explicitly labelled "already seen by the first two rounds — record only" and never
+> substitutes for the verdict. The page header also surfaces the **data window** (start/end, trading
+> days, years; on the capture day 2000-10-02 → 2026-10-02 · 6538 trading days · about 26 years):
+> every number is recomputed from exactly that window (1-hour cache); where the counts disagree with
+> the snapshots cited in this README / historical lab reports, the research page wins.
 
-### Summary
-<p align="center">
-  <img src="docs/images/screenshots/market-summary.png" alt="Market summary" width="800">
-</p>
+> "Data and methods" is a table of definitions (source, window and algorithm per field) with nothing
+> to look at, so it is not among the 15 shots above.
 
 ---
 
@@ -1037,9 +1073,10 @@ npm run test:e2e
 # local development
 npm run dev
 
-# re-shoot the 14 README screenshots (needs the real stack running: backend 8000 + frontend 5173)
+# re-shoot the 15 README screenshots (needs the real stack running: backend 8000 + frontend 5173)
 node scripts/capture_screenshots.mjs
 # optional: SCREENSHOT_BASE_URL / SCREENSHOT_OUT / SCREENSHOT_BROWSER=chrome|msedge|chromium
+#           SCREENSHOT_ONLY=dashboard,market -> re-shoot only those (no need to wait for a full run)
 
 # layout self-check (needs the real stack running): no horizontal overflow at two viewports,
 # two columns filling the page, live tokens, no decorative gradients/glow.

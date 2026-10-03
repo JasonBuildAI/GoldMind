@@ -12,7 +12,11 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ## [Unreleased]
 
-(Unreleased work for the next round lives here; everything in 2.0.2 is below.)
+(Unreleased work for the next round lives here; everything in 2.0.3 is below.)
+
+---
+
+## [2.0.3] - 2026-10-03
 
 ### Changed
 
@@ -41,6 +45,34 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
   occurrences were utilities), recharts (used in 2 charts only, now hand-rolled SVG), Radix Tabs
   (replaced by an in-house ARIA tablist), lucide-react / clsx / tailwind-merge. Frontend JS output
   dropped from 863 kB to 312 kB.
+- **"Messages" moved out of "drivers" into a first-class section of its own**: the sidebar gains a
+  `#messages` entry between "drivers" and "quant", so raw facts and the model's reading of them are
+  two sections, each reachable on its own.
+- **Message cards speak Chinese**: every English-source item gets a **Chinese title and a 2–3
+  sentence brief** in the collapsed card (condensing only facts the source title and summary already
+  state; the English original stays visible for item-by-item checking, and an item that cannot be
+  translated says why). Translations persist in four nullable columns (`title_zh` / `brief_zh` /
+  `translated_at` / `translation_model`, so a model change triggers retranslation), and each crawl
+  translates one batch of up to `NEWS_TRANSLATE_BATCH` (default 30) untranslated items, so
+  translated items are never paid for twice.
+- **Every gold price carries its own refresh time**: the six places that show the international gold
+  price (the sidebar brief, the market conclusion line and quote block, the current price in today's
+  conclusion, the degraded strategy snapshot, the quant base price and the fair-value market price)
+  each say when the price is from, together with its basis and source; with no price available the
+  fields stay empty and the page says the time is unknown instead of inventing one.
+- **The README screenshot section is now a tabulated card gallery**: all 15 shots were re-taken
+  against the current frontend and the real stack, ordered by the page's reading order (masthead ·
+  conclusion / market / price trend / bullish vs bearish / institutional views / messages / quant
+  forecast / strategy / research page), each with a one-line "what this shot shows". The old
+  `price-chart` (a single 5434px-tall image) is split into "market" + "price trend", `market-summary`
+  folded into the masthead, and "messages" is new (14 → 15 shots); `docs/20-前端设计规范.md` and
+  its English twin are synced to 15.
+- **The screenshot script can re-shoot only a few shots (`SCREENSHOT_ONLY=<name substring>`), and its
+  crop boundary now waits for the render.** `padToText` used to look once, while the boundary block
+  may be lazily rendered — when it missed, the script silently fell back to a hard-coded pixel count,
+  so the same block could crop to two different heights (the research page's `1 年` row in the
+  forward window was once cut in half); it now retries by the second and only falls back with a
+  warning on timeout.
 
 ### Added
 
@@ -55,6 +87,11 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
   resolve / reading order / unique ids / tabs carry `aria-selected` / buttons have accessible names /
   no nested disclosures) and `designTokens.test.ts` (no hardcoded hex colors in components). All three
   were mutation-verified (see the appendix of this round's spec).
+- A README screenshot guard, `backend/tests/unit/test_readme_screenshots.py`: every image referenced
+  by either language really exists and sits in a **table row**, and "the README's reference set ==
+  the `SHOTS` list in `capture_screenshots.mjs` == the files on disk" must agree three ways; the
+  count in the intro paragraph is asserted too (mutation-verified: deleting a row / moving an image
+  out of a table / changing the count each turn it red).
 
 ### Fixed
 
@@ -72,6 +109,14 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 - The screenshot script's default URL changed from `127.0.0.1:5173` to `localhost:5173`: the Vite dev
   server only listens on `::1` by default (the README's documented address is localhost too), so
   hardcoding IPv4 failed to connect and hung on "cannot read /health".
+- Institution marks in the institutional-views table are no longer treated as image URLs: the API's
+  `logo` field was always an abbreviation (`GS` / `UBS` / `MS` / `C`), yet every cell hung a broken
+  image icon (visible to the eye in the README screenshots); they now render as text badges, and
+  `InstitutionsPanel.test.ts` guards it.
+- The digest refresh endpoint's API description and the README service listing no longer claim "no
+  LLM calls": that refresh does trigger one batch of Chinese translation (a single chat call,
+  spending from the daily budget), and the docs now say what actually happens — crawling and scoring
+  are deterministic, translation is the one paid call.
 
 ---
 
@@ -248,6 +293,7 @@ First public release.
 - Two-level cache (in-memory + JSON file) shared across processes and restarts
 - APScheduler refresh tasks and one-command Docker Compose deployment
 
+[2.0.3]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.3
 [2.0.2]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.2
 [2.0.1]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.1
 [2.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.0

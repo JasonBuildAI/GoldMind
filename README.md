@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v2.0.2-brightgreen?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-v2.0.3-brightgreen?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/released-2026--10--03-success?style=flat-square" alt="Release date">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/SQLite-零配置复现-003B57?style=flat-square&logo=sqlite" alt="SQLite">
@@ -26,44 +26,42 @@
 
 <!-- ⬇️⬇️⬇️ 发布横幅：改版本时这几行一起改 ⬇️⬇️⬇️ -->
 
-<h1 align="center">🎉 GoldMind 2.0.2 正式发布</h1>
+<h1 align="center">🎉 GoldMind 2.0.3 正式发布</h1>
 
-<h2 align="center">GoldMind 2.0.2 is here</h2>
+<h2 align="center">GoldMind 2.0.3 is here</h2>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v2.0.2-FFD700?style=for-the-badge" alt="v2.0.2">
+  <img src="https://img.shields.io/badge/release-v2.0.3-FFD700?style=for-the-badge" alt="v2.0.3">
   <img src="https://img.shields.io/badge/released-2026--10--03-2EA043?style=for-the-badge" alt="2026-10-03">
 </p>
 
 <p align="center">
-  <strong>填一次 <code>backend/.env</code>，剩下全部自动：建库、迁移、回填、分析、备份、自检。</strong><br>
-  <em>Configure <code>backend/.env</code> once; everything else runs itself — schema, backfill, analysis, backups, health checks.</em><br><br>
+  <strong>界面重写为 Vue 3 的 macOS 双栏：左侧栏常驻速览与数据新鲜度，消息升为一等板块，每个价格都标出「什么时候的」。</strong><br>
+  <em>The UI is rewritten in Vue 3 as a macOS two-column shell: a persistent sidebar with the brief and data freshness, messages as a first-class section, and a timestamp on every price.</em><br><br>
   📋 <a href="./CHANGELOG.md">更新日志 CHANGELOG</a> ·
   🌍 <a href="./CHANGELOG_EN.md">Changelog (EN)</a> ·
-  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.2">GitHub Release v2.0.2</a>
+  🚀 <a href="https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.3">GitHub Release v2.0.3</a>
 </p>
 
 <!-- ⬆️⬆️⬆️ 发布横幅结束 ⬆️⬆️⬆️ -->
 
 ---
 
-## 🆕 2.0.2 带来了什么
+## 🆕 2.0.3 带来了什么
 
-2.0.2 的目标只有一句话：**填一次 `backend/.env`，之后零人工**。围绕它落地了 20 条评审里
-能自主完成的高价值项，重写了前端，并把「每个数字都标出处」推到金价口径层面。
+2.0.3 的目标只有一句话：**把前端重写成 Vue 3 的 macOS 双栏，并让每个数字都说清「这是什么时候的」**。
+信息架构随之重排，README 的截图也按新界面重拍成表格化卡片。
 
-| 方向 | 2.0.1 | 2.0.2 |
+| 方向 | 2.0.2 | 2.0.3 |
 |---|---|---|
-| 启动 | 要手动跑 `init_db.py` / 回填 / 首次分析 | 启动引导自动建表、自动迁移、按覆盖度回填、自动首轮分析；`/health.bootstrap` 显示「第 N 步 / 共 M 步」，失败下轮自动重试，重复启动不重复回填 |
-| 配置 | 改 `.env` 必须重启 | LLM 配置热生效（`CONFIG_WATCH`）：watcher 检测到变化即重载，并立刻补一轮分析 |
-| 调度 | 错过的 cron 窗口就错过了 | 启动即补差；所有任务 `coalesce` + `misfire_grace_time`；每日自动备份（SQLite 留 7 份）与数据体检（只修安全项，先备份） |
-| 金价口径 | 同一页三个「金价」不加区分 | 每个价格附 `basis`（实时报价 / 日收盘 / 量化基准）、来源与 as-of；同日实时与收盘偏差 > 3% 进体检点名 |
-| 量化 | 五个尺度都给方向 | 250 日尺度停发方向（`direction_status: not_published` + 原因，保留公允价值偏离与校准区间）；一级指标换成「相对永远看多的增量（含置信区间）」与「敢喊跌质量」；前向裁决加 Beta 后验、与 CRPS 并排；因子按发布滞后对齐（`quant-v7`，前向窗口重封板 2026-10-03） |
-| 付费调用 | 每次刷新都真调 LLM | 输入指纹不变就跳过重算（强制刷新不受限）；`LLM_DAILY_CALL_BUDGET` 默认 200/日，用尽后如实显示「暂不可用」，不编内容 |
-| 前端 | 七节信息密度高、层级混乱 | 重写为「报头（今日速览 + 数据新鲜度）→ 今日结论 → 行情 → 驱动 → 消息 → 量化 → 策略 → 数据与方法」；每节「一句话结论 + 关键数字 + 一层折叠」，所有 API 字段都有展示位 |
-| 可复核性 | 服务库与研究长库的分歧要人工核对 | 启动引导自动对齐两个库；实测 10902 行分歧清零，`check_data_sanity --strict` 通过；每条源记录尝试流水（`/api/gold/sources/status`） |
+| 前端 | React 19，正文居中收窄到 1180px | **Vue 3 + Pinia 重写**：左侧栏 + 内容区两栏铺满，macOS / HIG 视觉语言（分层表面、发丝线、系统字体栈），前端产物 863 kB → 312 kB |
+| 消息 | 「驱动」下面的一块 | **一等板块**（`#messages`）：24 小时 / 7 天 / 30 天三个窗口各取前 10 条；英文来源每条配**中文标题与 2–3 句导语**（模型只压缩原文已有的事实，英文原样保留可逐条核对） |
+| 金价口径 | 每个价格带 `basis` 与 as-of | 再加**刷新时间**：今日速览、报价卡、今日结论与公允价值逐处显示「这个价是什么时候的」 |
+| 研究页 | 回看板只能靠导航里的一个文字项 | 左栏顶部「‹ 返回看板」按钮，两个入口的字标本身就是回主页的链接 |
+| 界面自检 | 只有 happy-dom 单测（没有排版引擎） | 新增真浏览器版式自检 `verify_layout.mjs`（1440×900 / 390×844 两档实测）+ 三条渲染守卫（禁用词、页面结构、设计令牌） |
+| 截图 | 14 张旧 React 版式的图 | **15 张当前界面**：旧 `price-chart` 长图拆成「行情」+「走势」两屏，`market-summary` 并入首屏，新增「消息」一屏；README 改成总览表 + 卡片表，机构标记按字标渲染、不再挂碎图 |
 
-2.0.1 的改动（分布口径、独立下注、前向窗口……）见 [CHANGELOG](./CHANGELOG.md) 的 `[2.0.1]` 一节。
+2.0.2 的改动（全自动运行、LLM 门控、价格口径……）见 [CHANGELOG](./CHANGELOG.md) 的 `[2.0.2]` 一节。
 
 ---
 
@@ -164,36 +162,66 @@ RSS 新闻 ──► SQLite ──┼──► 拼装 prompt ──► llm.invok
 
 ## 📸 系统展示
 
-> 以下 14 张截图全部拍摄于 **2026-10-02 的真实运行栈**（真后端 + 真实数据 + 真实 LLM 端点），
+> 以下 15 张截图全部拍摄于 **2026-10-03 的真实运行栈**（真后端 + 真实数据 + 真实 LLM 端点），
 > 由 [`app/scripts/capture_screenshots.mjs`](app/scripts/capture_screenshots.mjs) 生成：
 > 脚本在保存前逐块检查「必须有实质内容、且不含空态标记」，任何一块退化成「暂无 / 加载中」
 > 就直接报错退出，**不写出半张空图**。截图可原样复现（见「常用命令」）。
 
-### 报头与行情
-<p align="center">
-  <img src="docs/images/screenshots/dashboard.png" alt="报头与行情" width="800">
-</p>
+**分组顺序就是页面的阅读顺序**（顺序即优先级）；「页面位置」一列是左栏导航里的锚点，
+研究页是独立入口（`research.html`）。
 
-### 走势与关键数据
-<p align="center">
-  <img src="docs/images/screenshots/price-chart.png" alt="走势图与关键数据" width="800">
-</p>
+| # | 分组 | 页面位置 | 这张图看什么 | 张数 |
+|---|---|---|---|:--:|
+| ① | 首屏 · 今日结论 | 左栏 + `#conclusion` | 金价 / 美元指数、逐块数据新鲜度、当日结论与置信度、目标价参考 | 1 |
+| ② | 行情 | `#market` | 纽约黄金与美元指数两张报价卡（各带口径与数据截至），以及全字段快照表 | 1 |
+| ③ | 走势 | `#market` → 走势（折叠层） | 近 100 个交易日的纽约黄金走势与来源 | 1 |
+| ④ | 多空对照 | `#drivers` | 同一条新闻流拆出的看涨 / 看跌逐条论据 | 2 |
+| ⑤ | 机构观点 | `#drivers` | 四家机构最近一次可核实的目标价、预测日期与置信度 | 1 |
+| ⑥ | 消息 | `#messages` | 24 小时窗口里按重要性排序的高权威消息 | 1 |
+| ⑦ | 量化预测 | `#quant` | 1 年尺度的概率与三情景、公允价值分解、22 行监测表、1 季回测 | 4 |
+| ⑧ | 投资策略 | `#strategy` | 保守 / 均衡 / 机会三档策略与执行细则 | 1 |
+| ⑨ | 研究页 | `research.html` | 预注册裁决、前向留出期还差多少个交易日、五尺度技能总览 | 3 |
+| | **合计** | | | **15** |
 
-### 多空对照
-<p align="center">
-  <img src="docs/images/screenshots/news-analysis-up.png" alt="看涨因素" width="400">
-  <img src="docs/images/screenshots/news-analysis-down.png" alt="看跌因素" width="400">
-</p>
+### ① 首屏 · 今日结论
+
+| 左栏（今日速览 + 数据新鲜度）＋ 今日结论 |
+|:--:|
+| <img src="docs/images/screenshots/dashboard.png" width="820" alt="首屏：左栏速览与今日结论"> |
+| 左栏常驻**今日速览**（金价、近 12 个月涨跌、美元指数）与**数据新鲜度**（逐块标注更新于哪一天、是否已更新）；主区是一行核心结论 + 当前价格 / 置信度 / 时间框架 / 投资建议 + 目标价参考。 |
+
+### ② 行情
+
+| 纽约黄金与美元指数报价卡 ＋ 全字段快照表 |
+|:--:|
+| <img src="docs/images/screenshots/market.png" width="800" alt="行情：报价卡与全字段快照表"> |
+| 页面上每个价格都带口径（`basis`）、来源与数据截至；取不到数时如实说明，不用内置序列顶替。 |
+
+### ③ 走势
+
+| 近 100 个交易日的纽约黄金走势 |
+|:--:|
+| <img src="docs/images/screenshots/price-trend.png" width="800" alt="行情：近 100 个交易日的走势图"> |
+| 走势图默认收在「行情」的折叠层里（截图前展开）；图脚注写着窗口长度与来源。 |
+
+### ④ 多空对照
+
+| 看涨因素 | 看跌因素 |
+|:--:|:--:|
+| <img src="docs/images/screenshots/news-analysis-up.png" width="440" alt="驱动：看涨因素"> | <img src="docs/images/screenshots/news-analysis-down.png" width="440" alt="驱动：看跌因素"> |
+| 逐条论据 + 来源 + 数据截至 | 同一套字段，独立取数 |
 
 > 两侧独立取数、独立刷新，一侧取不到结果不影响另一侧。prompt 明确要求「宁可少给几个，
 > 也不要为了凑满数量而凭常识编造」；一条都取不到时页面如实显示「暂不可用」，点「重新分析」
 > 重试，不摆内置文案。模型返回后还有一层确定性结构校验（最多 5 条 / id 去重 /
 > 允许的 id 枚举 / best-effort 数字引用），不合格的因子整条丢弃（`services/factor_validation.py`）。
 
-### 机构观点
-<p align="center">
-  <img src="docs/images/screenshots/institutional-views.png" alt="机构观点" width="800">
-</p>
+### ⑤ 机构观点
+
+| 四家机构最近一次可核实的目标价 |
+|:--:|
+| <img src="docs/images/screenshots/institutional-views.png" width="800" alt="机构观点：目标价与预测日期"> |
+| 机构前的 `GS` / `UBS` / `MS` / `C` 是**字标**不是图片：接口给的 `logo` 字段本来就是机构缩写，2.0.3 起按字标渲染（此前被当成图片地址，每一格挂一个碎图图标）。 |
 
 > 截图当天唯一一条可核实的预测是**摩根士丹利：$4,000 是金价回落后的底部支撑，
 > 长期看至 2027 下半年 $5,000**（预测日期 2026-10-01，来自 30 天新闻窗口里的真实报道）；
@@ -204,31 +232,28 @@ RSS 新闻 ──► SQLite ──┼──► 拼装 prompt ──► llm.invok
 > `HTTP 400 · web search tool found in the request body, but webSearchEnabled is false`
 > （可用 `backend/scripts/smoke_llm.py` 复现）。
 
-### 投资策略
-<p align="center">
-  <img src="docs/images/screenshots/investment-advice.png" alt="投资策略" width="620">
-</p>
+### ⑥ 消息
 
-> 三档策略由一次 LLM 调用生成，输出预算由 `LLM_MAX_TOKENS` 控制（默认 8192，可按端点调大）。
-> 预算太小会把这份大 JSON 截断、解析失败 —— 页面如实显示「暂不可用」，而不是摆一份
-> 内置策略；解析失败时后端日志会记下 `finish_reason` 与 token 用量，便于下次定位。
+| 24 小时窗口里按重要性排序的高权威消息 |
+|:--:|
+| <img src="docs/images/screenshots/messages.png" width="800" alt="消息：24 小时窗口里的高权威消息"> |
+| 「消息」是左栏上的一等板块（`#messages`）：来源限于央行 / 通讯社 / 行业机构 / 专业财经等高权威源，24 小时 / 7 天 / 30 天三个窗口各取前 10 条；每条给出重要性、置信度、发布时间、来源层级与同题报道分组。 |
 
-### 量化预测
-<p align="center">
-  <img src="docs/images/screenshots/quant-prediction.png" alt="量化预测：1 年尺度的方向、概率与三情景" width="800">
-</p>
+> 来源全是英文，因此每条在折叠态就给出**中文标题与 2–3 句中文导语**（模型依据来源标题与摘要生成，
+> 只压缩原文已有的事实；英文原题与摘要原样保留，可逐条核对），翻不了时如实显示
+> 「中文翻译暂不可用（原因）」。抓不到就如实显示不可用与原因，不摆内置文案。
 
-<p align="center">
-  <img src="docs/images/screenshots/quant-fair-value.png" alt="公允价值分解" width="800">
-</p>
+### ⑦ 量化预测
 
-<p align="center">
-  <img src="docs/images/screenshots/quant-monitor.png" alt="监测仪表盘（22 行水位表）" width="800">
-</p>
+| 1 年尺度：概率、基准价 / 目标价与三情景 | 公允价值分解 |
+|:--:|:--:|
+| <img src="docs/images/screenshots/quant-prediction.png" width="440" alt="量化预测：1 年尺度的概率与三情景"> | <img src="docs/images/screenshots/quant-fair-value.png" width="440" alt="公允价值分解"> |
+| 1 年尺度的**方向按预注册规则停发**（附原因），概率、目标价、不确定度与三情景照常发布 | 公允价相对市场价的偏离、拟合 R² 与四块分解 |
 
-<p align="center">
-  <img src="docs/images/screenshots/quant-accuracy.png" alt="回测命中率、基准对照与覆盖率（1 季）" width="800">
-</p>
+| 监测仪表盘（22 行水位表） | 回测：命中率、基准对照与覆盖率（1 季） |
+|:--:|:--:|
+| <img src="docs/images/screenshots/quant-monitor.png" width="440" alt="监测仪表盘（22 行水位表）"> | <img src="docs/images/screenshots/quant-accuracy.png" width="440" alt="回测命中率、基准对照与覆盖率（1 季）"> |
+| 22 行水位里有 6 行是信息行：只给数值与观测日，不给多空标签 | 命中率、永远看多与动量基准、Brier / CRPS 技能分与覆盖率 |
 
 > 量化引擎不调用大模型：14 个因子全部来自免费公开数据源，取不到的因子与指标如实标「不可用」
 > 并说明原因，可用因子少于 3 个时直接显示「预测不可用」。截图拍摄当天 12/14 个因子可用
@@ -238,29 +263,37 @@ RSS 新闻 ──► SQLite ──┼──► 拼装 prompt ──► llm.invok
 > 预测落库同天同尺度只留一行（键为模型版本 + 尺度 + 截止日），
 > 当天重算就地更新、跨天追加保留 —— 库里的历史就是预测存档。
 
-### 研究页（预注册裁决 + 技能总览）
-<p align="center">
-  <img src="docs/images/screenshots/research-verdict.png" alt="研究页：版本与裁决（前向窗口尚不可判）" width="800">
-</p>
+### ⑧ 投资策略
 
-<p align="center">
-  <img src="docs/images/screenshots/research-forward-window.png" alt="研究页：前向留出期还差多少个交易日" width="800">
-</p>
+| 保守 / 均衡 / 机会三档策略与执行细则 |
+|:--:|
+| <img src="docs/images/screenshots/investment-advice.png" width="620" alt="投资策略：三档策略与执行细则"> |
+| 三档策略横向对照（同一套字段：仓位、入场、止损、优缺点、适合谁），每张卡下半段是执行步骤。 |
 
-<p align="center">
-  <img src="docs/images/screenshots/research-overview.png" alt="研究页：五个尺度的技能总览" width="800">
-</p>
+> 三档策略由一次 LLM 调用生成，输出预算由 `LLM_MAX_TOKENS` 控制（默认 8192，可按端点调大）。
+> 预算太小会把这份大 JSON 截断、解析失败 —— 页面如实显示「暂不可用」，而不是摆一份
+> 内置策略；解析失败时后端日志会记下 `finish_reason` 与 token 用量，便于下次定位。
 
-> 研究页把「为什么现在还不能说模型有优势」摊开写：裁决只认前向留出期（2026-10-02 起）的
-> 独立下注，1 日尺度目前只有 1/20 注、还差约 19 个交易日，5 日尺度还差约 99 个。历史留出期
-> 那一列被明确标注为「已被前两轮裁决看过，只作记录」，不拿来顶替结论。页头还显著标注
-> **数据窗口**（起止 + 交易日数 + 年数）：所有数字都由当前数据库这个窗口现算（缓存 1 小时），
-> 与 README / 历史研究台报告引用的快照样本数对不上时，以研究页为准。
+### ⑨ 研究页（预注册裁决 + 技能总览）
 
-### 总结
-<p align="center">
-  <img src="docs/images/screenshots/market-summary.png" alt="市场总结" width="800">
-</p>
+| 版本与裁决（前向窗口尚不可判） | 前向留出期还差多少个交易日 |
+|:--:|:--:|
+| <img src="docs/images/screenshots/research-verdict.png" width="440" alt="研究页：版本与裁决"> | <img src="docs/images/screenshots/research-forward-window.png" width="440" alt="研究页：前向留出期还差多少个交易日"> |
+| 裁决只认前向留出期的独立下注，历史留出期只作记录 | 五个尺度各自还差多少个交易日；再往下是 Beta 后验表（那张表当前整表是「—」，裁在这里） |
+
+| 五个尺度的技能总览 |
+|:--:|
+| <img src="docs/images/screenshots/research-overview.png" width="800" alt="研究页：五个尺度的技能总览"> |
+| 方向命中率、永远看多基准、Brier / CRPS 技能分与区间覆盖率按尺度并排；没过线的结论也照实列出。 |
+
+> 研究页把「为什么现在还不能说模型有优势」摊开写：裁决只认前向留出期（**2026-10-03 起**，
+> 预注册封板之后）的独立下注，截图当天五个尺度都还是 0/20 注 —— 1 日尺度还差约 20 个交易日、
+> 5 日尺度还差约 100 个、1 年尺度约 5000 个。历史留出期（2023-10-02 起）那一列被明确标注为
+> 「已被前两轮裁决看过，只作记录」，不拿来顶替结论。页头还显著标注**数据窗口**（起止 + 交易日数
+> + 年数，截图当天 2000-10-02 → 2026-10-02 · 6538 个交易日 · 约 26 年）：所有数字都由当前数据库
+> 这个窗口现算（缓存 1 小时），与 README / 历史研究台报告引用的快照样本数对不上时，以研究页为准。
+
+> 「数据与方法」一节是口径说明表（每个字段的来源、窗口与算法），没有可看的图，不在上面 15 张里。
 
 ---
 
@@ -947,9 +980,10 @@ npm run test:e2e
 # 本地开发
 npm run dev
 
-# 重拍 README 里的 14 张截图（需要真实栈在跑：后端 8000 + 前端 5173）
+# 重拍 README 里的 15 张截图（需要真实栈在跑：后端 8000 + 前端 5173）
 node scripts/capture_screenshots.mjs
 # 可选：SCREENSHOT_BASE_URL / SCREENSHOT_OUT / SCREENSHOT_BROWSER=chrome|msedge|chromium
+#      SCREENSHOT_ONLY=dashboard,market → 只重拍这几张（改版式时不必等整轮）
 
 # 版式自检（需要真实栈在跑）：两档视口无横向溢出、两栏铺满、令牌生效、无装饰性渐变/发光
 # 单元测试跑在 happy-dom 里、没有排版引擎，「整页横向滚动」这类问题它看不见，必须用真浏览器

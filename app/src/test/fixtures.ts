@@ -965,7 +965,7 @@ export const SOURCES: SourcesStatusResponse = {
 export const HEALTH: HealthResponse = {
   status: 'ok',
   timestamp: '2026-10-02T08:00:00+08:00',
-  version: '2.0.2',
+  version: '2.0.3',
   bootstrap: {
     enabled: true,
     status: 'done',

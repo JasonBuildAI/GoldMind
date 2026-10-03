@@ -12,7 +12,11 @@
 
 ## [Unreleased]
 
-（下一轮的未发布内容记在这里；2.0.2 的全部改动见下方。）
+（下一轮的未发布内容记在这里；2.0.3 的全部改动见下方。）
+
+---
+
+## [2.0.3] - 2026-10-03
 
 ### 变更
 
@@ -34,6 +38,24 @@
 - 顺带删掉**实际没用上**的依赖：Tailwind（639 处 `className` 里只有 6 处是工具类）、
   recharts（只用在 2 处图表，改为自绘 SVG）、Radix Tabs（改为自研 ARIA tablist）、
   lucide-react / clsx / tailwind-merge。前端产物 JS 从 863 kB 降到 312 kB。
+- **「消息」从「驱动」里独立成一等板块**：左栏在「驱动」与「量化预测」之间多出 `#messages`
+  入口，原始事实与模型解读分成两个区块、各自可达。
+- **消息卡片中文化**：英文来源每条在折叠态给出**中文标题与 2–3 句导语**（只压缩来源标题与
+  摘要已有的事实，英文原题与摘要原样保留、可逐条核对；翻不了时如实显示原因）。译文落库
+  四个可空列（`title_zh` / `brief_zh` / `translated_at` / `translation_model`，换模型会
+  触发重译）；每次抓取后批量翻译一轮（上限 `NEWS_TRANSLATE_BATCH`，默认 30，已译的不重复付费）。
+- **每个金价都带自己的刷新时间**：六个展示国际金价的位置（侧栏速览、行情结论行与报价块、
+  今日结论的当前价格、降级策略快照、量化基准价与公允价值市场价）逐处显示「这个价是什么时候的」，
+  连同口径（`basis`）与来源；取不到价时字段保持空、页面说「时间未知」，不编一个时间。
+- **README 的截图一节改成表格化卡片**：15 张全部用当前前端 + 真实栈重拍，分组顺序＝页面阅读顺序
+  （首屏 · 今日结论 / 行情 / 走势 / 多空对照 / 机构观点 / 消息 / 量化预测 / 投资策略 / 研究页），
+  每张配一句「这张图看什么」。旧 `price-chart`（5434px 高的长图）拆成「行情」+「走势」两屏，
+  `market-summary` 并入首屏，新增「消息」一屏（14 → 15 张）；
+  `docs/20-前端设计规范.md` 与英文版同步到 15 张。
+- **截图脚本可以只重拍其中几张（`SCREENSHOT_ONLY=<名字片段>`），裁剪边界改成等它渲染**。
+  `padToText` 此前只找一次，而边界块可能是懒渲染的 —— 找不到就静默回落到写死的像素数，
+  同一块两次拍摄会裁出两个高度（研究页「前向留出期」的 `1 年` 行就被切掉过一半）；
+  现在找不到会按秒重试，超时才回落并打印警告。
 
 ### 新增
 
@@ -45,6 +67,9 @@
   `pageStructure.test.ts`（一个 h1 / skip link 目标存在 / 导航锚点可达 / 阅读顺序 / id 唯一 /
   tab 有 `aria-selected` / 按钮有可访问名 / 折叠不嵌套）、
   `designTokens.test.ts`（组件里不出现写死的十六进制色）。三条都做过变异验证（见本轮 spec 附录）。
+- README 截图守卫 `backend/tests/unit/test_readme_screenshots.py`：两语言引用的每张图都真实存在、
+  都写在**表格行**里，且「README 引用集合 == `capture_screenshots.mjs` 的 `SHOTS` == 目录里的文件」
+  三方一致，导语里的张数一起守（做过变异验证：删一行 / 把图移出表格 / 改张数都会红）。
 
 ### 修复
 
@@ -58,6 +83,11 @@
   图表没清掉浏览器给 `figure` 的默认外边距（`1em 40px`，单边就顶出 40px）。
 - 截图脚本默认地址从 `127.0.0.1:5173` 改成 `localhost:5173`：Vite 开发服务器默认只监听
   `::1`（README 里的服务地址也是 localhost），写死 IPv4 会连不上、卡在「读不到 /health」。
+- 机构观点表的机构标记不再被当成图片地址：接口的 `logo` 字段本来就是机构缩写
+  （`GS` / `UBS` / `MS` / `C`），此前每格都挂一个碎图图标（README 的截图里肉眼可见）；
+  现在按字标渲染，`InstitutionsPanel.test.ts` 加了守卫。
+- 消息刷新接口的接口文档与 README 服务清单不再声称「不调用 LLM」：该刷新会触发一批中文翻译
+  （一次 chat 调用、计入每日预算），文档改为如实描述 —— 抓取与评分是确定性的，翻译是唯一付费调用。
 
 ---
 
@@ -233,6 +263,7 @@
 - 内存 + JSON 文件两级缓存，支持多进程与重启后共享
 - APScheduler 定时刷新，Docker Compose 一键部署
 
+[2.0.3]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.3
 [2.0.2]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.2
 [2.0.1]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.1
 [2.0.0]: https://github.com/JasonBuildAI/GoldMind/releases/tag/v2.0.0

@@ -405,10 +405,11 @@ The single source is `app/src/testids.ts`, which exports a frozen `TESTIDS`:
   with no error state), and that no unavailable block remains.
 - **Screenshot script**: `node scripts/capture_screenshots.mjs` first polls `/health`'s bootstrap (it only starts
   shooting once that is done / disabled / skipped or every phase has settled), then checks each block for
-  "non-empty + no empty-state marker"; if any block fails it writes **no image** and exits non-zero. Fourteen fixed
-  file names: `dashboard / price-chart / news-analysis-up / news-analysis-down / institutional-views /
-  investment-advice / quant-fair-value / quant-monitor / market-summary / quant-accuracy / quant-prediction /
-  research-verdict / research-forward-window / research-overview`.
+  "non-empty + no empty-state marker"; if any block fails it writes **no image** and exits non-zero. Fifteen fixed
+  file names (in page reading order): `dashboard / market / price-trend / news-analysis-up / news-analysis-down /
+  institutional-views / messages / investment-advice / quant-fair-value / quant-monitor / quant-accuracy /
+  quant-prediction / research-verdict / research-forward-window / research-overview`.
+  `SCREENSHOT_ONLY=<name substring>` re-shoots just those.
 
 ---
 
