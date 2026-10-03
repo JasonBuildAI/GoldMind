@@ -79,6 +79,17 @@ const activeWindowData = computed(
   () => windows.value.find((window) => window.key === activeWindow.value) ?? windows.value[0] ?? null,
 )
 
+/**
+ * 翻译状态：没有它，未翻译的条目只能说一句「暂不可用」，读者不知道是关了、
+ * 没配 LLM、还是还没轮到。原因由后端给，前端不编。
+ */
+const translation = computed(() => data.value?.translation ?? null)
+const translationReason = computed(
+  () =>
+    translation.value?.reason ??
+    '中文翻译还没轮到这一条（每轮抓取只翻一批，最新优先）',
+)
+
 /** 本次抓取的一句话摘要（只在手动抓取后显示）。 */
 const reportLine = computed(() => {
   const value = report.value
@@ -91,6 +102,8 @@ const reportLine = computed(() => {
   if (value.skipped_filtered > 0) bits.push(`不相关跳过 ${value.skipped_filtered} 条`)
   if (value.skipped_unstorable > 0) bits.push(`落库失败跳过 ${value.skipped_unstorable} 条`)
   if (value.failed_sources > 0) bits.push(`失败 ${value.failed_sources} 个来源`)
+  bits.push(`本轮译出 ${value.translated} 条中文`)
+  if (value.translation_reason) bits.push(`翻译：${value.translation_reason}`)
   return bits.join(' · ')
 })
 
@@ -103,7 +116,11 @@ useFreshnessBlock(
 </script>
 
 <template>
-  <section class="panel" id="messages" :data-testid="TESTIDS.driversMessages" aria-label="消息">
+  <!--
+    注意：这个面板**不带 id** —— `#messages` 是外层 MessagesSection 那一节的锚点。
+    两处都写 id="messages" 会让锚点跳到错误的元素（页面结构守卫盯着重复 id）。
+  -->
+  <section class="panel" :data-testid="TESTIDS.driversMessages" aria-label="消息">
     <div class="panel__head">
       <h3 class="panel__title">消息</h3>
       <RefreshButton
@@ -155,6 +172,24 @@ useFreshnessBlock(
         </span>
       </p>
 
+      <!--
+        翻译状态一行：让「哪几条没有中文、为什么」可回答。
+        `reason` 只在确实还有待翻译条目且当前翻不了时才有值，所以这里分两种说法 ——
+        全都翻好了就不该摆一句「暂不可用」吓人。
+      -->
+      <p v-if="translation" class="panel__meta" :data-testid="field('digest.translation.enabled')">
+        中文翻译：{{ translation.enabled ? '已开启' : '已关闭' }}
+        <span v-if="translation.model" :data-testid="field('digest.translation.model')">
+          · 模型 {{ translation.model }}
+        </span>
+        <span :data-testid="field('digest.translation.pending')">
+          · 待翻译 {{ translation.pending }} 条
+        </span>
+        <span v-if="translation.reason" class="panel__error" :data-testid="field('digest.translation.reason')">
+          （{{ translation.reason }}）
+        </span>
+      </p>
+
       <div :data-testid="TESTIDS.messagesWindows">
         <TabsNav
           v-if="windows.length > 0"
@@ -185,7 +220,12 @@ useFreshnessBlock(
             {{ activeWindowData.label }}内没有符合条件的消息。
           </p>
           <ol v-else class="digest" :data-testid="`messages-${activeWindowData.key}`">
-            <DigestRow v-for="item in activeWindowData.items" :key="item.id" :item="item" />
+            <DigestRow
+              v-for="item in activeWindowData.items"
+              :key="item.id"
+              :item="item"
+              :translation-reason="translationReason"
+            />
           </ol>
         </div>
       </div>

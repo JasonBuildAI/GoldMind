@@ -51,7 +51,7 @@ GoldMind/
 │   ├── ARCHITECTURE.md    this file
 │   └── API.md             API specification
 ├── app/                   frontend (Vue 3 + Pinia + Vite; visual and copy rules in docs/20-前端设计规范.md)
-│   ├── src/views/dashboard/  the seven dashboard sections: conclusion / market / drivers / quant prediction / investment strategy / data & methods
+│   ├── src/views/dashboard/  the seven dashboard sections: conclusion / market / drivers / messages / quant prediction / investment strategy / data & methods
 │   ├── src/views/research/   the eight research sections: verdict / forward holdout / coverage / diagnostics / regimes / factors / benchmarks / sync
 │   ├── src/components/    in-section primitives (SectionBlock / StateBlock / DataTable / quotes / hand-rolled SVG charts ...)
 │   ├── src/layout/        left sidebar (wordmark / nav / brief / freshness) and footer

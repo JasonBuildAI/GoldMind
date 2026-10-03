@@ -38,6 +38,13 @@ const rows = computed(() => {
     ['无时间跳过', String(report.skipped_no_time), field('digest.fetch.skipped_no_time')],
     ['相关性过滤', String(report.skipped_filtered), field('digest.fetch.skipped_filtered')],
     ['落库失败跳过', String(report.skipped_unstorable), field('digest.fetch.skipped_unstorable')],
+    // 中文翻译与抓取分开计数：翻译失败不是抓取失败
+    ['译出中文', String(report.translated), field('digest.fetch.translated')],
+    [
+      '翻译未完成原因',
+      report.translation_reason ?? '—',
+      field('digest.fetch.translation_reason'),
+    ],
   ] as const
 })
 </script>

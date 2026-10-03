@@ -241,8 +241,14 @@ export const ADVICE_DEGRADED: InvestmentAdviceResponse = {
 export const DIGEST_ITEM = {
   rank: 1,
   id: 101,
-  title: '央行购金推动金价创新高',
-  summary: '多家央行公布增持黄金储备。',
+  title: 'Central banks keep buying gold at a record pace',
+  summary: 'Several central banks reported higher gold reserves.',
+  // 中文译文与英文原文并存（后端由 LLM 批量翻译；口径是只压缩原文已有的事实）
+  title_zh: '各国央行以创纪录速度持续购金',
+  brief_zh: '多家央行公布黄金储备上升，购金需求仍在高位。',
+  translated: true,
+  translation_model: 'fixture-model',
+  translated_at: '2026-10-02T08:05:00+08:00',
   source: '路透社',
   tier: 1,
   tier_label: '一线权威',
@@ -264,6 +270,20 @@ export const DIGEST_ITEM = {
       published_at: '2026-10-02T05:30:00+08:00',
     },
   ],
+}
+
+/** 尚未翻译的条目：英文标题照常展示，中文位置给原因。 */
+export const DIGEST_ITEM_UNTRANSLATED = {
+  ...DIGEST_ITEM,
+  id: 102,
+  rank: 2,
+  title: 'Gold steadies ahead of the payrolls report',
+  title_zh: null,
+  brief_zh: null,
+  translated: false,
+  translation_model: null,
+  translated_at: null,
+  age_hours: 100,
 }
 
 export const FETCH_SOURCE = {
@@ -289,6 +309,8 @@ export const FETCH_REPORT = {
   skipped_no_time: 1,
   skipped_filtered: 40,
   skipped_unstorable: 1,
+  translated: 12,
+  translation_reason: '（示例：本轮翻译未完成时的原因展示位）',
   sources: [FETCH_SOURCE],
 }
 
@@ -297,6 +319,12 @@ export const DIGEST: DigestResponse = {
   has_data: true,
   unavailable_reason: '（示例：接口带不可用原因时的展示位）',
   last_fetch: FETCH_REPORT,
+  translation: {
+    enabled: true,
+    model: 'fixture-model',
+    pending: 1,
+    reason: '（示例：中文翻译暂不可用时的原因展示位）',
+  },
   windows: [
     {
       key: '24h',
@@ -310,7 +338,7 @@ export const DIGEST: DigestResponse = {
       label: '7 天内',
       hours: 168,
       total_clusters: 6,
-      items: [{ ...DIGEST_ITEM, id: 102, rank: 2, title: '七天窗口内的旧闻', age_hours: 100 }],
+      items: [DIGEST_ITEM, DIGEST_ITEM_UNTRANSLATED],
     },
   ],
 }

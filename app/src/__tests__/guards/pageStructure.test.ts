@@ -149,13 +149,15 @@ describe('结构守卫：页面骨架', () => {
     expect(missing, `导航指向不存在的锚点：${missing.join('、')}`).toEqual([])
   })
 
-  it('阅读顺序固定：今日结论 → 行情 → 驱动 → 量化预测 → 投资策略 → 数据与方法', async () => {
+  it('阅读顺序固定：今日结论 → 行情 → 驱动 → 消息 → 量化预测 → 投资策略 → 数据与方法', async () => {
     const { root } = await renderDashboard()
 
     const order = [
       TESTIDS.sectionConclusion,
       TESTIDS.sectionMarket,
       TESTIDS.sectionDrivers,
+      // 消息 2026-10-03 起是一等板块：夹在「驱动」与「量化预测」之间
+      TESTIDS.sectionMessages,
       TESTIDS.sectionQuant,
       TESTIDS.sectionStrategy,
       TESTIDS.sectionData,
@@ -168,6 +170,22 @@ describe('结构守卫：页面骨架', () => {
     })
 
     expect(positions, '各节的阅读顺序被改动了').toEqual([...positions].sort((a, b) => a - b))
+  })
+
+  it('消息是独立的一节，不再挂在「驱动」里面', async () => {
+    const { root } = await renderDashboard()
+
+    const drivers = root.querySelector(`#${TESTIDS.sectionDrivers}`)!
+    const messages = root.querySelector(`#${TESTIDS.sectionMessages}`)!
+    expect(messages).not.toBeNull()
+    // 搬出来之后不能再留在「驱动」的子树里 —— 否则导航有了入口，
+    // 内容却还是「驱动」的一部分，两处锚点指向同一块内容。
+    expect(drivers.contains(messages)).toBe(false)
+    // 导航里必须有「消息」这一项，且指向真实存在的那一节
+    const nav = root.querySelector('nav')!
+    const link = [...nav.querySelectorAll<HTMLAnchorElement>('a[href="#messages"]')]
+    expect(link, '侧边栏没有「消息」入口').toHaveLength(1)
+    expect(link[0].textContent).toBe('消息')
   })
 
   it('id 不重复（重复 id 会让锚点跳到错误的元素）', async () => {

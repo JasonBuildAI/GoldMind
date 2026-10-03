@@ -48,7 +48,7 @@ GoldMind/
 │   ├── ARCHITECTURE.md    本文件
 │   └── API.md             接口规范
 ├── app/                   前端（Vue 3 + Pinia + Vite；视觉与文案规则见 docs/20-前端设计规范.md）
-│   ├── src/views/dashboard/  看板七节：今日结论 / 行情 / 驱动 / 量化预测 / 投资策略 / 数据与方法
+│   ├── src/views/dashboard/  看板七节：今日结论 / 行情 / 驱动 / 消息 / 量化预测 / 投资策略 / 数据与方法
 │   ├── src/views/research/   研究页八节：裁决 / 前向留出期 / 覆盖度 / 诊断 / 分段 / 因子 / 基准 / 同步
 │   ├── src/components/    节内原语（SectionBlock / StateBlock / DataTable / 报价 / 自绘 SVG 图表……）
 │   ├── src/layout/        左侧栏（字标 / 导航 / 速览 / 新鲜度）与页脚

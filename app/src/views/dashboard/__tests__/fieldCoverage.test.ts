@@ -161,6 +161,7 @@ describe('字段覆盖：每个响应字段都有展示位', () => {
       { default: ConclusionSection },
       { default: MarketSection },
       { default: DriversSection },
+      { default: MessagesSection },
       { default: QuantSection },
       { default: StrategySection },
       { default: DataMethodsSection },
@@ -170,6 +171,8 @@ describe('字段覆盖：每个响应字段都有展示位', () => {
       import('@/views/dashboard/ConclusionSection.vue'),
       import('@/views/dashboard/MarketSection.vue'),
       import('@/views/dashboard/DriversSection.vue'),
+      // 消息 2026-10-03 起是独立一节，digest.* 的槽位在它这里
+      import('@/views/dashboard/MessagesSection.vue'),
       import('@/views/dashboard/QuantSection.vue'),
       import('@/views/dashboard/StrategySection.vue'),
       import('@/views/dashboard/DataMethodsSection.vue'),
@@ -191,6 +194,7 @@ describe('字段覆盖：每个响应字段都有展示位', () => {
     mountInto(ConclusionSection)
     mountInto(MarketSection)
     mountInto(DriversSection)
+    mountInto(MessagesSection)
     mountInto(QuantSection)
     mountInto(StrategySection)
     mountInto(DataMethodsSection)

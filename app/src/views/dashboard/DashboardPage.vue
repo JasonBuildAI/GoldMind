@@ -9,16 +9,19 @@ import ConclusionSection from './ConclusionSection.vue'
 import DataMethodsSection from './DataMethodsSection.vue'
 import DriversSection from './DriversSection.vue'
 import MarketSection from './MarketSection.vue'
+import MessagesSection from './MessagesSection.vue'
 import QuantSection from './QuantSection.vue'
 import StrategySection from './StrategySection.vue'
 
 /**
  * 看板阅读顺序（自上而下，唯一入口）：
  *   左侧栏（字标 + 锚点导航 + 今日速览 + 数据新鲜度）
- *   → 今日结论 → 行情 → 驱动（看涨 / 看跌 / 消息 / 机构）
+ *   → 今日结论 → 行情 → 驱动（看涨 / 看跌 / 机构）→ 消息
  *   → 量化预测 → 投资策略 → 数据与方法 → 页脚
  *
  * 顺序即优先级：最重要的结论在最上面，不必让读者先读方法再读结论。
+ * 「消息」排在「驱动」之后：先看模型怎么解读，再看解读所依据的原始事实 ——
+ * 而它自己也有一等入口，不必翻到某一节底下找。
  *
  * 版式是「左栏 + 内容区」两栏（`.app-shell`）：左栏常驻可见，内容区
  * 把剩余宽度全部吃掉（整页铺满），宽屏上表格与图表能一次看全。
@@ -53,6 +56,7 @@ onBeforeUnmount(() => {
           <ConclusionSection />
           <MarketSection />
           <DriversSection />
+          <MessagesSection />
           <QuantSection />
           <StrategySection />
           <DataMethodsSection />

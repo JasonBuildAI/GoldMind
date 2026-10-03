@@ -1020,6 +1020,18 @@ export interface DigestItem {
   id: number
   title: string
   summary: string
+  /**
+   * 中文译文（叠加，不替换）：`null` = 这条还没有中文。
+   *
+   * 后端由 LLM 批量翻译（`NEWS_TRANSLATE_*` 配置），口径是「只压缩来源摘要里已有的事实」。
+   * 前端不补译、不拼凑：`title_zh` 为空就显示英文标题并说明原因。
+   */
+  title_zh: string | null
+  brief_zh: string | null
+  /** 显式布尔：界面不靠 `title_zh is None` 反推「翻没翻」 */
+  translated: boolean
+  translation_model: string | null
+  translated_at: string | null
   source: string
   tier: number
   tier_label: string
@@ -1068,7 +1080,21 @@ export interface DigestFetchReport {
   skipped_no_time: number
   skipped_filtered: number
   skipped_unstorable: number
+  /** 本批写入的中文译文条数（与抓取结果分开计数：翻译失败不是抓取失败） */
+  translated: number
+  /** 本轮翻译没做完 / 没做成的原因；成功时为 null */
+  translation_reason: string | null
   sources: DigestFetchSource[]
+}
+
+/** 翻译状态：页面据此解释「为什么这条没有中文」，而不是留一片空白。 */
+export interface DigestTranslationStatus {
+  enabled: boolean
+  model: string | null
+  /** 最近 30 天里还没有中文的条数 */
+  pending: number
+  /** 有 pending 且当前翻不了时的原因（关掉了 / 未配置 / 上次失败） */
+  reason: string | null
 }
 
 export interface DigestResponse {
@@ -1076,6 +1102,7 @@ export interface DigestResponse {
   has_data: boolean
   unavailable_reason: string | null
   last_fetch: DigestFetchReport | null
+  translation: DigestTranslationStatus | null
   windows: DigestWindow[]
 }
 

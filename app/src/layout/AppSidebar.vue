@@ -29,6 +29,8 @@ const DASHBOARD_NAV = [
   { href: '#conclusion', label: '今日结论' },
   { href: '#market', label: '行情' },
   { href: '#drivers', label: '驱动' },
+  // 消息是一等板块，不是「驱动」下面的一个小块（2026-10-03）
+  { href: '#messages', label: '消息' },
   { href: '#quant', label: '量化预测' },
   { href: '#strategy', label: '投资策略' },
   { href: '#data-methods', label: '数据与方法' },

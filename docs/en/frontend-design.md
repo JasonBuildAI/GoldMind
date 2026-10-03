@@ -114,7 +114,7 @@ app/src/
 ├── lib/{format,placeholder,apiError,tokens}.ts
 ├── components/                     Shared components (including charts/)
 ├── layout/{AppSidebar,FooterBar}.vue
-├── views/dashboard/                The seven dashboard sections + quant/ and data/ subcomponents
+├── views/dashboard/                The eight dashboard sections + quant/ and data/ subcomponents
 └── views/research/                 The eight research-page sections
 ```
 
@@ -177,8 +177,8 @@ Quote polling ──stores/market (30s, paused while hidden)──► market / d
 │ sidebar .toolbar  │ content .app-main (takes the rest, fills the  │
 │  · wordmark       │                    whole page)               │
 │  · anchor nav     │                                              │
-│  · today's brief  │  conclusion → market → drivers → quant        │
-│  · data freshness │  → strategy → data & methods                  │
+│  · today's brief  │  conclusion → market → drivers → messages     │
+│  · data freshness │  → quant → strategy → data & methods          │
 │  (sticky column)  │  footer .footer (same width, also fills)      │
 └───────────────────┴──────────────────────────────────────────────┘
 ```
@@ -206,15 +206,19 @@ Quote polling ──stores/market (30s, paused while hidden)──► market / d
 **Dashboard (`app/src/views/dashboard/DashboardPage.vue`) has exactly one entry point, top to bottom, in a fixed order:**
 
 1. Sidebar `AppSidebar` (`variant="dashboard"`): wordmark + anchor nav (Today's conclusion / Market / Drivers /
-   Quant prediction / Strategy / Data & methods / Research) + today's brief + data freshness
+   Messages / Quant prediction / Strategy / Data & methods / Research) + today's brief + data freshness
 2. Today's conclusion `#conclusion`
 3. Market `#market`
-4. Drivers `#drivers` (bullish `#drivers-bullish` / bearish `#drivers-bearish` / messages `#messages` / institutions `#institutions`)
-5. Quant prediction `#quant` (decision horizons → fair-value decomposition → monitor signals → backtest → the four factor categories)
-6. Investment strategy `#strategy`
-7. Data & methods `#data-methods` (sync report → source availability → bootstrap progress → config hot reload →
+4. Drivers `#drivers` (bullish `#drivers-bullish` / bearish `#drivers-bearish` / institutions `#institutions`) —
+   the model's reading of the day's facts
+5. Messages `#messages` (a first-class section since 2026-10-03: high-authority raw news, top 10 per window.
+   It used to live inside "Drivers" with no sidebar entry of its own — raw facts and the reading of them are now
+   two sections, each reachable on its own)
+6. Quant prediction `#quant` (decision horizons → fair-value decomposition → monitor signals → backtest → the four factor categories)
+7. Investment strategy `#strategy`
+8. Data & methods `#data-methods` (sync report → source availability → bootstrap progress → config hot reload →
    service status → basis legend)
-8. Footer `FooterBar` (data sources / analysis model / one shared disclaimer)
+9. Footer `FooterBar` (data sources / analysis model / one shared disclaimer)
 
 **Research page (`app/src/views/research/ResearchPage.vue`) has a fixed order:**
 sidebar `AppSidebar` (`variant="research"`, adding a link back to the dashboard and the report generation time) →
@@ -280,9 +284,25 @@ does not compute a second set of numbers. Benchmark choices and roll notes must 
 **Messages (`MessagesPanel`) rules**: each of the three windows takes its top 10, and one event may appear in several
 windows. The expanded area gives the summary, scoring signals, event tags and same-story links; links that go through
 an aggregator are marked "via aggregator" (`via_aggregator`). The top meta line shows the last fetch time, and a
-manual fetch appends this run's report (ok sources / new items / failed sources). Empty window and empty database are
-different: an empty window gets one sentence, an empty database gets a `StateBlock` with the backend's reason and a
-retry path.
+manual fetch appends this run's report (ok sources / new items / failed sources / translated items). Empty window and
+empty database are different: an empty window gets one sentence, an empty database gets a `StateBlock` with the
+backend's reason and a retry path.
+
+**Showing the Chinese translation (2026-10-03)**: the source pool is all English, so every item carries a Chinese
+title and a two-to-three sentence Chinese brief **in its collapsed state** — a reader should not have to expand each
+row to learn what happened today.
+
+- **The Chinese is additive, not a replacement**: the English title always stays visible (the small line under the
+  Chinese one), the English summary stays in the expanded area, and AI output carries an "AI 译" tag plus a
+  provenance line (model, generation time, caliber). Readers can check every item instead of having to trust it.
+- **Translation status has its own line**: on/off, model, pending count, reason. The reason only exists when there
+  really are untranslated items that cannot be translated right now (switched off / LLM unconfigured / daily budget
+  exhausted / last parse failed); when everything is translated the page does not wave a scary "unavailable" at you.
+- **No Chinese is improvised**: without a translation the card shows the English title plus "Chinese translation
+  unavailable (reason)". A dictionary, a template or the model's own impression must never be used to fake it
+  (`AGENTS.md` red line 1). The frontend never translates, reorders or scores anything itself.
+- **The banned-words list still applies**: the translation must not be described as "real-time translation" or
+  "accurate translation" (see section 6).
 
 **Research page rules**: the verdict only counts independent bets in the forward holdout; while it is still short, the
 state reads "not yet decidable" together with how many trading days are missing, and **must not** be written as
@@ -402,8 +422,9 @@ per-field assertions in `fieldCoverage.test.ts` guarantee. The path column is th
 | `predictions.price_basis.*` | Quant → decision horizons → prediction base-price basis line |
 | `quant.factors.publication_lag_days` | Quant → four factor categories, "publication lag" column |
 | `quant.factors.coverage.*` | Quant → four factor categories → factor detail row: `coverage first — last · N obs · Y years`; `sparse_years` shows "gap year"; `accumulating` shows "accumulating (series still short, not a gap)"; `year_counts` folds away one level |
-| `digest.items.*` (including `via_aggregator`, `event_tags`, `event_labels`, `signals`, `related.*`) | Messages → each card and its expanded detail, field by field |
-| `digest.fetch.*` | Messages → last fetch report (folded) and the refresh report after a manual fetch |
+| `digest.items.*` (including `title_zh`, `brief_zh`, `translated`, `translation_model`, `translated_at`, `via_aggregator`, `event_tags`, `event_labels`, `signals`, `related.*`) | Messages → each card and its expanded detail, field by field (Chinese title and brief while collapsed; translation provenance and the English original in the expanded area) |
+| `digest.fetch.*` (including `translated`, `translation_reason`) | Messages → last fetch report (folded) and the refresh report after a manual fetch |
+| `digest.translation.*` | Messages → the translation status line: on/off, model, pending count, reason |
 | `accuracy.metrics.*` (including CRPS, independent bets, `down_calls` / `down_call_edge_vs_up`, `expected_cap_rate`) | Quant → backtest → skill table, row by row |
 | `accuracy.regimes.pre.*` / `post.*` | Quant → backtest → regime walk-forward table, per regime and column |
 | Beta posterior (`research.horizons.forward_posterior.*`) | Research → forward holdout → Beta posterior and CRPS table |

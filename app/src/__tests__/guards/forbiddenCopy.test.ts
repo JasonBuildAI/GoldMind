@@ -83,6 +83,7 @@ describe('界面文案守卫', () => {
       { default: ConclusionSection },
       { default: MarketSection },
       { default: DriversSection },
+      { default: MessagesSection },
       { default: QuantSection },
       { default: StrategySection },
       { default: DataMethodsSection },
@@ -92,6 +93,9 @@ describe('界面文案守卫', () => {
       import('@/views/dashboard/ConclusionSection.vue'),
       import('@/views/dashboard/MarketSection.vue'),
       import('@/views/dashboard/DriversSection.vue'),
+      // 消息独立成节之后，光挂「驱动」已经扫不到消息的文案了 —— 必须一起挂上，
+      // 否则这块内容里的能力宣称（最容易在这里出现）就没人守了。
+      import('@/views/dashboard/MessagesSection.vue'),
       import('@/views/dashboard/QuantSection.vue'),
       import('@/views/dashboard/StrategySection.vue'),
       import('@/views/dashboard/DataMethodsSection.vue'),
@@ -112,6 +116,7 @@ describe('界面文案守卫', () => {
       ConclusionSection,
       MarketSection,
       DriversSection,
+      MessagesSection,
       QuantSection,
       StrategySection,
       DataMethodsSection,

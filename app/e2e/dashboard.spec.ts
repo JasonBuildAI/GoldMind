@@ -18,7 +18,7 @@ import { fieldTestId, TESTIDS } from '../src/testids'
  * 真栈验证（真实 LLM 与真实数据）见 e2e-live/，用 E2E_LLM=real 触发。
  */
 
-const NAV_LABELS = ['今日结论', '行情', '驱动', '量化预测', '投资策略', '数据与方法', '研究']
+const NAV_LABELS = ['今日结论', '行情', '驱动', '消息', '量化预测', '投资策略', '数据与方法', '研究']
 
 /** 精确定位「看涨因素」区块：区块内自己也有刷新按钮，必须限定范围（strict mode）。 */
 function bullishSection(page: Page) {
@@ -136,11 +136,12 @@ test.describe('GoldMind 看板端到端', () => {
     await expect(market.getByRole('heading', { name: '纽约黄金', exact: true })).toBeVisible()
     await expect(market.getByRole('heading', { name: '美元指数', exact: true })).toBeVisible()
 
-    // 自上而下的阅读顺序：今日结论 → 行情 → 驱动 → 量化预测 → 投资策略 → 数据与方法
+    // 自上而下的阅读顺序：今日结论 → 行情 → 驱动 → 消息 → 量化预测 → 投资策略 → 数据与方法
     for (const id of [
       TESTIDS.sectionConclusion,
       TESTIDS.sectionMarket,
       TESTIDS.sectionDrivers,
+      TESTIDS.sectionMessages,
       TESTIDS.sectionQuant,
       TESTIDS.sectionStrategy,
       TESTIDS.sectionData,
@@ -178,9 +179,11 @@ test.describe('GoldMind 看板端到端', () => {
 
     const section = page.getByTestId(TESTIDS.driversMessages)
 
-    // 同题报道的代表条取簇内重要性最高者：1.2 小时前的美联社那条
+    // 同题报道的代表条取簇内重要性最高者：1.2 小时前的美联社那条。
+    // `.first()`：英文原题现在出现两次（折叠态那行小字 + 展开区的「英文原题」），
+    // 这里要的是**不展开就能看到**的那一处。
     await expect(
-      section.getByText('Gold hits record high on central bank demand'),
+      section.getByText('Gold hits record high on central bank demand').first(),
     ).toBeVisible()
 
     // 原文链接新窗口打开，且指向真实种子 URL
@@ -202,6 +205,41 @@ test.describe('GoldMind 看板端到端', () => {
     await expect(section.getByText('Gold steadies ahead of US payrolls data')).toHaveCount(0)
     await section.getByRole('tab', { name: '7 天内' }).click()
     await expect(section.getByText('Gold steadies ahead of US payrolls data')).toBeVisible()
+  })
+
+  test('中文化：折叠态就能读到中文标题与导语，未翻译的那条如实说明原因', async ({ page }) => {
+    await page.goto('/')
+
+    const section = page.getByTestId(TESTIDS.driversMessages)
+
+    // 折叠态（没有点任何「展开详情」）就该看到中文：读者不必逐条展开
+    await expect(section.getByTestId(fieldTestId('digest.items.title_zh')).first()).toHaveText(
+      '端到端中文标题 1',
+    )
+    await expect(section.getByTestId(fieldTestId('digest.items.brief_zh')).first()).toBeVisible()
+    await expect(section.getByText('端到端中文导语 1')).toBeVisible()
+    // AI 产出必须带标注
+    await expect(section.getByTestId(fieldTestId('digest.items.translated')).first()).toBeVisible()
+
+    // 中文是叠加：英文原题仍在同一条卡片上
+    await expect(
+      section.getByTestId(fieldTestId('digest.items.title')).first(),
+    ).toContainText('Gold hits record high on central bank demand')
+
+    // 翻译状态一行说清开关、模型与待翻译条数
+    await expect(section.getByTestId(fieldTestId('digest.translation.model'))).toBeVisible()
+    await expect(section.getByTestId(fieldTestId('digest.translation.pending'))).toContainText(
+      '待翻译 1 条',
+    )
+
+    // 未翻译的那条（26 小时前，只在 7 天窗口）：英文标题 + 为什么没有中文，绝不留空
+    await section.getByRole('tab', { name: '7 天内' }).click()
+    // 按标题定位而不是按 id：种子库的 id 由自增分配，钉死数字等于把测试耦合到插入顺序
+    const untranslated = section
+      .locator('li[data-testid^="message-"]')
+      .filter({ hasText: 'Gold steadies ahead of US payrolls data' })
+    await expect(untranslated).toContainText('Gold steadies ahead of US payrolls data')
+    await expect(untranslated).toContainText('中文翻译暂不可用')
   })
 
   test('数据与方法节按 /health 原样展示初始化进度与配置热加载', async ({ page, request }) => {

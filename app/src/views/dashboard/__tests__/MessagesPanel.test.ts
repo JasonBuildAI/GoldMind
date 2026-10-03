@@ -21,8 +21,14 @@ function item(overrides: Partial<DigestItem> = {}): DigestItem {
   return {
     rank: 1,
     id: 1,
-    title: '接口返回的消息一',
-    summary: '接口返回的摘要一',
+    title: 'Gold hits a record high',
+    summary: 'Central bank buying keeps pushing gold higher.',
+    // 中文译文与英文原文并存
+    title_zh: '金价创下新高',
+    brief_zh: '央行持续购金推动金价走高。',
+    translated: true,
+    translation_model: 'test-model',
+    translated_at: '2026-10-02T10:35:00',
     source: '路透社',
     tier: 1,
     tier_label: '一级信源',
@@ -55,19 +61,21 @@ const FETCH_REPORT = {
   skipped_no_time: 1,
   skipped_filtered: 15,
   skipped_unstorable: 0,
+  translated: 2,
+  translation_reason: null,
   sources: [],
 }
 
 const ITEM_24H = item({
   id: 1,
   rank: 1,
-  title: '金价创下新高',
-  summary: '央行持续购金推动金价走高。',
+  title_zh: '金价创下新高',
+  translated: true,
   signals: ['一级信源：官方 / 通讯社 / 行业机构', '2 家来源同题报道'],
   coverage_count: 2,
   related: [
     {
-      title: '金价创下新高（同题）',
+      title: '同题报道：金价创下新高',
       source: '美联社',
       url: 'https://example.invalid/digest/ap',
       published_at: '2026-10-02T09:00:00',
@@ -75,10 +83,16 @@ const ITEM_24H = item({
   ],
 })
 
+/** 只在 7 天窗口出现、且**还没有中文**的一条：未翻译时的降级显示靠它覆盖。 */
 const ITEM_7D_ONLY = item({
   id: 2,
   rank: 2,
-  title: '只在 7 天窗口出现的消息',
+  title: 'Gold steadies ahead of the payrolls report',
+  title_zh: null,
+  brief_zh: null,
+  translated: false,
+  translation_model: null,
+  translated_at: null,
   published_at: '2026-10-01T02:00:00',
 })
 
@@ -87,6 +101,12 @@ const DIGEST: DigestResponse = {
   has_data: true,
   unavailable_reason: null,
   last_fetch: FETCH_REPORT,
+  translation: {
+    enabled: true,
+    model: 'test-model',
+    pending: 1,
+    reason: 'LLM 未配置：中文标题与导语暂不可用',
+  },
   windows: [
     { key: '24h', label: '24 小时内', hours: 24, total_clusters: 1, items: [ITEM_24H] },
     { key: '7d', label: '7 天内', hours: 168, total_clusters: 2, items: [ITEM_24H, ITEM_7D_ONLY] },
@@ -142,7 +162,7 @@ describe('Messages', () => {
       ).toBe(true)
     }
     expect(hasText(root, '金价创下新高')).toBe(true)
-    expect(hasText(root, '只在 7 天窗口出现的消息')).toBe(false)
+    expect(hasText(root, 'Gold steadies ahead of the payrolls report')).toBe(false)
   })
 
   it('切换窗口后显示该窗口独有的条目', async () => {
@@ -152,8 +172,77 @@ describe('Messages', () => {
     clickTab(root, '7 天内')
 
     await vi.waitFor(() => {
-      expect(hasText(root, '只在 7 天窗口出现的消息')).toBe(true)
+      expect(hasText(root, 'Gold steadies ahead of the payrolls report')).toBe(true)
     })
+  })
+
+  it('有中文译文时：中文标题为主，英文原题仍在，导语与 AI 标注在折叠态可见', async () => {
+    mocked.getDigest.mockResolvedValue(DIGEST)
+
+    const { root } = await renderMessages()
+
+    const row = byTestId(root, 'message-1')!
+    // 中文标题是标题本身
+    expect(byTestId(root, 'field-digest.items.title_zh')?.textContent).toContain('金价创下新高')
+    // 英文原题**始终可见**（叠加不是替换）：否则读者无法把译文对回原文
+    expect(byTestId(root, 'field-digest.items.title')?.textContent).toContain(
+      'Gold hits a record high',
+    )
+    expect(row.querySelector('[data-testid="field-digest.items.title"]')).not.toBeNull()
+    // 导语：不必展开就能读到「这条讲了什么」
+    expect(byTestId(root, 'field-digest.items.brief_zh')?.textContent).toContain(
+      '央行持续购金推动金价走高',
+    )
+    // AI 产出必须带标注
+    expect(byTestId(root, 'field-digest.items.translated')?.textContent).toContain('AI 译')
+  })
+
+  it('没有中文译文时：英文标题就是标题，并说明为什么没有中文', async () => {
+    mocked.getDigest.mockResolvedValue(DIGEST)
+
+    const { root } = await renderMessages()
+    clickTab(root, '7 天内')
+
+    await vi.waitFor(() => {
+      expect(byTestId(root, 'message-2')).not.toBeNull()
+    })
+    const row = byTestId(root, 'message-2')!
+    expect(row.textContent).toContain('Gold steadies ahead of the payrolls report')
+    // 原因来自后端（translation.reason），不是前端编的一句话
+    expect(row.textContent).toContain('中文翻译暂不可用')
+    expect(row.textContent).toContain('LLM 未配置')
+    // 不许出现任何凭空的中文标题/导语
+    expect(byTestId(row, 'field-digest.items.title_zh')).toBeNull()
+    expect(byTestId(row, 'field-digest.items.brief_zh')).toBeNull()
+  })
+
+  it('翻译状态一行如实展示开关、模型、待翻译条数与原因', async () => {
+    mocked.getDigest.mockResolvedValue(DIGEST)
+
+    const { root } = await renderMessages()
+
+    expect(byTestId(root, 'field-digest.translation.enabled')?.textContent).toContain('已开启')
+    expect(byTestId(root, 'field-digest.translation.model')?.textContent).toContain('test-model')
+    expect(byTestId(root, 'field-digest.translation.pending')?.textContent).toContain('待翻译 1 条')
+    expect(byTestId(root, 'field-digest.translation.reason')?.textContent).toContain('LLM 未配置')
+  })
+
+  it('展开后英文原文与「中文是谁生成的」都在，读者可以逐条核对', async () => {
+    mocked.getDigest.mockResolvedValue(DIGEST)
+
+    const { root } = await renderMessages()
+
+    const details = byTestId(root, 'message-1')!.querySelector('details')!
+    details.setAttribute('open', '')
+
+    expect(byTestId(root, 'field-digest.items.title')?.textContent).toContain('Gold hits')
+    expect(byTestId(root, 'field-digest.items.summary')?.textContent).toContain(
+      'Central bank buying keeps pushing gold higher',
+    )
+    const note = byTestId(root, 'message-translation-1')!
+    expect(note.textContent).toContain('test-model')
+    expect(note.textContent).toContain('2026-10-02 10:35')
+    expect(note.textContent).toContain('只压缩原文已有的事实')
   })
 
   it('每条给出序号、来源、时间、重要性与置信度，原文链接新窗口打开', async () => {
@@ -171,7 +260,8 @@ describe('Messages', () => {
     const link = row.querySelector<HTMLAnchorElement>('a[href="https://example.invalid/digest/1"]')!
     expect(link.getAttribute('target')).toBe('_blank')
     expect(link.getAttribute('rel')).toContain('noopener')
-    expect(link.getAttribute('aria-label')).toContain('原文：金价创下新高')
+    // 可访问名用**英文原题**：读屏用户听到的就是来源给的那个标题
+    expect(link.getAttribute('aria-label')).toContain('原文：Gold hits a record high')
   })
 
   it('展开详情后能看到摘要、评分依据与同题报道链接', async () => {
@@ -182,12 +272,14 @@ describe('Messages', () => {
     const details = byTestId(root, 'message-1')!.querySelector('details')!
     details.setAttribute('open', '')
     // happy-dom 不派发 toggle，直接同步 DOM 后再断言即可
-    expect(byTestId(root, 'message-summary-1')?.textContent).toContain('央行持续购金推动金价走高')
+    expect(byTestId(root, 'message-summary-1')?.textContent).toContain(
+      'Central bank buying keeps pushing gold higher',
+    )
     const signals = byTestId(root, 'message-signals-1')!
     expect(signals.textContent).toContain('2 家来源同题报道')
     const related = byTestId(root, 'message-related-1')!
     const relatedLink = related.querySelector<HTMLAnchorElement>('a')!
-    expect(relatedLink.textContent).toContain('金价创下新高（同题）')
+    expect(relatedLink.textContent).toContain('同题报道：金价创下新高')
     expect(relatedLink.getAttribute('target')).toBe('_blank')
     expect(related.textContent).toContain('美联社')
   })

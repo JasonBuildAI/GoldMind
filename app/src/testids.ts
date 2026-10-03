@@ -112,6 +112,9 @@ export const DIGEST_RESPONSE_FIELDS = [
   'last_fetch',
 ] as const
 
+/** 翻译状态（`digest.translation.*`，2026-10-03 起）。 */
+export const DIGEST_TRANSLATION_FIELDS = ['enabled', 'model', 'pending', 'reason'] as const
+
 export const ADVICE_PRINCIPLE_FIELDS = ['title', 'description'] as const
 
 export const FACTOR_PERFORMANCE_FIELDS = [
@@ -234,6 +237,12 @@ export const DIGEST_ITEM_FIELDS = [
   'id',
   'title',
   'summary',
+  // 中文译文：与英文原文并存（`title` / `summary` 照旧下发，可逐条核对）
+  'title_zh',
+  'brief_zh',
+  'translated',
+  'translation_model',
+  'translated_at',
   'source',
   'tier',
   'tier_label',
@@ -265,6 +274,9 @@ export const DIGEST_FETCH_FIELDS = [
   'skipped_no_time',
   'skipped_filtered',
   'skipped_unstorable',
+  // 中文翻译：与抓取计数分开（翻译失败不是抓取失败）
+  'translated',
+  'translation_reason',
 ] as const
 
 export const DIGEST_FETCH_SOURCE_FIELDS = ['name', 'status', 'entries', 'kept', 'new', 'error'] as const
@@ -423,6 +435,9 @@ const bullishItems = build(FACTOR_ITEM_FIELDS.map((name) => `bullish.items.${nam
 const bearishItems = build(FACTOR_ITEM_FIELDS.map((name) => `bearish.items.${name}`))
 const digestWindows = build(DIGEST_WINDOW_FIELDS.map((name) => `digest.windows.${name}`))
 const digestResponse = build(DIGEST_RESPONSE_FIELDS.map((name) => `digest.${name}`))
+const digestTranslation = build(
+  DIGEST_TRANSLATION_FIELDS.map((name) => `digest.translation.${name}`),
+)
 const principles = build(ADVICE_PRINCIPLE_FIELDS.map((name) => `advice.principles.${name}`))
 const accuracyFactors = build(FACTOR_PERFORMANCE_FIELDS.map((name) => `accuracy.factors.${name}`))
 const accuracyRegimePre = build(REGIME_BLOCK_FIELDS.map((name) => `accuracy.regimes.pre.${name}`))
@@ -486,6 +501,7 @@ export const TESTIDS = Object.freeze({
   sectionConclusion: 'conclusion',
   sectionMarket: 'market',
   sectionDrivers: 'drivers',
+  sectionMessages: 'messages',
   sectionQuant: 'quant',
   sectionStrategy: 'strategy',
   sectionData: 'data-methods',
@@ -616,6 +632,7 @@ export const TESTIDS = Object.freeze({
     ...bearishItems,
     ...digestWindows,
     ...digestResponse,
+    ...digestTranslation,
     ...principles,
     ...accuracyFactors,
     ...accuracyRegimePre,
