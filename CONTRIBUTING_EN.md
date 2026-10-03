@@ -46,9 +46,10 @@ git checkout -b fix/short-description
 - SQLite (default, a single file; MySQL optional)
 
 **Frontend**
-- React 19
-- TypeScript 5.9 (`strict: true`)
-- Tailwind CSS 3
+- Vue 3 (single-file components, `<script setup lang="ts">`)
+- TypeScript 5.9 (`strict: true`; type checking runs through `vue-tsc`)
+- Pinia (state) + Vite (build, two HTML entries: dashboard / research)
+- Tests: vitest + `@vue/test-utils`; browser end-to-end via Playwright
 
 **AI**
 - Any OpenAI-compatible LLM endpoint (OpenAI / DeepSeek / Qwen / Kimi / Ollama / Xiaomi MiMo, …;
@@ -93,11 +94,13 @@ a test that still passes on broken code is not a test.
 
 ```
 GoldMind/
-├── app/                    # frontend (React + TypeScript)
+├── app/                    # frontend (Vue 3 + TypeScript + Pinia)
 │   ├── src/
-│   │   ├── sections/      # page sections
-│   │   ├── components/    # reusable components
-│   │   └── services/      # API client
+│   │   ├── views/         # the seven dashboard sections + eight research sections (grouped by feature)
+│   │   ├── components/    # reusable components (incl. hand-rolled SVG charts)
+│   │   ├── stores/        # Pinia: market / freshness / AI config
+│   │   ├── services/      # API client
+│   │   └── styles/        # design tokens and base styles
 │   └── package.json
 ├── backend/               # backend (FastAPI + Python)
 │   ├── app/

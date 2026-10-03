@@ -14,11 +14,59 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 (Unreleased work for the next round lives here; everything in 2.0.2 is below.)
 
+### Changed
+
+- **Layout switched to a two-column shell — left sidebar + content column — filling the whole page.**
+  The wordmark, anchor nav, today's brief and data freshness moved out of the top bar into the left
+  sidebar (`AppSidebar`: a sticky column, translucent, hairline on its right edge), and the content
+  column now takes every remaining pixel — the body is **no longer centred and narrowed to 1180px**,
+  so tables and charts fit on one screen on a wide display; readability is instead guaranteed by each
+  section's own 68ch measure. Below 960px it collapses to a single column and the sidebar becomes a
+  bar at the top of the page.
+- **Frontend rewritten: React 19 → Vue 3 + Pinia.** `app/src` is grouped by feature
+  (`views/dashboard` / `views/research` / `components` / `stores` / `composables` / `styles`), one file
+  per concern; the two HTML entries (dashboard / research) and the `./research.html` relative link are
+  unchanged. Tests moved from Testing Library to `@vue/test-utils`, and type checking now runs through
+  `vue-tsc`.
+- **Visual language switched to Apple macOS / HIG**: layered surfaces, hairlines, 6/8/10 radii, two
+  very light shadow levels, a translucent sidebar and card overlays, the system font stack (serif stack
+  removed) and Apple's semantic palette; every foreground/background pair is measured against 4.5:1. See
+  `docs/20-前端设计规范.md` (sections 2 and 4 rewritten).
+- Dropped the dependencies that were **not actually used**: Tailwind (only 6 of 639 `className`
+  occurrences were utilities), recharts (used in 2 charts only, now hand-rolled SVG), Radix Tabs
+  (replaced by an in-house ARIA tablist), lucide-react / clsx / tailwind-merge. Frontend JS output
+  dropped from 863 kB to 312 kB.
+
+### Added
+
+- A layout self-check script, `app/scripts/verify_layout.mjs` (needs the real stack running): it measures
+  in a real browser at 1440×900 and 390×844 — no horizontal overflow (offending elements are named), two
+  columns filling the viewport and a single column when narrow, a sticky sidebar with its hairline, live
+  design tokens, no decorative gradients or glow, reachable anchors, and body/secondary text contrast
+  ≥ 4.5:1. Unit tests run in happy-dom, which has **no layout engine**, so it cannot see "the page
+  scrolls sideways".
+- Three gate guards: `src/__tests__/guards/forbiddenCopy.test.ts` (renders every section, then scans
+  for capability claims), `pageStructure.test.ts` (one h1 / skip-link target exists / nav anchors
+  resolve / reading order / unique ids / tabs carry `aria-selected` / buttons have accessible names /
+  no nested disclosures) and `designTokens.test.ts` (no hardcoded hex colors in components). All three
+  were mutation-verified (see the appendix of this round's spec).
+
 ### Fixed
 
 - The bootstrap `schema_migrations` registry now builds its SQL from a Core Table: `key` is a
   MySQL reserved word, so the hand-written SQL made MySQL fail with 1064 and blocked automatic
   migrations; SQLite behaviour is unchanged (verified against a real MySQL server).
+- Two tab groups in the frontend shared the same tabpanel ids (`tabpanel-${horizon}` for both the five
+  decision horizons and the backtest horizons), which pointed `aria-controls` at the wrong element;
+  `TabsNav` now requires the caller to supply a `panelId` prefix.
+- Horizontal page scrolling on narrow screens (measured: the document was 1025px wide in a 390px
+  viewport), from three separate causes: grid/flex children missing `min-width: 0` (long paragraphs and
+  tables widened their track), `.table-scroll` itself missing `min-width: 0` (so "scroll inside the
+  table" became "scroll the whole page"), and a chart that never cleared the browser's default `figure`
+  margin (`1em 40px` — 40px of overflow on one side alone).
+- The screenshot script's default URL changed from `127.0.0.1:5173` to `localhost:5173`: the Vite dev
+  server only listens on `::1` by default (the README's documented address is localhost too), so
+  hardcoding IPv4 failed to connect and hung on "cannot read /health".
 
 ---
 

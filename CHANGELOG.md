@@ -14,10 +14,46 @@
 
 （下一轮的未发布内容记在这里；2.0.2 的全部改动见下方。）
 
+### 变更
+
+- **版式改成「左侧栏 + 内容区」两栏，整页铺满**。字标、锚点导航、今日速览与数据新鲜度
+  从顶部横条搬进左侧栏（`AppSidebar`，整列吸顶、半透明底、右侧发丝线），内容区把剩余
+  宽度全部吃掉 —— 不再把正文居中收窄到 1180px，宽屏上表格与图表能一次看全；可读性改由
+  各区块自己的 68ch 行宽上限保证。窄于 960px 落成单栏，左栏回到页面顶部横条。
+- **前端整体重写：React 19 → Vue 3 + Pinia**。`app/src` 按功能分组
+  （`views/dashboard` / `views/research` / `components` / `stores` / `composables` / `styles`），
+  一个文件只讲一件事；两个 HTML 入口（看板 / 研究页）与 `./research.html` 相对链接不变。
+  测试从 Testing Library 迁到 `@vue/test-utils`，类型检查改走 `vue-tsc`。
+- **视觉语言改为 Apple macOS / HIG**：分层表面、发丝线、圆角 6/8/10、两级极轻阴影、
+  半透明左栏与卡片浮层、系统字体栈（去掉衬线栈）与 Apple 语义色板；
+  所有前景/背景对按 4.5:1 实测。规范见 `docs/20-前端设计规范.md`（第二、四节整节改写）。
+- 顺带删掉**实际没用上**的依赖：Tailwind（639 处 `className` 里只有 6 处是工具类）、
+  recharts（只用在 2 处图表，改为自绘 SVG）、Radix Tabs（改为自研 ARIA tablist）、
+  lucide-react / clsx / tailwind-merge。前端产物 JS 从 863 kB 降到 312 kB。
+
+### 新增
+
+- 版式自检脚本 `app/scripts/verify_layout.mjs`（需要真实栈在跑）：在真实浏览器里实测
+  1440×900 与 390×844 两档无横向溢出（越界元素点名）、两栏铺满与窄屏单栏、左栏吸顶与
+  发丝线、设计令牌生效、无装饰性渐变与发光、锚点可达、正文与次要文字对比度 ≥ 4.5:1。
+  单元测试跑在 happy-dom 里、**没有排版引擎**，「整页横向滚动」这类问题它看不见。
+- 三条闸门守卫：`src/__tests__/guards/forbiddenCopy.test.ts`（全部区块渲染后扫能力宣称禁用词）、
+  `pageStructure.test.ts`（一个 h1 / skip link 目标存在 / 导航锚点可达 / 阅读顺序 / id 唯一 /
+  tab 有 `aria-selected` / 按钮有可访问名 / 折叠不嵌套）、
+  `designTokens.test.ts`（组件里不出现写死的十六进制色）。三条都做过变异验证（见本轮 spec 附录）。
+
 ### 修复
 
 - 启动引导的 `schema_migrations` 注册表改由 Core Table 生成 SQL：`key` 是 MySQL 保留字，
   手写裸 SQL 在 MySQL 上直接报 1064、自动迁移无法落地；SQLite 行为不变（真实 MySQL 实测通过）。
+- 前端两处标签组的 tabpanel `id` 撞车（五个决策尺度与回测尺度共用 `tabpanel-${horizon}`），
+  会让 `aria-controls` 指向错误的元素；`TabsNav` 现在要求调用方给 `panelId` 前缀。
+- 窄屏整页横向滚动（实测 390px 视口下文档宽 1025px），三个原因逐个修掉：
+  栅格 / 弹性容器的子项缺 `min-width: 0`（长段落与表格把轨道顶宽）、
+  `.table-scroll` 自身缺 `min-width: 0`（「表内滚动」变成「整页滚动」）、
+  图表没清掉浏览器给 `figure` 的默认外边距（`1em 40px`，单边就顶出 40px）。
+- 截图脚本默认地址从 `127.0.0.1:5173` 改成 `localhost:5173`：Vite 开发服务器默认只监听
+  `::1`（README 里的服务地址也是 localhost），写死 IPv4 会连不上、卡在「读不到 /health」。
 
 ---
 

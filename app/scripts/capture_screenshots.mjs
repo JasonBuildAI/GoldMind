@@ -17,9 +17,13 @@
  * 不能直接 import TS，改动选择器时两处必须同步（见 docs/20-前端设计规范.md 第八节）。
  *
  * 前置：真实后端（含真实 LLM）与前端 dev/preview 都要已经在跑。
- *   SCREENSHOT_BASE_URL  默认 http://127.0.0.1:5173
+ *   SCREENSHOT_BASE_URL  默认 http://localhost:5173
  *   SCREENSHOT_OUT       默认 <repo>/docs/images/screenshots
  *   SCREENSHOT_BROWSER   chrome（默认）/ msedge / chromium
+ *
+ * 默认用 `localhost` 而不是 `127.0.0.1`：Vite 开发服务器默认只监听 `::1`
+ * （README 里的服务地址也是 `http://localhost:5173`），写死 IPv4 会连不上、
+ * 卡在「读不到 /health」上。要拍别的地址用 SCREENSHOT_BASE_URL 覆盖。
  *
  * 用法（在 app/ 目录）：
  *   node scripts/capture_screenshots.mjs
@@ -30,7 +34,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const BASE_URL = process.env.SCREENSHOT_BASE_URL || 'http://127.0.0.1:5173'
+const BASE_URL = process.env.SCREENSHOT_BASE_URL || 'http://localhost:5173'
 // HERE = <repo>/app/scripts —— 默认落到仓库根的 docs/images/screenshots。
 const OUT_DIR = path.resolve(HERE, process.env.SCREENSHOT_OUT || '../../docs/images/screenshots')
 const BROWSER = process.env.SCREENSHOT_BROWSER || 'chrome'
@@ -55,7 +59,8 @@ const EMPTY_MARKERS = [
 const MIN_CHARS = 60
 
 const SHOTS = [
-  { name: 'dashboard', url: '/', selector: '.masthead', pad: 260, minChars: 40 },
+  // 报头是 macOS 工具条（半透明 + 吸顶），class 从 .masthead 改成 .toolbar。
+  { name: 'dashboard', url: '/', selector: '.toolbar', pad: 260, minChars: 40 },
   {
     name: 'price-chart',
     url: '/',

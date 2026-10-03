@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/SQLite-zero--config%20repro-003B57?style=flat-square&logo=sqlite" alt="SQLite">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React">
+  <img src="https://img.shields.io/badge/Vue-3-4FC08D?style=flat-square&logo=vuedotjs" alt="Vue 3">
 </p>
 
 <p align="center">
@@ -1006,16 +1006,16 @@ python scripts/screen_factors.py --horizons 20,60 --as-of 2026-09-01
 ```bash
 cd app
 
-# install
+# install (Vue 3 + Pinia + Vite)
 npm ci
 
-# build + type check — the full gate
+# build + type check (vue-tsc) — the full gate
 npm run build
 
 # static check
 npm run lint
 
-# unit + integration tests (vitest + Testing Library)
+# unit + integration tests (vitest + @vue/test-utils)
 npm test
 
 # browser end-to-end (Playwright) — requires npm run build first
@@ -1027,6 +1027,12 @@ npm run dev
 # re-shoot the 14 README screenshots (needs the real stack running: backend 8000 + frontend 5173)
 node scripts/capture_screenshots.mjs
 # optional: SCREENSHOT_BASE_URL / SCREENSHOT_OUT / SCREENSHOT_BROWSER=chrome|msedge|chromium
+
+# layout self-check (needs the real stack running): no horizontal overflow at two viewports,
+# two columns filling the page, live tokens, no decorative gradients/glow.
+# Unit tests run in happy-dom, which has no layout engine, so it cannot see "the page scrolls
+# sideways" — that check needs a real browser.
+node scripts/verify_layout.mjs
 ```
 
 ### Browser end-to-end tests
@@ -1133,14 +1139,18 @@ and a human decides when to merge.
 
 ```
 GoldMind/
-├── app/                          # frontend (React 19 + TypeScript + Tailwind)
+├── app/                          # frontend (Vue 3 + TypeScript + Pinia)
 │   ├── src/
-│   │   ├── sections/            # the seven page sections, each with its tests
-│   │   ├── research/            # research page: pre-registered evaluation, verdict window, bins
-│   │   ├── components/          # reusable components (incl. the forecast-date column)
-│   │   ├── layout/              # masthead / footer
+│   │   ├── views/dashboard/     # the seven dashboard sections (conclusion / market / drivers / quant / strategy / data)
+│   │   ├── views/research/      # research page: pre-registered evaluation, verdict window, bins
+│   │   ├── components/          # reusable components (incl. hand-rolled SVG charts)
+│   │   ├── layout/              # left sidebar (wordmark / nav / brief / freshness) / footer
 │   │   ├── services/            # API client and types (api.ts)
-│   │   └── test/                # test fixtures
+│   │   ├── stores/              # Pinia: market / freshness / AI config
+│   │   ├── composables/         # useAsyncBlock / useFreshnessBlock
+│   │   ├── styles/              # design tokens and base styles (single source)
+│   │   ├── entries/             # two entries: dashboard / research
+│   │   └── test/                # test fixtures and mount helpers
 │   ├── scripts/
 │   │   └── capture_screenshots.mjs  # README screenshots: asserts real content, never a blank shot
 │   └── package.json
@@ -1313,7 +1323,7 @@ Released under the [MIT License](./LICENSE).
 
 - Any OpenAI-compatible LLM endpoint (development used [Xiaomi MiMo](https://platform.xiaomimimo.com/)) — language model and web-search capability
 - [FastAPI](https://fastapi.tiangolo.com/) — high-performance web framework
-- [React](https://react.dev/) — frontend UI framework
+- [Vue 3](https://vuejs.org/) — frontend UI framework (with Pinia and Vite)
 - US Treasury, NY Fed, CFTC, Yahoo Finance, Sina Finance and Iacoviello & Papaioannou (GPR) — key-free public data
 
 ---

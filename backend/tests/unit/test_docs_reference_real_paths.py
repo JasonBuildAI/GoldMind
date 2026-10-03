@@ -32,6 +32,11 @@ PATH_EXEMPTIONS = {
 # markdown 链接目标里指向仓库内的相对路径
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)#\s]+)\)")
 
+# 前端从 React 换成 Vue 的那一天（见 docs/specs/2026-10-03-前端-Vue重写.md）。
+# 这一天之前的 spec 里的 `app/src/**` 引用整类豁免 —— spec 是那一轮的记录，
+# 不许改写，而它描述的前端目录已经整体换掉了。
+FRONTEND_REWRITE_DATE = "2026-10-03"
+
 
 def _read(rel: str) -> str:
     return (REPO_ROOT / rel).read_text(encoding="utf-8")
@@ -135,25 +140,39 @@ def test_spec_docs_reference_real_paths():
     某份 spec 引用了一个早已改名的测试，谁也没发现，因为守卫只扫 `AGENTS.md` / `README*`。
     spec 不是权威，但**记录也不许指向不存在的东西**。
 
-    规范化（否则会满屏假阳性，实测规范化前 20+ 条「死链」全是这三类）：
+    规范化（否则会满屏假阳性，实测规范化前 20+ 条「死链」全是这几类）：
     1. 去掉 `:行号` 后缀（`README.md:279` 是「文档的某一行」，不是路径）；
     2. 跳过含通配符的写法（`docs/en/*`、`app/src/hooks/useAiConfig*.ts`）；
-    3. spec 里写的 `app/services/...` 指的是 `backend/app/services/...` —— 两种前缀都认。
+    3. spec 里写的 `app/services/...` 指的是 `backend/app/services/...` —— 两种前缀都认；
+    4. **重写日之前的前端引用整类豁免**：2026-10-03 的前端重写把 React 目录整体换成了
+       Vue 目录（`app/src/sections/Factors.tsx` → `app/src/views/dashboard/FactorColumns.vue`），
+       而 spec 是那一轮的记录、不许改写。因此**写于重写日之前**的 spec 里的 `app/src/**`
+       一律跳过；写于其后的（含本轮这份）仍然照常检查。
 
-    变异验证：在任意 spec 里写一个不存在的 `backend/xxx.py`，本测试必红
-    （规范化之前它会被 `app/` 前缀与行号后缀淹没，所以那三条规定本身也要留住）。
+    变异验证：
+    - 在任意 spec 里写一个不存在的 `backend/xxx.py`，本测试必红；
+    - 在**本轮**（重写日当天及以后）的 spec 里写一个不存在的 `app/src/xxx.vue`，本测试必红。
     """
     specs = sorted((REPO_ROOT / "docs" / "specs").glob("*.md"))
     assert specs, "没扫到任何 spec，这个测试就白写了"
 
     line_suffix = re.compile(r":\d+(-\d+)?$")
+    date_prefix = re.compile(r"^(\d{4}-\d{2}-\d{2})-")
     missing = []
     checked = 0
+    skipped_react_era = 0
     for path in specs:
+        # 文件名以日期开头；解析不出来时按「新 spec」处理（宁可多查，不可漏查）
+        match = date_prefix.match(path.name)
+        spec_date = match.group(1) if match else "9999-99-99"
         for token in sorted(_inline_paths(path.read_text(encoding="utf-8"))):
             if "*" in token:
                 continue
             clean = line_suffix.sub("", token)
+            # 见上面规范化第 4 条
+            if spec_date < FRONTEND_REWRITE_DATE and clean.startswith("app/src/"):
+                skipped_react_era += 1
+                continue
             checked += 1
             candidates = (REPO_ROOT / clean, REPO_ROOT / "backend" / clean)
             if any(candidate.exists() for candidate in candidates):
@@ -162,7 +181,8 @@ def test_spec_docs_reference_real_paths():
                 continue
             missing.append(f"{path.name} -> {clean}")
     assert checked > 50, f"只解析出 {checked} 条引用，规范化逻辑大概失效了"
-    assert not missing, "spec 里引用了不存在的路径：\n" + "\n".join(f"  {m}" for m in missing)
+    assert skipped_react_era > 0, "一条重写前的前端引用都没跳过，日期解析大概失效了"
+    assert not missing, "spec 里引用了不存在的路径：\n" + "\n" + "\n".join(f"  {m}" for m in missing)
 
 
 # --------------------------------------------------------------------------- #

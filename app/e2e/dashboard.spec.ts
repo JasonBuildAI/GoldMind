@@ -26,12 +26,14 @@ function bullishSection(page: Page) {
 }
 
 /**
- * 逐条因子收在一层折叠里（可读性规范：细节最多一层折叠）。
- * 折叠是产品行为，不是测试的障碍 —— 断言逐条内容前先展开，
- * 同时也证明这一层折叠真的打得开。
+ * 逐条因子在 Vue 版里**每条自己就是一个折叠**（可读性规范：细节最多一层折叠；
+ * 原来「展开逐条因子」的外层折叠会把因子折叠套成两层）。因此这里不再需要
+ * 先展开外层 —— 直接断言折叠里的内容即可，同时顺带证明这一层打得开。
  */
 async function expandFactors(section: Locator) {
-  await section.locator('summary', { hasText: '展开逐条因子' }).click()
+  const first = section.locator('.factor details').first()
+  await first.locator('summary').click()
+  await expect(first).toHaveAttribute('open', '')
 }
 
 test.describe('GoldMind 看板端到端', () => {

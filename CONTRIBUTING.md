@@ -45,9 +45,10 @@ git checkout -b fix/bug描述
 - SQLite（默认，单文件；MySQL 可选）
 
 **前端**
-- React 19
-- TypeScript 5.9（`strict: true`）
-- Tailwind CSS 3
+- Vue 3（单文件组件，`<script setup lang="ts">`）
+- TypeScript 5.9（`strict: true`，类型检查走 `vue-tsc`）
+- Pinia（状态）+ Vite（构建，双 HTML 入口：看板 / 研究页）
+- 测试：vitest + `@vue/test-utils`；端到端 Playwright
 
 **AI**
 - 任何 OpenAI 兼容的 LLM 端点（OpenAI / DeepSeek / 通义 / Kimi / Ollama / 小米 MiMo 等，
@@ -85,11 +86,13 @@ chore: 构建/依赖更新    build: 构建系统      ci: CI 配置
 
 ```
 GoldMind/
-├── app/                    # 前端（React + TypeScript）
+├── app/                    # 前端（Vue 3 + TypeScript + Pinia）
 │   ├── src/
-│   │   ├── sections/      # 页面区块
-│   │   ├── components/    # 可复用组件
-│   │   └── services/      # API 服务
+│   │   ├── views/         # 看板七节 + 研究页八节（按功能分组）
+│   │   ├── components/    # 可复用组件（含 charts/ 自绘 SVG）
+│   │   ├── stores/        # Pinia：行情 / 新鲜度 / AI 配置
+│   │   ├── services/      # API 服务
+│   │   └── styles/        # 设计令牌与基础样式
 │   └── package.json
 ├── backend/               # 后端（FastAPI + Python）
 │   ├── app/

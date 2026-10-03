@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/SQLite-零配置复现-003B57?style=flat-square&logo=sqlite" alt="SQLite">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React">
+  <img src="https://img.shields.io/badge/Vue-3-4FC08D?style=flat-square&logo=vuedotjs" alt="Vue 3">
 </p>
 
 <p align="center">
@@ -918,16 +918,16 @@ python scripts/screen_factors.py --horizons 20,60 --as-of 2026-09-01
 ```bash
 cd app
 
-# 安装依赖
+# 安装依赖（Vue 3 + Pinia + Vite）
 npm ci
 
-# 构建 + 类型检查 —— 全档闸门
+# 构建 + 类型检查（vue-tsc）—— 全档闸门
 npm run build
 
 # 静态检查
 npm run lint
 
-# 单元 + 集成测试（vitest + Testing Library）
+# 单元 + 集成测试（vitest + @vue/test-utils）
 npm test
 
 # 浏览器端到端测试（Playwright）—— 需要先 npm run build
@@ -939,6 +939,10 @@ npm run dev
 # 重拍 README 里的 14 张截图（需要真实栈在跑：后端 8000 + 前端 5173）
 node scripts/capture_screenshots.mjs
 # 可选：SCREENSHOT_BASE_URL / SCREENSHOT_OUT / SCREENSHOT_BROWSER=chrome|msedge|chromium
+
+# 版式自检（需要真实栈在跑）：两档视口无横向溢出、两栏铺满、令牌生效、无装饰性渐变/发光
+# 单元测试跑在 happy-dom 里、没有排版引擎，「整页横向滚动」这类问题它看不见，必须用真浏览器
+node scripts/verify_layout.mjs
 ```
 
 ### 浏览器端到端测试
@@ -1041,14 +1045,18 @@ python scripts/smoke_llm.py
 
 ```
 GoldMind/
-├── app/                          # 前端（React 19 + TypeScript + Tailwind）
+├── app/                          # 前端（Vue 3 + TypeScript + Pinia）
 │   ├── src/
-│   │   ├── sections/            # 七个页面区块 + 各自的测试
-│   │   ├── research/            # 「研究」页：预注册评估、裁决窗口、可靠性分桶
-│   │   ├── components/          # 可复用组件（含机构观点的预测日期列）
-│   │   ├── layout/              # 报头 / 页脚
+│   │   ├── views/dashboard/     # 看板七节（今日结论 / 行情 / 驱动 / 量化 / 策略 / 数据与方法）
+│   │   ├── views/research/      # 「研究」页：预注册评估、裁决窗口、可靠性分桶
+│   │   ├── components/          # 可复用组件（含 charts/ 自绘 SVG）
+│   │   ├── layout/              # 左侧栏（字标 / 导航 / 速览 / 新鲜度）/ 页脚
 │   │   ├── services/            # API 客户端与类型定义（api.ts）
-│   │   └── test/                # 测试夹具
+│   │   ├── stores/              # Pinia：行情 / 新鲜度 / AI 配置
+│   │   ├── composables/         # useAsyncBlock / useFreshnessBlock
+│   │   ├── styles/              # 设计令牌与基础样式（唯一真源）
+│   │   ├── entries/             # 两个入口：看板 / 研究页
+│   │   └── test/                # 测试夹具与挂载工具
 │   ├── scripts/
 │   │   └── capture_screenshots.mjs  # README 截图：逐块检查真实内容，不写空图
 │   └── package.json
@@ -1209,7 +1217,7 @@ was considered high risk"）：后端会自动重试一次，仍被拒时如实�
 
 - 任何 OpenAI 兼容的 LLM 端点（本项目开发期用的是[小米 MiMo](https://platform.xiaomimimo.com/)）- 提供大语言模型与联网搜索能力
 - [FastAPI](https://fastapi.tiangolo.com/) - 高性能Web框架
-- [React](https://react.dev/) - 前端UI框架
+- [Vue 3](https://vuejs.org/) - 前端 UI 框架（配合 Pinia 与 Vite）
 - 美国财政部、纽约联储、CFTC、Yahoo Finance、新浪财经、Iacoviello & Papaioannou（GPR） - 提供免密钥的公开数据源
 
 ---

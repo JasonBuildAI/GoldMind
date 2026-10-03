@@ -1,11 +1,11 @@
 import path from 'path'
-import react from '@vitejs/plugin-react'
+import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 // 独立的 vitest 配置：不复用 vite.config.ts，避免把开发服务器代理等
 // 与测试无关的配置带进来。
 export default defineConfig({
-  plugins: [react()],
+  plugins: [vue()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -18,7 +18,8 @@ export default defineConfig({
     environment: 'happy-dom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // 测试与被测代码放在一起，目录名 __tests__；不用 *.test.* 散落在 src 根下。
+    include: ['src/**/__tests__/**/*.{test,spec}.ts'],
     // 组件只测逻辑与可访问性，不测样式，跳过 CSS 处理以加快速度
     css: false,
   },

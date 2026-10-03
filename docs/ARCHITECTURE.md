@@ -16,7 +16,7 @@
 ```
 ┌──────────────┐   /api/**   ┌──────────────┐            ┌────────────────┐
 │  浏览器      │ ──────────► │  FastAPI     │ ─────────► │ SQLite（默认） │
-│  React 19    │             │  (uvicorn)   │            │ 或 MySQL（可选）│
+│  Vue 3       │             │  (uvicorn)   │            │ 或 MySQL（可选）│
 └──────────────┘             └──────┬───────┘            └────────────────┘
                                     │
                                     │ llm_provider（唯一出口）
@@ -47,14 +47,15 @@ GoldMind/
 │   ├── 10-密钥与隐私.md    密钥规则与历史泄漏处理
 │   ├── ARCHITECTURE.md    本文件
 │   └── API.md             接口规范
-├── app/                   前端（浅色研究简报；视觉与文案规则见 docs/20-前端设计规范.md）
-│   ├── src/sections/      七节：行情 / 多空对照 / 机构观点 / 消息 / 投资策略 / 量化预测 / 总结
-│   ├── src/layout/        报头（字标、锚点导航、数据来源）与页脚
-│   ├── src/components/    节内原语（Section / StateBlock / 表格 / 报价……）
+├── app/                   前端（Vue 3 + Pinia + Vite；视觉与文案规则见 docs/20-前端设计规范.md）
+│   ├── src/views/dashboard/  看板七节：今日结论 / 行情 / 驱动 / 量化预测 / 投资策略 / 数据与方法
+│   ├── src/views/research/   研究页八节：裁决 / 前向留出期 / 覆盖度 / 诊断 / 分段 / 因子 / 基准 / 同步
+│   ├── src/components/    节内原语（SectionBlock / StateBlock / DataTable / 报价 / 自绘 SVG 图表……）
+│   ├── src/layout/        左侧栏（字标 / 导航 / 速览 / 新鲜度）与页脚
 │   ├── src/styles/        设计令牌与基础排版
 │   ├── src/services/api.ts  唯一的 HTTP 出口
-│   ├── src/contexts/      行情数据的 Provider 与轮询
-│   ├── src/components/ui/  仅保留 tabs.tsx
+│   ├── src/stores/        Pinia：行情轮询 / 数据新鲜度 / AI 配置
+│   ├── src/entries/       两个入口：看板（index.html）与研究页（research.html）
 │   └── e2e/               Playwright 端到端测试
 └── backend/
     ├── app/

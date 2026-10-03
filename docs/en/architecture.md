@@ -18,7 +18,7 @@ This document describes the **current implementation**. What the product should 
 ```
 ┌──────────────┐   /api/**   ┌──────────────┐            ┌────────────────┐
 │  Browser     │ ──────────► │  FastAPI     │ ─────────► │ SQLite(default)│
-│  React 19    │             │  (uvicorn)   │            │ or MySQL(opt.) │
+│  Vue 3       │             │  (uvicorn)   │            │ or MySQL(opt.) │
 └──────────────┘             └──────┬───────┘            └────────────────┘
                                     │
                                     │ llm_provider (the only exit)
@@ -50,14 +50,15 @@ GoldMind/
 │   ├── 10-密钥与隐私.md    secret rules and handling of the historical leak
 │   ├── ARCHITECTURE.md    this file
 │   └── API.md             API specification
-├── app/                   frontend (light research brief; visual and copy rules in docs/20-前端设计规范.md)
-│   ├── src/sections/      seven sections: market / bullish vs bearish / institutional views / messages / investment strategy / quant prediction / conclusion
-│   ├── src/layout/        header (wordmark, anchor navigation, data sources) and footer
-│   ├── src/components/    in-section primitives (Section / StateBlock / tables / quotes ...)
+├── app/                   frontend (Vue 3 + Pinia + Vite; visual and copy rules in docs/20-前端设计规范.md)
+│   ├── src/views/dashboard/  the seven dashboard sections: conclusion / market / drivers / quant prediction / investment strategy / data & methods
+│   ├── src/views/research/   the eight research sections: verdict / forward holdout / coverage / diagnostics / regimes / factors / benchmarks / sync
+│   ├── src/components/    in-section primitives (SectionBlock / StateBlock / DataTable / quotes / hand-rolled SVG charts ...)
+│   ├── src/layout/        left sidebar (wordmark / nav / brief / freshness) and footer
 │   ├── src/styles/        design tokens and base typography
 │   ├── src/services/api.ts  the only HTTP exit
-│   ├── src/contexts/      market data provider and polling
-│   ├── src/components/ui/  only tabs.tsx remains
+│   ├── src/stores/        Pinia: market polling / data freshness / AI config
+│   ├── src/entries/       two entries: dashboard (index.html) and research (research.html)
 │   └── e2e/               Playwright end-to-end tests
 └── backend/
     ├── app/

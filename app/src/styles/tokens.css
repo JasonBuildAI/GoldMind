@@ -1,34 +1,122 @@
 /*
- * 设计令牌 —— 界面上所有颜色、字体与尺寸的唯一真源。
- * 规范见 docs/20-前端设计规范.md；组件只引用变量，不写新的十六进制色。
+ * 设计令牌 —— 界面上所有颜色、字体、圆角、阴影与尺寸的唯一真源。
+ *
+ * 规范见 docs/20-前端设计规范.md；组件只引用变量，不写新的十六进制色
+ * （`src/__tests__/guards/designTokens.test.ts` 会在闸门里守住这一条）。
+ *
+ * 视觉语言：Apple macOS / HIG —— 分层表面、发丝线、圆角、极轻阴影、
+ * 半透明工具条、系统字体与系统色板。
  */
 :root {
-  /* 纸与墨 */
-  --paper: #f6f6f3;
-  --surface: #ffffff;
-  --ink: #17191b;
-  --ink-muted: #5c6166;
-  --rule: #d9dad4;
-  --gold: #8a6a12;
+  /* ---------------------------------------------------------------------
+   * 表面：靠「层级」而不是「卡片堆叠」建立结构
+   * ------------------------------------------------------------------- */
+  --bg: #f2f2f7; /* 窗口底 */
+  --surface: #ffffff; /* 内容面：卡片、表格、面板 */
+  --surface-2: #fbfbfd; /* 次级面：表头、条带、代码块 */
+  --surface-sunken: #ececf0; /* 凹陷面：轨道、进度槽 */
+  --fill-quaternary: rgba(120, 120, 128, 0.08); /* 悬停 / 选中底 */
+  --fill-tertiary: rgba(120, 120, 128, 0.12); /* 更强的悬停底 */
 
-  /* 涨跌：红涨绿跌。方向必须同时由 ▲▼ 与文字表达，颜色只是加强 */
-  --up: #b4232a;
-  --down: #16653c;
+  /* 发丝线：macOS 的分隔靠 1px 线，不靠阴影 */
+  --separator: #d8d8de;
+  --separator-strong: #c6c6cc;
 
-  /* 字体：全部使用系统栈，零下载 */
-  --font-serif: Georgia, "Songti SC", "Noto Serif CJK SC", SimSun, serif;
-  --font-sans: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC",
-    Arial, sans-serif;
+  /* ---------------------------------------------------------------------
+   * 文字
+   * ------------------------------------------------------------------- */
+  --text: #1d1d1f; /* 标题与正文 */
+  --text-secondary: #6e6e73; /* 次要信息：时间、来源、说明（白底 5.1:1） */
+  --text-tertiary: #6e6e73; /* 三级：单位、表头。与 secondary 同值 —— 更浅的
+                               灰（Apple #8E8E93）白底只有 3.3:1，不到 4.5:1，
+                               层次改由字重与字号表达 */
+  --text-on-accent: #ffffff;
 
-  /* 版式 */
-  --max-width: 1180px;
+  /* ---------------------------------------------------------------------
+   * 强调与语义
+   *
+   * 涨跌方向必须**同时**由 ▲▼ 与「涨/跌」文字表达，颜色只是加强。
+   * 红涨绿跌，符合中文投资者的阅读习惯。
+   * 下面每个前景色都按白底 ≥4.5:1 实测（见规范第二节的表）。
+   * ------------------------------------------------------------------- */
+  --accent: #0071e3; /* Apple 蓝：链接、选中 tab、主按钮 */
+  --accent-hover: #0063c8;
+  --accent-soft: rgba(0, 113, 227, 0.1); /* 选中底 */
+  --gold: #a67c00; /* 金价与关键数字的唯一强调色 */
+  --up: #c8102e; /* 上涨（红） */
+  --down: #1d7a3e; /* 下跌（绿） */
+  --warn: #8a5300; /* 需要留意（未过期、积累期以外的提示） */
+  --warn-soft: rgba(255, 149, 0, 0.12);
+  --danger: #b3261e; /* 失败、缺口年 */
+  --danger-soft: rgba(255, 59, 48, 0.1);
+  --success: #1d7a3e;
+  --success-soft: rgba(52, 199, 89, 0.12);
+
+  /* ---------------------------------------------------------------------
+   * 字体：全走系统栈，零下载。
+   * 标题与正文同族，靠字重 / 字号 / 字距分层 —— 这是 macOS 的做法。
+   * ------------------------------------------------------------------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---------------------------------------------------------------------
+   * 几何
+   * ------------------------------------------------------------------- */
+  --radius-sm: 6px; /* 按钮、输入、标签 */
+  --radius: 8px; /* 卡片、面板、表格容器 */
+  --radius-lg: 10px; /* 工具条、sheet */
+  --radius-pill: 999px;
+
+  /* 阴影只有两级，同级不混用 */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.03);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  --hairline: 1px;
+
+  /* ---------------------------------------------------------------------
+   * 版式（Apple 字号阶梯）
+   *
+   * 页面是「左侧栏 + 内容区」的两栏壳：左侧栏固定宽度，内容区把剩下的
+   * 宽度全部吃掉（整页铺满，不再居中收窄）。`--shell-max` 只在超宽屏上
+   * 生效，避免 4K 显示器上正文被拉成一行 200 字符。
+   * ------------------------------------------------------------------- */
+  --max-width: 1180px; /* 单列版心的上限（研究页降级态等仍在用） */
+  --sidebar-width: 300px;
+  --shell-max: 2400px;
+  --shell-gap: 32px;
+  --shell-pad: 28px;
+  /* 左栏收起的断点：窄于它时两栏叠成单栏（见 base.css 的 .app-shell） */
+  --bp-narrow: 960px;
+  --bp-tight: 720px;
+
+  --text-2xs: 11px;
   --text-xs: 12px;
   --text-sm: 13px;
   --text-base: 15px;
   --text-lg: 17px;
   --text-xl: 20px;
-  --text-2xl: 26px;
-  --text-3xl: 34px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+  --text-4xl: 34px;
+  --text-5xl: 40px;
+
+  --leading-body: 1.6;
+  --leading-title: 1.25;
+  --measure: 68ch; /* 正文行宽上限 */
+
+  /* ---------------------------------------------------------------------
+   * 动效：只用于回应人的操作，不做自动播放入场
+   * ------------------------------------------------------------------- */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-fast: 150ms;
+  --dur: 220ms;
+
+  /* 左栏（macOS 侧边栏）的底色：比内容面深一档，靠发丝线分隔 */
+  --toolbar-bg: rgba(251, 251, 253, 0.82);
+  --toolbar-bg-fallback: var(--surface-2);
+  --sidebar-bg: #f7f7f9;
+  --sidebar-bg-fallback: var(--surface-2);
 }
 
 /* 动效只用于回应人的操作；用户要求减少动效时全部关闭 */
@@ -46,8 +134,19 @@
 /* 研究简报应当可打印：去底色、隐藏交互控件、块内避免断页 */
 @media print {
   :root {
-    --paper: #ffffff;
-    --rule: #999999;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #ffffff;
+    --sidebar-bg: #ffffff;
+    --sidebar-bg-fallback: #ffffff;
+    --separator: #999999;
+    --shadow-1: none;
+    --shadow-2: none;
+  }
+
+  /* 打印时左栏没有意义（导航与新鲜度条都在里面），整页按单栏排 */
+  .app-shell {
+    display: block !important;
   }
 
   .no-print {
@@ -57,7 +156,8 @@
   .panel,
   .data-table,
   figure,
-  .state {
+  .state,
+  .card {
     break-inside: avoid;
   }
 }

@@ -1,5 +1,5 @@
 import path from "path"
-import react from "@vitejs/plugin-react"
+import vue from "@vitejs/plugin-vue"
 import { defineConfig } from "vite"
 
 // 代理目标默认指向本地 8000；Playwright 用 VITE_PROXY_TARGET 把它改到自己
@@ -9,10 +9,11 @@ const proxyTarget = process.env.VITE_PROXY_TARGET || "http://localhost:8000"
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  plugins: [vue()],
   build: {
     // 多页：看板（index.html）与研究页（research.html）各自独立入口；
     // base './' 下相对链接 ./research.html 在预览与静态部署里都能直达。
+    // 两个页面共用同一份 shared chunk（API 客户端、格式化、设计令牌）。
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
