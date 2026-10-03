@@ -207,6 +207,18 @@ describe('Institutions', () => {
     expect(hasText(root, /可能滞后/)).toBe(true)
   })
 
+  it('机构缩写按字标渲染，不当图片地址（旧实现把 "GS" 当 src，页面上是碎图）', async () => {
+    mocked.getInstitutionPredictions.mockResolvedValue(RESPONSE)
+
+    const { root } = await renderInstitutions()
+
+    const logo = byTestId(root, 'field-institutions.logo')
+    expect(logo?.tagName).toBe('SPAN')
+    expect(logo?.textContent).toBe('X')
+    // 整个面板不该再有 <img>：logo 字段不是图片地址。
+    expect(root.querySelector('img')).toBeNull()
+  })
+
   it('理由单元格里的要点收在一层折叠里，不嵌套第二层', async () => {
     mocked.getInstitutionPredictions.mockResolvedValue(RESPONSE)
 

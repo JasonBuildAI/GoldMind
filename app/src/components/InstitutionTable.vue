@@ -44,13 +44,17 @@ const ratingOf = (rating: string) => RATING[rating] ?? RATING.neutral
       <tbody>
         <tr v-for="institution in institutions" :key="institution.name" :data-testid="`institution-${institution.name}`">
           <th scope="row" :data-testid="fieldTestId('institutions.name')">
-            <img
+            <!--
+              `logo` 字段是机构缩写（后端提示词里写死的口径：「机构缩写，如 GS」），
+              不是图片地址。旧实现按 `<img :src>` 渲染，浏览器把 "GS" 当相对路径去请求，
+              每一格都挂一个碎图图标（README 截图里肉眼可见）。
+            -->
+            <span
               v-if="institution.logo"
               class="institution__logo"
-              :src="institution.logo"
-              alt=""
+              aria-hidden="true"
               :data-testid="fieldTestId('institutions.logo')"
-            />
+            >{{ institution.logo }}</span>
             <span v-else hidden :data-testid="fieldTestId('institutions.logo')" />
             {{ institution.name }}
           </th>
@@ -100,11 +104,17 @@ const ratingOf = (rating: string) => RATING[rating] ?? RATING.neutral
 
 <style scoped>
 .institution__logo {
-  width: 16px;
-  height: 16px;
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 4px;
   margin-right: 6px;
-  border-radius: 3px;
-  object-fit: contain;
-  vertical-align: -3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  vertical-align: -2px;
 }
 </style>
