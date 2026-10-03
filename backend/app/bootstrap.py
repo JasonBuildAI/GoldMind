@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from loguru import logger
-from sqlalchemy import Engine, inspect, text
+from sqlalchemy import Column, DateTime, Engine, MetaData, String, Table, Text, inspect, select
 
 from app.config import settings
 from app.utils import timeutil
@@ -41,6 +41,18 @@ BACKUP_DIR = BACKEND_DIR / "backups"
 MIGRATION_BACKUP_KEEP = 20
 
 REGISTRY_TABLE = "schema_migrations"
+
+# 注册表定义走 Core Table，不手写 SQL：`key` 是 MySQL 保留字，裸写会在 MySQL 上
+# 直接 1064 语法报错（2026-10-03 真实库实测）；Core 交给方言按需加引号
+# （MySQL 反引号 / SQLite 双引号），两库共用同一份定义。
+REGISTRY = Table(
+    REGISTRY_TABLE,
+    MetaData(),
+    Column("key", String(64), primary_key=True),
+    Column("description", Text, nullable=True),
+    Column("note", Text, nullable=True),
+    Column("applied_at", DateTime, nullable=False),
+)
 
 
 @dataclass(frozen=True)
@@ -108,39 +120,26 @@ def _ensure_sys_path() -> None:
 
 def ensure_registry(engine: Engine) -> None:
     """建出 ``schema_migrations`` 表（幂等）。"""
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                f"CREATE TABLE IF NOT EXISTS {REGISTRY_TABLE} ("
-                "  key VARCHAR(64) NOT NULL PRIMARY KEY,"
-                "  description TEXT NULL,"
-                "  note TEXT NULL,"
-                "  applied_at DATETIME NOT NULL"
-                ")"
-            )
-        )
+    REGISTRY.create(engine, checkfirst=True)
 
 
 def applied_keys(engine: Engine) -> set[str]:
     ensure_registry(engine)
     with engine.connect() as conn:
-        rows = conn.execute(text(f"SELECT key FROM {REGISTRY_TABLE}")).all()
+        rows = conn.execute(select(REGISTRY.c.key)).all()
     return {str(row[0]) for row in rows}
 
 
 def _record(engine: Engine, migration: Migration, note: str) -> None:
     with engine.begin() as conn:
         conn.execute(
-            text(
-                f"INSERT INTO {REGISTRY_TABLE} (key, description, note, applied_at) "
-                "VALUES (:key, :description, :note, :applied_at)"
-            ),
-            {
-                "key": migration.key,
-                "description": migration.description,
-                "note": note[:2000],
-                "applied_at": timeutil.now_naive().isoformat(sep=" ", timespec="seconds"),
-            },
+            REGISTRY.insert().values(
+                key=migration.key,
+                description=migration.description,
+                note=note[:2000],
+                # naive datetime（项目时区），秒级精度与旧手写 SQL 一致
+                applied_at=timeutil.now_naive().replace(microsecond=0),
+            )
         )
 
 

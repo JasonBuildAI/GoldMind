@@ -3,12 +3,13 @@
 变异验证（见 commit message body）：
 - 让 `run_migrations` 忽略 `schema_migrations`（每次重放）→ 幂等测试必红；
 - 让失败的迁移也写进注册表 → 重试测试必红；
-- 去掉「备份失败即中止」→ 备份守卫测试必红。
+- 去掉「备份失败即中止」→ 备份守卫测试必红；
+- 注册表 SQL 退回手写裸 `key` → MySQL 引号守卫测试必红（真实库 1064 回归）。
 """
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, create_mock_engine, text
 
 from app import bootstrap
 
@@ -93,3 +94,72 @@ def test_backup_failure_blocks_the_migration(file_engine, backup_dir, monkeypatc
 
     assert {item["status"] for item in results} == {"failed"}
     assert bootstrap.applied_keys(file_engine) == set(), "没有备份就不许改库"
+class _EmptyResult:
+    def all(self):
+        return []
+
+
+class _MockConn:
+    """mock 连接的执行代理：语句交 mock 记录，结果集固定为空。"""
+
+    def __init__(self, mock):
+        self._mock = mock
+
+    def execute(self, statement, *args, **kwargs):
+        self._mock.execute(statement, *args, **kwargs)
+        return _EmptyResult()
+
+
+class _Ctx:
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __enter__(self):
+        return self._inner
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _MockEngineShim:
+    """MockEngine 没有 begin()/connect() 上下文；补一层薄壳让生产函数原样跑。"""
+
+    def __init__(self, mock):
+        self._mock = mock
+        self.dialect = mock.dialect
+
+    def _run_ddl_visitor(self, visitor, element, **kwargs):
+        return self._mock._run_ddl_visitor(visitor, element, **kwargs)
+
+    def begin(self):
+        return _Ctx(self._mock)
+
+    def connect(self):
+        return _Ctx(_MockConn(self._mock))
+
+
+@pytest.mark.unit
+def test_registry_sql_quotes_reserved_key_on_mysql_dialect():
+    """`key` 是 MySQL 保留字：注册表三处 SQL 都必须由方言加引号。
+
+    回归背景：注册表最初手写裸 SQL，SQLite 能建、MySQL 直接 1064（真实库实测）。
+    本测试把生产函数原样跑在 MySQL 方言的 mock 引擎上；任何一处退回手写 SQL，
+    捕获到的语句就不含反引号，这里必红。
+    """
+    captured: list[str] = []
+    holder: dict = {}
+
+    def record(statement, *multiparams, **params):
+        captured.append(str(statement.compile(dialect=holder["engine"].dialect)))
+
+    mock = create_mock_engine("mysql+pymysql://", record)
+    holder["engine"] = mock
+    engine = _MockEngineShim(mock)
+
+    bootstrap.ensure_registry(engine)
+    assert bootstrap.applied_keys(engine) == set()
+    bootstrap._record(engine, bootstrap.MIGRATIONS_BY_KEY["quant-tables"], "测试用 note")
+
+    unquoted = [statement for statement in captured if "`key`" not in statement]
+    assert len(captured) >= 4, captured
+    assert not unquoted, f"这些注册表 SQL 在 MySQL 方言下漏了引号：{unquoted}"

@@ -14,6 +14,12 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 (Unreleased work for the next round lives here; everything in 2.0.2 is below.)
 
+### Fixed
+
+- The bootstrap `schema_migrations` registry now builds its SQL from a Core Table: `key` is a
+  MySQL reserved word, so the hand-written SQL made MySQL fail with 1064 and blocked automatic
+  migrations; SQLite behaviour is unchanged (verified against a real MySQL server).
+
 ---
 
 ## [2.0.2] - 2026-10-03
