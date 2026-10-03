@@ -222,6 +222,8 @@ variables. Commonly used items:
 | `CACHE_DIR` | `backend/cache` | file cache directory |
 | `NEWS_RSS_SOURCES` | four built-in sources | format `name\|URL,name\|URL` |
 | `NEWS_DIGEST_SOURCES` | 13 built-in high-authority sources | message-board source pool, format `name\|URL\|tier\|relevance`; empty means the built-in defaults |
+| `NEWS_TRANSLATE_ENABLED` | `true` | Chinese translation for digest items; turning it off means no LLM call at all (the page shows English plus the reason) |
+| `NEWS_TRANSLATE_BATCH` | `30` | Items per translation batch (= the number visible across the three windows); whatever is left is picked up next round |
 | `CORS_ALLOW_ORIGINS` | local development addresses | do not put `*` in it |
 | `RATE_LIMIT_PER_MINUTE` | `60` | per-IP cap for regular endpoints |
 | `RATE_LIMIT_AI_PER_MINUTE` | `6` | cap for endpoints that call the LLM |
@@ -304,7 +306,7 @@ of each endpoint's own behaviour tests (such as `test_correlation_days_actually_
 | Update gold prices | `30 6 * * *` | daily at 06:30, skipped on weekends |
 | Update the dollar index | same as gold prices | |
 | Update news | even hours | RSS fetch |
-| Update the message digest | `25 * * * *` | full crawl of the message board's high-authority sources (no LLM calls) |
+| Update the message digest | `25 * * * *` | full crawl of the message board's high-authority sources (scoring makes no LLM calls) plus one batch of Chinese translation (a single chat call, see section 12) |
 | Update AI analysis | even hours | runs the 4 analysis services in sequence |
 | Sync quant factors | `15 */2 * * *` | each source skips fetches that are not due yet, at its own cadence (`QUANT_ENABLED=false` turns it all off) |
 | Recompute quant predictions | `45 */2 * * *` | recomputes the 1 / 5 / 20 / 60 / 250 trading-day predictions; backtests are throttled to 24 hours |
@@ -545,6 +547,34 @@ a title plus a cleaned, truncated summary per item (implementation: `services/ne
 - **API and schedule**: `GET /api/gold/news/digest` and `POST /api/gold/news/digest/refresh`
   (fetch report stored in cache_manager under `news_digest_fetch_status`); the
   `update_news_digest` job crawls every hour at minute 25.
+- **Chinese translations (2026-10-03, `services/news_translation.py`)**: the source pool is all
+  English RSS, so right after a crawl the titles and summaries are translated into a Chinese
+  title plus a two-to-three sentence Chinese brief, stored **alongside** the English original
+  (`title_zh` / `brief_zh` / `translated_at` / `translation_model`; old databases gain the columns
+  via `scripts/migrate_news_digest_translation.py`).
+  - One `translate_pending()` call makes exactly **one** chat call, covering
+    `NEWS_TRANSLATE_BATCH` (default 30) **untranslated** items, newest first, so what the page
+    shows first gets Chinese first. Already translated items are never paid for twice, and a
+    `translation_model` that differs from the current model counts as stale and is retranslated.
+    Calls go through `llm_provider` (red line 3) and spend from the daily budget in `llm_gate`.
+  - **No fact may be added that the source does not state** (red line 1): the prompt only allows
+    condensing what the source summary already says — numbers, institutions, targets, dates,
+    background and causality are omitted unless the source wrote them. The response is then
+    validated deterministically (the `id` must be in the batch, the Chinese title must be
+    non-empty) and any entry failing that is dropped rather than stored.
+  - **Every degradation explains itself**: `NEWS_TRANSLATE_ENABLED=false` / LLM not configured /
+    daily budget exhausted / call failed / output unparsable — each yields its own sentence in
+    `translation.reason`, and each item carries `translated`, so the page shows the English title
+    plus "Chinese translation unavailable (reason)" instead of inventing Chinese.
+  - **GET is a read path**: `translation_status()` only counts how many items still lack Chinese;
+    it never calls the model.
+  - Chinese **never** feeds scoring, clustering or ordering, and **never** enters an analysis
+    prompt (changing the language would change model behaviour — that is a separate decision);
+    analysis input stays the original English title and summary.
+  - Guards: `tests/unit/test_news_translation.py` (batching / idempotence / validation /
+    degradation / budget), `tests/unit/test_prompt_discipline.py` (the translation prompt must
+    be inside the scan), `tests/integration/test_news_digest_api.py` (GET exposes the Chinese
+    fields and reasons, and GET never calls the model).
 
 ---
 

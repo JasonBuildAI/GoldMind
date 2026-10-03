@@ -98,13 +98,18 @@ def main() -> int:
 
     # 消息板块：一组同题报道（两家来源）+ 一条只在 7 天窗口出现（26 小时前）的消息。
     # 时间用项目时区（timeutil），与窗口口径一致。
+    #
+    # 中文译文：两条 24 小时内的带上译文（端到端要断言中文标题与导语真的渲染出来），
+    # 26 小时那条故意**不带**（断言未翻译时的降级显示：英文标题 + 原因）。
+    # `translation_model` 写成端到端档的模型名（Playwright 配置里的 LLM_MODEL），
+    # 否则这两条会被算成「待翻译」，与它们已经有译文的事实矛盾。
     digest_now = timeutil.now_naive()
     digest_rows = [
-        ("Gold hits record high on central bank buying", "路透社", "reuters", 1, 1.5),
-        ("Gold hits record high on central bank demand", "美联社", "ap", 1, 1.2),
-        ("Gold steadies ahead of US payrolls data", "Kitco News", "kitco news", 2, 26.0),
+        ("Gold hits record high on central bank buying", "路透社", "reuters", 1, 1.5, True),
+        ("Gold hits record high on central bank demand", "美联社", "ap", 1, 1.2, True),
+        ("Gold steadies ahead of US payrolls data", "Kitco News", "kitco news", 2, 26.0, False),
     ]
-    for index, (title, source, source_key, tier, hours_ago) in enumerate(digest_rows):
+    for index, (title, source, source_key, tier, hours_ago, translated) in enumerate(digest_rows):
         db.add(
             NewsDigestItem(
                 title=title,
@@ -115,6 +120,10 @@ def main() -> int:
                 url=f"https://example.invalid/e2e/digest/{index}",
                 published_at=digest_now - timedelta(hours=hours_ago),
                 fetched_at=digest_now,
+                title_zh=f"端到端中文标题 {index}" if translated else None,
+                brief_zh=f"端到端中文导语 {index}" if translated else None,
+                translated_at=digest_now if translated else None,
+                translation_model="e2e-mock-model" if translated else None,
             )
         )
     db.commit()

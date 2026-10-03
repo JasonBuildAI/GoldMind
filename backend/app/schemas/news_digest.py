@@ -26,6 +26,13 @@ class DigestItem(BaseModel):
     id: int
     title: str
     summary: str
+    # 中文译文（叠加，不替换）：title_zh / brief_zh 为 None 表示这条尚未翻译。
+    # `translated` 是给前端用的显式布尔 —— 不让界面靠 `title_zh is None` 反推。
+    title_zh: Optional[str] = None
+    brief_zh: Optional[str] = None
+    translated: bool = False
+    translation_model: Optional[str] = None
+    translated_at: Optional[datetime] = None
     source: str
     tier: int
     tier_label: str
@@ -75,7 +82,19 @@ class DigestFetchReport(BaseModel):
     skipped_filtered: int
     # 落库阶段被跳过的行（如单行数据超长）。默认 0：修复前写入的缓存报告仍可解析。
     skipped_unstorable: int = 0
+    # 中文翻译结果（默认 0 / None：修复前写入的缓存报告仍可解析）
+    translated: int = 0
+    translation_reason: Optional[str] = None
     sources: List[DigestFetchSource]
+
+
+class DigestTranslationStatus(BaseModel):
+    """翻译状态：页面据此解释「为什么这条没有中文」。"""
+
+    enabled: bool
+    model: Optional[str] = None
+    pending: int = 0
+    reason: Optional[str] = None
 
 
 class DigestResponse(BaseModel):
@@ -83,6 +102,7 @@ class DigestResponse(BaseModel):
     has_data: bool
     unavailable_reason: Optional[str] = None
     last_fetch: Optional[DigestFetchReport] = None
+    translation: Optional[DigestTranslationStatus] = None
     windows: List[DigestWindow]
 
 

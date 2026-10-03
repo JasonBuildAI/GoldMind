@@ -623,10 +623,27 @@ def _phase_news(ctx: _Context, db) -> dict:
     except Exception as exc:  # 消息板块失败不拖垮新闻主链路
         digest_note = f"消息板块抓取失败：{type(exc).__name__}: {exc}"
 
+    # 中文翻译：无论这一步有没有真抓取都补一批（幂等）—— 已经全翻好时零调用。
+    # 老库首次升级到「消息中文化」时，历史条目的中文就是靠这一步 + 每小时抓取
+    # 逐步补齐的（最新优先），不需要一次性回填脚本。
+    translation_note = None
+    try:
+        from app.services.news_translation import translate_pending
+
+        report = translate_pending(db)
+        if report.requested == 0:
+            translation_note = "消息中文翻译：没有待翻译条目"
+        elif report.translated:
+            translation_note = f"消息中文翻译：本批 {report.requested} 条，写入 {report.translated} 条"
+        else:
+            translation_note = f"消息中文翻译未完成：{report.reason or '原因未知'}"
+    except Exception as exc:  # 翻译失败不拖垮引导
+        translation_note = f"消息中文翻译失败：{type(exc).__name__}: {exc}"
+
     failed = fresh_news == 0 and "写入 0 条" in (news_note or "")
     return {
         "status": "failed" if failed else "done",
-        "note": f"{news_note}；{digest_note}",
+        "note": f"{news_note}；{digest_note}；{translation_note}",
     }
 
 

@@ -226,6 +226,8 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 | `CACHE_DIR` | `backend/cache` | 文件缓存目录 |
 | `NEWS_RSS_SOURCES` | 内置四个源 | 格式 `名称\|URL,名称\|URL` |
 | `NEWS_DIGEST_SOURCES` | 内置 13 个高权威源 | 消息板块来源池，格式 `名称\|URL\|tier\|relevance`；留空用内置默认池 |
+| `NEWS_TRANSLATE_ENABLED` | `true` | 消息板块中文翻译开关；关掉即完全不调用 LLM（页面显示英文 + 原因） |
+| `NEWS_TRANSLATE_BATCH` | `30` | 一次批量翻译的条目上限（= 三个窗口可见条目上限）；未翻完的下一轮继续 |
 | `CORS_ALLOW_ORIGINS` | 本地开发地址 | 不要填 `*` |
 | `RATE_LIMIT_PER_MINUTE` | `60` | 普通接口每 IP 上限 |
 | `RATE_LIMIT_AI_PER_MINUTE` | `6` | 会调用 LLM 的接口上限 |
@@ -302,7 +304,7 @@ async def get_correlation_data(limit: int = Query(...), include_realtime: bool =
 | 更新金价 | `30 6 * * *` | 每日 06:30，周末跳过 |
 | 更新美元指数 | 同金价 | |
 | 更新新闻 | 偶数整点 | RSS 抓取 |
-| 更新消息精选 | `25 * * * *` | 消息板块全源抓取（高权威来源，不调用 LLM） |
+| 更新消息精选 | `25 * * * *` | 消息板块全源抓取（高权威来源，评分不调用 LLM）＋ 一批中文翻译（一次 chat 调用，见第十二节） |
 | 更新 AI 分析 | 偶数整点 | 依次跑 4 个分析服务 |
 | 同步量化因子 | `15 */2 * * *` | 各源按自身节奏跳过未到期的抓取（`QUANT_ENABLED=false` 可整体关闭） |
 | 重算量化预测 | `45 */2 * * *` | 重算 1 / 5 / 20 / 60 / 250 个交易日预测；回测按 24 小时节流 |
@@ -534,6 +536,26 @@ URL 去重合并（消息板块优先），进入看涨/看跌因子、机构观
 - **接口与定时**：`GET /api/gold/news/digest` 与 `POST /api/gold/news/digest/refresh`
   （抓取报告写入 cache_manager，key `news_digest_fetch_status`）；
   调度任务 `update_news_digest` 默认每小时第 25 分钟抓取。
+- **中文译文（2026-10-03，`services/news_translation.py`）**：来源池全是英文 RSS，
+  抓取后自动把标题与摘要译成「中文标题 + 2–3 句中文导语」，与英文原文**并存**存储
+  （`title_zh` / `brief_zh` / `translated_at` / `translation_model`，老库补列走
+  `scripts/migrate_news_digest_translation.py`）。
+  - 一次 `translate_pending()` 只发**一次** chat 调用，取 `NEWS_TRANSLATE_BATCH`（默认 30）
+    条**尚未翻译**的条目、按发布时间倒序（页面上先看到的先有中文）；已翻好的永不重复调用，
+    `translation_model` 与当前模型不一致时算陈旧、重翻。调用经 `llm_provider`（红线 3），
+    每日预算在 `llm_gate` 里扣。
+  - **不许添加原文没有的事实**（红线 1）：prompt 要求只能压缩来源摘要里已有的信息，
+    数字 / 机构名 / 目标价 / 日期 / 背景与因果原文没写就不写；代码侧再做一次确定性校验
+    （`id` 必须落在本批输入集合内、中文标题必须非空），不合格的条目整条丢弃、不写库。
+  - **降级逐条可解释**：`NEWS_TRANSLATE_ENABLED=false` / LLM 未配置 / 当日预算用尽 /
+    调用失败 / 输出解析不了 —— 各给一句原因，响应里的 `translation.reason` 与每条 item 的
+    `translated` 让页面显示「英文标题 + 中文翻译暂不可用（原因）」，绝不摆编出来的中文。
+  - **GET 是读路径**：`translation_status()` 只数「还有多少条没有中文」，一次模型调用都不发。
+  - 中文**不**参与评分、聚类与排序，也**不**进入任何分析 prompt（换语言会改变模型行为，
+    那是另一件事）—— 分析输入仍是原始英文标题与摘要。
+  - 守卫：`tests/unit/test_news_translation.py`（批量 / 幂等 / 校验 / 降级 / 预算）、
+    `tests/unit/test_prompt_discipline.py`（翻译提示词必须被扫描到）、
+    `tests/integration/test_news_digest_api.py`（GET 暴露中文字段与原因、GET 不调用模型）。
 
 ---
 

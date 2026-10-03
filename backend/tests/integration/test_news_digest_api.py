@@ -137,3 +137,98 @@ def test_second_refresh_dedupes_by_url(client, fake_digest_source):
     assert second["new_items"] == 0
     assert second["duplicates"] == 2
     assert second["success"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 中文翻译（2026-10-03）
+# --------------------------------------------------------------------------- #
+def _answer_every_item_in_chinese(fake_llm) -> None:
+    """让假 LLM 按 prompt 里**实际列出的 id** 逐条回中文。
+
+    固定样例在这里没用：条目 id 是入库时才分配的，只有照着 prompt 回，
+    这条链路（批量 prompt → 解析 → 落库 → GET）才算真的走通。
+    """
+    import json
+    import re
+
+    class _Message:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    def _invoke(prompt: str) -> "_Message":
+        fake_llm.calls.append(prompt)
+        ids = re.findall(r"^\[(\d+)\] 来源：", prompt, re.MULTILINE)
+        return _Message(
+            json.dumps(
+                {
+                    "items": [
+                        {"id": int(item_id), "title_zh": f"中文标题 {item_id}", "brief_zh": f"中文导语 {item_id}"}
+                        for item_id in ids
+                    ]
+                },
+                ensure_ascii=False,
+            )
+        )
+
+    fake_llm.invoke = _invoke  # type: ignore[method-assign]
+
+
+@pytest.mark.integration
+def test_refresh_translates_items_and_get_exposes_the_chinese(client, fake_digest_source, fake_llm):
+    _answer_every_item_in_chinese(fake_llm)
+
+    report = client.post("/api/gold/news/digest/refresh").json()
+    # 抓取与翻译分开计数：翻译失败不是抓取失败
+    assert report["new_items"] == 2
+    assert report["translated"] == 2
+    assert report["translation_reason"] is None
+
+    body = client.get("/api/gold/news/digest").json()
+    items = body["windows"][0]["items"]
+    assert len(items) == 2
+    for item in items:
+        # 中文是叠加：英文原题与摘要照旧下发，读者可以逐条核对
+        assert item["translated"] is True
+        assert item["title_zh"].startswith("中文标题 ")
+        assert item["brief_zh"].startswith("中文导语 ")
+        assert item["title"].startswith("Gold ")
+        assert item["translation_model"] == "test-model"
+        assert item["translated_at"] is not None
+
+    # 翻完了就没有「待翻译」：状态块要如实反映，而不是永远报一堆
+    assert body["translation"] == {
+        "enabled": True,
+        "model": "test-model",
+        "pending": 0,
+        "reason": None,
+    }
+
+
+@pytest.mark.integration
+def test_untranslated_items_carry_a_reason_instead_of_chinese(client, fake_digest_source, fake_llm):
+    """模型给不出可用译文时：英文照常展示，中文位置给原因，绝不摆编出来的中文。"""
+    fake_llm.responses.append("对不起，我不能翻译。")
+
+    report = client.post("/api/gold/news/digest/refresh").json()
+    assert report["translated"] == 0
+    assert "无法解析" in (report["translation_reason"] or "")
+
+    body = client.get("/api/gold/news/digest").json()
+    item = body["windows"][0]["items"][0]
+    assert item["translated"] is False
+    assert item["title_zh"] is None and item["brief_zh"] is None
+    assert item["title"].startswith("Gold ")
+    assert body["translation"]["pending"] == 2
+    assert "无法解析" in (body["translation"]["reason"] or "")
+
+
+@pytest.mark.integration
+def test_get_never_calls_the_model_for_translation(client, fake_digest_source, fake_llm):
+    """GET 是读路径：不许因为「顺便翻一下」而发起付费调用。"""
+    client.post("/api/gold/news/digest/refresh")  # refresh 会调用（此时返回 "{}"，没有译文）
+    calls_after_refresh = len(fake_llm.calls)
+
+    client.get("/api/gold/news/digest")
+    client.get("/api/gold/news/digest")
+
+    assert len(fake_llm.calls) == calls_after_refresh

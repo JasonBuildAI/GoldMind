@@ -39,6 +39,10 @@ FORBIDDEN_PHRASES = (
     "自行补充",
 )
 
+# 消息板块的翻译提示词里必须出现的那句话（见下面的覆盖守卫）。
+# 它是「不许添加原文没有的事实」这条红线在翻译链路上的唯一执行点。
+TRANSLATION_RULE_ANCHOR = "只使用给出的原文信息"
+
 # 出现这些词说明是在**禁止**编造，放行
 NEGATIONS = ("不", "勿", "禁止", "绝不", "不要", "不得", "宁可", "而不")
 
@@ -96,6 +100,21 @@ def test_the_scan_actually_finds_prompt_strings():
     assert "看涨" in joined
     assert "看跌" in joined
     assert "机构" in joined
+
+
+@pytest.mark.unit
+def test_the_translation_prompt_is_covered_by_the_scan():
+    """消息板块的翻译提示词必须落在扫描范围里。
+
+    它被写成扫描认不出的形状（拆成短字符串、从模板文件读、拼在别处）时，
+    上面那条守卫就再也管不到它 —— 而页面上的中文照样看起来完全正常，
+    编出来的机构与数字与真译文长得一模一样。
+    """
+    prompts = _prompt_strings()
+
+    assert any(
+        TRANSLATION_RULE_ANCHOR in text for _, _, text in prompts
+    ), "翻译提示词没有被扫描到，提示词红线守卫覆盖不到它"
 
 
 @pytest.mark.unit

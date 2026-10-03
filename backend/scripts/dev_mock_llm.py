@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -135,8 +136,33 @@ DISPATCH = [
     ("bullish_factors", BULLISH),
 ]
 
+# 消息翻译 prompt 的识别标记（取自 services/news_translation.TRANSLATION_PROMPT 的
+# 输出格式行）；条目行形如 `[12] 来源：路透社（一级信源）`。
+TRANSLATION_MARKER = '{"items":[{"id":1,"title_zh":'
+TRANSLATION_ITEM = re.compile(r"^\[(\d+)\] 来源：", re.MULTILINE)
+
+
+def translation_payload(prompt: str) -> dict:
+    """按 prompt 里实际列出的条目回中文：id 原样，条数一致。"""
+    ids = TRANSLATION_ITEM.findall(prompt)
+    return {
+        "items": [
+            {
+                "id": int(item_id),
+                "title_zh": f"端到端中文标题 {item_id}",
+                "brief_zh": f"端到端中文导语 {item_id}",
+            }
+            for item_id in ids
+        ]
+    }
+
 
 def pick(prompt: str) -> dict:
+    # 消息板块的中文翻译：条目数与 id 每次都不一样，固定样例对不上 ——
+    # 按 prompt 里列出的 `[id] 来源：…` 逐条回一条中文，这样端到端链路
+    # （批量 prompt → 解析 → 落库 → 页面）在离线档里也是真的走通的。
+    if TRANSLATION_MARKER in prompt:
+        return translation_payload(prompt)
     for needle, payload in DISPATCH:
         if needle in prompt:
             return payload

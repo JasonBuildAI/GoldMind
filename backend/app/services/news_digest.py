@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.news_digest import NewsDigestItem
-from app.services import news_events, source_status
+from app.services import news_events, news_translation, source_status
 from app.services.cache_manager import CacheManager
 from app.services.news_service import normalize_url, to_local_naive
 from app.utils import timeutil
@@ -361,6 +361,11 @@ class NewsDigestService:
         fetched = [item for result in results for item in result.items]
         inserted, skipped_unstorable = self._save_items(fetched)
 
+        # 中文翻译：一次批量调用，只翻尚未翻译的条目（最新优先）。
+        # 放在抓取之后而不是之前 —— 先保证「今天的消息进库了」这件更重要的事；
+        # 翻译失败只影响中文，不影响抓取本身是否成功（两件事分开报告）。
+        translation = news_translation.translate_pending(self.db)
+
         sources_payload = [
             {
                 "name": result.spec.name,
@@ -388,6 +393,9 @@ class NewsDigestService:
             "skipped_no_time": sum(result.skipped_no_time for result in results),
             "skipped_filtered": sum(result.skipped_filtered for result in results),
             "skipped_unstorable": skipped_unstorable,
+            # 中文翻译结果（与抓取结果分开计数：翻译失败不是抓取失败）
+            "translated": translation.translated,
+            "translation_reason": translation.reason,
             "sources": sources_payload,
         }
         CacheManager(FETCH_STATUS_CACHE_KEY, ttl=FETCH_STATUS_TTL).set(report)
@@ -464,6 +472,11 @@ class DigestRecord:
     importance: float = 0.0
     confidence: float = 0.0
     signals: List[str] = field(default_factory=list)
+    # 中文译文（叠加在英文原文之上；None = 尚未翻译，页面显示英文并说明原因）
+    title_zh: Optional[str] = None
+    brief_zh: Optional[str] = None
+    translated_at: Optional[datetime] = None
+    translation_model: Optional[str] = None
 
 
 def _apply_scores(record: DigestRecord, coverage: int) -> None:
@@ -586,6 +599,12 @@ def _item_payload(
         "id": record.id,
         "title": record.title,
         "summary": record.summary,
+        # 中文是叠加：英文标题与摘要照旧下发，读者可以逐条核对译文。
+        "title_zh": record.title_zh,
+        "brief_zh": record.brief_zh,
+        "translated": bool(record.title_zh),
+        "translation_model": record.translation_model,
+        "translated_at": record.translated_at,
         "source": record.source,
         "tier": record.tier,
         "tier_label": TIER_LABELS.get(record.tier, "二级信源"),
@@ -682,6 +701,10 @@ def build_digest_payload(db: Session, *, now: Optional[datetime] = None) -> Dict
             tier=int(row.authority_tier or 2),
             url=(row.url or "").strip(),
             published_at=row.published_at,
+            title_zh=(row.title_zh or "").strip() or None,
+            brief_zh=(row.brief_zh or "").strip() or None,
+            translated_at=row.translated_at,
+            translation_model=row.translation_model,
         )
         for row in rows
         if row.title and row.url and row.published_at
@@ -734,5 +757,7 @@ def build_digest_payload(db: Session, *, now: Optional[datetime] = None) -> Dict
         "has_data": has_data,
         "unavailable_reason": None if has_data else _unavailable_reason(last_fetch),
         "last_fetch": last_fetch,
+        # 翻译状态：让页面能解释「为什么这几条没有中文」，而不是留一片空白。
+        "translation": news_translation.translation_status(db),
         "windows": windows,
     }
