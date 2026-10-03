@@ -34,6 +34,12 @@ const trend = () => (props.change === undefined ? null : trendOf(props.change))
       <span aria-hidden="true">{{ trend()!.symbol }}</span> {{ formatPercent(change) }}
       <span>（{{ trend()!.label }}{{ changeNote ? `，${changeNote}` : '' }}）</span>
     </div>
-    <div v-if="meta" class="quote__meta">{{ meta }}</div>
+    <!--
+      `meta` 是字符串，但金价那一路要挂字段级选择器（`GoldPriceAsOf` 组件）——
+      所以留一个同名插槽：两条路都走同一个位置，不会出现「有的报价有时间、有的没有」。
+    -->
+    <div v-if="meta || $slots.meta" class="quote__meta">
+      <slot name="meta">{{ meta }}</slot>
+    </div>
   </div>
 </template>

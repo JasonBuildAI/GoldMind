@@ -304,6 +304,21 @@ row to learn what happened today.
 - **The banned-words list still applies**: the translation must not be described as "real-time translation" or
   "accurate translation" (see section 6).
 
+**Gold price refresh time (2026-10-03)**: six places show the international gold price — the sidebar brief, the market
+section and its quote block, "current price" in today's conclusion, the degraded strategy snapshot, the quant "base
+price", and the fair-value "market price". **Every one of them must also give that price's own as-of, basis and
+source**:
+
+- The timestamp comes from **that price's own** field (`stats.price_as_of` / `summary.price_as_of` /
+  `advice.snapshot.as_of` / `predictions.as_of` / `fair_value.as_of`) — never from the browser clock and never from
+  page load time (the rule: time only flows from backend fields).
+- When the as-of is missing the page says "gold price refresh time unknown (not returned by the backend)" — inventing
+  a "just now" is worse than admitting there is none.
+- The wording, the missing-value sentence and the field-level selectors live in exactly one component
+  (`components/GoldPriceAsOf.vue`), referenced by all six places, so the phrasing cannot drift apart.
+- Institutional targets and model-predicted prices are **not** the current gold price and are out of scope for this
+  rule (their dates live in their own tables).
+
 **Research page rules**: the verdict only counts independent bets in the forward holdout; while it is still short, the
 state reads "not yet decidable" together with how many trading days are missing, and **must not** be written as
 "failed the bar". The historical holdout column must be labelled as "already seen, recorded only". The data window
@@ -432,8 +447,9 @@ per-field assertions in `fieldCoverage.test.ts` guarantee. The path column is th
 | `research.data_window.*`, `research.holdout_start` / `active_holdout_start` | Research → version & verdict / coverage (source and data-window columns) |
 | Remaining research fields (`research.periods.*`, `horizons.*`, `factors.*`, `reliability.*`, `regimes.*`, `sync.*`) | Research → the corresponding tables, column by column; guaranteed by `fieldCoverage.test.ts` |
 | Institution fields (`institutions.*`) | Drivers → institution views table, column by column (the prediction-date column adds "stale by N days" beyond 30 days) |
-| Strategy fields (`advice.*`) | Drivers → three strategy tiers and the risk warning; when data is insufficient only the price snapshot (`advice.snapshot.*`) is shown |
-| `summary.*` | Today's conclusion: conclusion line + metric row + folded evidence + target-price reference table + generation info |
+| Strategy fields (`advice.*`) | Drivers → three strategy tiers and the risk warning; when data is insufficient only the price snapshot (`advice.snapshot.*`, including the snapshot price's own `as_of` / `basis_label` / `source`) is shown |
+| `summary.*` | Today's conclusion: conclusion line + metric row + folded evidence + target-price reference table + generation info; `summary.price_as_of` / `price_basis_label` / `price_source` sit on the same line as "current price" |
+| Gold price timestamps (`predictions.base_price_as_of`, `fair_value.market_price_as_of`) | Quant → decision horizons "base price" and fair-value "market price", each carrying its own refresh time |
 
 ---
 

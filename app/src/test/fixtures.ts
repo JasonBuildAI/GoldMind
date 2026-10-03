@@ -104,6 +104,11 @@ export const SUMMARY: MarketSummaryResponse = {
     { institution: '瑞银', target: 5400, probability: '高', timeframe: '2026 年底' },
   ],
   current_price: 4200,
+  // 当前价的时间 / 口径 / 来源：与价格同源同刻（金价出现在哪儿，时间就跟到哪儿）
+  price_as_of: '2026-10-02T08:00:00+08:00',
+  price_basis: 'realtime',
+  price_basis_label: '实时报价',
+  price_source: '腾讯财经-纽约黄金',
   comprehensive_judgment: {
     bullish_summary: '宏观与需求两端仍偏多。',
     bearish_summary: '短线拥挤度偏高。',
@@ -225,6 +230,11 @@ export const ADVICE: InvestmentAdviceResponse = {
     low: 3550,
     amplitude_pct: 21.41,
     full_window: true,
+    // 快照价就是窗口末的日收盘：时间取它自己的交易日
+    as_of: '2026-10-01',
+    basis: 'close',
+    basis_label: '日收盘',
+    source: 'gold_prices 日线',
   },
   metadata: METADATA,
 }

@@ -325,6 +325,10 @@ export const PRICE_SNAPSHOT_FIELDS = [
   'low',
   'amplitude_pct',
   'full_window',
+  // 快照价自己的时间 / 口径 / 来源（2026-10-03）：只给数字读者不知道「这是哪天的」
+  'as_of',
+  'basis_label',
+  'source',
 ] as const
 
 export const MARKET_ASSESSMENT_FIELDS = [
@@ -453,6 +457,9 @@ const extras = Object.freeze({
   'monitor.as_of': field('monitor.as_of'),
   'predictions.model_version': field('predictions.model_version'),
   'predictions.as_of': field('predictions.as_of'),
+  // 金价出现在哪儿，它的刷新时间槽位就跟到哪儿（2026-10-03）
+  'predictions.base_price_as_of': field('predictions.base_price_as_of'),
+  'fair_value.market_price_as_of': field('fair_value.market_price_as_of'),
   'quant.refresh.success': field('quant.refresh.success'),
   'quant.refresh.message': field('quant.refresh.message'),
   'digest.refresh.success': field('digest.refresh.success'),
@@ -600,6 +607,10 @@ export const TESTIDS = Object.freeze({
     'dollar.source': field('dollar.source'),
     'summary.core_view': field('summary.core_view'),
     'summary.current_price': field('summary.current_price'),
+    // 当前价的时间 / 口径 / 来源：金价出现在哪儿，时间就跟到哪儿
+    'summary.price_as_of': field('summary.price_as_of'),
+    'summary.price_basis_label': field('summary.price_basis_label'),
+    'summary.price_source': field('summary.price_source'),
     'summary.confidence_level': field('summary.confidence_level'),
     'summary.time_horizon': field('summary.time_horizon'),
     'summary.investment_recommendation': field('summary.investment_recommendation'),

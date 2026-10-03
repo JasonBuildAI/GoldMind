@@ -263,6 +263,27 @@ TTL <  刷新间隔  ->  每个周期白白多触发一次付费分析
 `new Date().toISOString()` 取日期。测试用固定时刻构造场景，不要依赖跑测试时的钟点 ——
 本机是东八区，很多时区错误在这里**根本测不出来**。
 
+### 价格口径与刷新时间（as-of）
+
+同一个「金价」在页面上的口径并不相同，口径名与中文标签只在
+`app/services/price_basis.py` 定义一次（`realtime` 实时报价 / `close` 日收盘 /
+`quant_basis` 量化基准）。2026-10-03 起补上第二件事：**价格与它的刷新时间必须同源同刻下发**。
+
+- 六处展示国际金价：侧边栏今日速览、行情节与报价块、今日结论「当前价格」、
+  投资策略降级快照、量化预测「基准价」、公允价值「市场价」。
+- 后端逐处给出该价格**自己的** as-of：
+  `GET /api/gold/stats` 的 `price_as_of`（行情，来自报价自身）、
+  `GET /api/analysis/market-summary-ai` 的 `price_as_of` / `price_basis` /
+  `price_basis_label` / `price_source`（与 `current_price` 在**三个响应分支**
+  用同一个 `_apply_price_meta` 写入 —— 只换数字留下旧时间比不给时间更误导）、
+  投资策略降级快照的 `as_of` / `basis` / `basis_label` / `source`（窗口末的日收盘）、
+  量化预测的 `as_of` 与 `price_basis`（`gold_close` 最后一点，接口本来就有）。
+- **取不到金价时四个字段一起为 `null`**，页面写「金价刷新时间未知（后端未返回）」——
+  不许用 `datetime.now()` 或前端时钟造一个「刚刚」。
+- 前端措辞只在一个组件里定（`app/src/components/GoldPriceAsOf.vue`），六处引用它。
+- 守卫：`backend/tests/unit/test_price_asof_exposure.py`（三个分支同字段、缺失时为 null、
+  口径标签只从 `price_basis` 取）、`app/src/components/__tests__/GoldPriceAsOf.test.ts`。
+
 ---
 
 ### 查询参数的契约

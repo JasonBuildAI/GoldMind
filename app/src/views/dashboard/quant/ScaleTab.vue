@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import GoldPriceAsOf from '@/components/GoldPriceAsOf.vue'
 import StateBlock from '@/components/StateBlock.vue'
 import TabsNav from '@/components/TabsNav.vue'
 import { displayStamp, formatPercent, formatShare, formatUsd } from '@/lib/format'
@@ -202,6 +203,12 @@ const rawRows = computed<RawRow[]>(() => {
             <dt>基准价</dt>
             <dd class="num" :data-testid="field('predictions.base_price')">
               {{ formatUsd(active.base_price) }}
+              <!-- 目标价与区间都由这个货真价实的金价派生 —— 它是什么时候的必须跟着它 -->
+              <GoldPriceAsOf
+                :as-of="active.as_of"
+                :basis-label="active.base_basis_label"
+                as-of-field="predictions.base_price_as_of"
+              />
             </dd>
           </div>
           <div>

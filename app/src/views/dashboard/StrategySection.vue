@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DataTable from '@/components/DataTable.vue'
+import GoldPriceAsOf from '@/components/GoldPriceAsOf.vue'
 import type { Column } from '@/components/dataTable'
 import MetadataBlock from '@/components/MetadataBlock.vue'
 import PlaceholderNotice from '@/components/PlaceholderNotice.vue'
@@ -164,6 +165,16 @@ useFreshnessBlock(
             </tbody>
           </table>
         </div>
+        <!-- 快照价是金价（日收盘），它自己的交易日 / 口径 / 来源一起给 -->
+        <GoldPriceAsOf
+          label="快照价"
+          :as-of="data?.priceSnapshot?.as_of"
+          :basis-label="data?.priceSnapshot?.basis_label"
+          :source="data?.priceSnapshot?.source"
+          as-of-field="advice.snapshot.as_of"
+          basis-field="advice.snapshot.basis_label"
+          source-field="advice.snapshot.source"
+        />
       </div>
       <MetadataBlock :metadata="data?.metadata" />
       <SignOff :generated-at="data?.generatedAt" />

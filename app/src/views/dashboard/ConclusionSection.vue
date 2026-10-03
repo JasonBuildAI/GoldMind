@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DataTable from '@/components/DataTable.vue'
+import GoldPriceAsOf from '@/components/GoldPriceAsOf.vue'
 import type { Column } from '@/components/dataTable'
 import MetadataBlock from '@/components/MetadataBlock.vue'
 import PlaceholderNotice from '@/components/PlaceholderNotice.vue'
@@ -177,6 +178,17 @@ const pointGroups = computed(() => {
           </dd>
         </div>
       </dl>
+
+      <!-- 当前价是行情数据，不是模型输出：它的时间 / 口径 / 来源由后端与价格一起给 -->
+      <GoldPriceAsOf
+        label="当前价格"
+        :as-of="summary.price_as_of"
+        :basis-label="summary.price_basis_label"
+        :source="summary.price_source"
+        as-of-field="summary.price_as_of"
+        basis-field="summary.price_basis_label"
+        source-field="summary.price_source"
+      />
 
       <details class="row-details" :data-testid="TESTIDS.conclusionDetails">
         <summary>展开论据：多空要点与综合判断</summary>

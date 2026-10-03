@@ -156,6 +156,10 @@ describe('Strategy', () => {
         low: 3100,
         amplitude_pct: 41.94,
         full_window: true,
+        as_of: '2026-10-01',
+        basis: 'close',
+        basis_label: '日收盘',
+        source: 'gold_prices 日线',
       },
       metadata: { cached: false, status: 'insufficient_data' },
     } as unknown as InvestmentAdviceResponse)
@@ -166,6 +170,10 @@ describe('Strategy', () => {
     expect(byTestId(root, 'field-advice.snapshot.latest_price')?.textContent).toContain('$4,245.14')
     expect(byTestId(root, 'field-advice.snapshot.change_pct')?.textContent).toContain('+11.71%')
     expect(byTestId(root, 'field-advice.snapshot.amplitude_pct')?.textContent).toContain('41.94%')
+    // 快照价是金价：它自己的交易日 / 口径 / 来源必须一起给
+    expect(byTestId(root, 'field-advice.snapshot.as_of')?.textContent).toContain('2026-10-01')
+    expect(byTestId(root, 'field-advice.snapshot.basis_label')?.textContent).toContain('日收盘')
+    expect(byTestId(root, 'field-advice.snapshot.source')?.textContent).toContain('gold_prices 日线')
     expect(byTestId(root, 'strategy-columns')).toBeNull()
   })
 

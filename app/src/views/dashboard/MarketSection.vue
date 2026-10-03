@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import DataTable from '@/components/DataTable.vue'
 import type { Column } from '@/components/dataTable'
+import GoldPriceAsOf from '@/components/GoldPriceAsOf.vue'
 import QuoteBlock from '@/components/QuoteBlock.vue'
 import SectionBlock from '@/components/SectionBlock.vue'
 import StateBlock from '@/components/StateBlock.vue'
@@ -209,6 +210,14 @@ const snapshotRows = computed<SnapshotRow[]>(() => {
         </span>
       </p>
 
+      <!-- 结论行里的数字也必须能回答「这是什么时候的价」。
+           字段级选择器不在这里重复挂：快照表已经逐字段给过了（同一事实一个槽位）。 -->
+      <GoldPriceAsOf
+        :as-of="stats.price_as_of ?? stats.updated_at"
+        :basis-label="stats.price_basis_label"
+        :source="stats.data_source"
+      />
+
       <div class="grid-2">
         <div class="panel">
           <h3 class="panel__title">纽约黄金</h3>
@@ -217,9 +226,16 @@ const snapshotRows = computed<SnapshotRow[]>(() => {
             :value="formatUsd(stats.current_price)"
             :change="stats.window_return"
             :change-note="stats.window_label"
-            :meta="`${stats.price_basis_label || '口径未知'} · 数据来源：${stats.data_source || '未知'} · 数据时间：${displayStamp(stats.price_as_of ?? stats.updated_at) ?? '未知'}`"
             :title="stats.data_source"
-          />
+          >
+            <template #meta>
+              <GoldPriceAsOf
+                :as-of="stats.price_as_of ?? stats.updated_at"
+                :basis-label="stats.price_basis_label"
+                :source="stats.data_source"
+              />
+            </template>
+          </QuoteBlock>
           <div :data-testid="TESTIDS.goldQuote" class="note">
             {{ stats.is_realtime ? '实时报价' : '历史数据' }} · 口径 {{ stats.price_basis_label || '—' }}
           </div>

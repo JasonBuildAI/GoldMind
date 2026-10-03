@@ -264,6 +264,32 @@ Forbidden: using `datetime.now().date()` for "today", `datetime.utcnow()`, or
 depending on the clock when the tests run — this machine is in UTC+8, and many time zone bugs are
 **impossible to catch** here.
 
+### Price basis and refresh time (as-of)
+
+The same "gold price" does not mean the same thing everywhere on the page, so the basis names and
+their Chinese labels are defined exactly once in `app/services/price_basis.py` (`realtime` quote /
+`close` daily close / `quant_basis` quant benchmark). Since 2026-10-03 a second rule applies:
+**a price and its refresh time are always served together, from the same instant**.
+
+- Six places show the international gold price: the sidebar brief, the market section and its quote
+  block, "current price" in today's conclusion, the degraded strategy snapshot, the quant "base
+  price", and the fair-value "market price".
+- The backend exposes each price's **own** as-of: `price_as_of` on `GET /api/gold/stats` (taken from
+  the quote itself); `price_as_of` / `price_basis` / `price_basis_label` / `price_source` on
+  `GET /api/analysis/market-summary-ai` (written together with `current_price` through the same
+  `_apply_price_meta` in **all three response branches** — swapping the number while keeping a stale
+  timestamp is more misleading than showing no time at all); `as_of` / `basis` / `basis_label` /
+  `source` on the degraded investment-advice snapshot (the window's closing price); and the
+  prediction `as_of` plus `price_basis` (the last point of `gold_close`, which the API already had).
+- **When no price is available all four fields are `null`** and the page says "gold price refresh
+  time unknown (not returned by the backend)" — a "just now" conjured from `datetime.now()` or the
+  browser clock is not allowed.
+- The frontend wording is assembled in one component
+  (`app/src/components/GoldPriceAsOf.vue`), referenced by all six places.
+- Guards: `backend/tests/unit/test_price_asof_exposure.py` (the three branches write the same
+  fields, missing values stay null, and basis labels come only from `price_basis`) and
+  `app/src/components/__tests__/GoldPriceAsOf.test.ts`.
+
 ---
 
 ### The query-parameter contract

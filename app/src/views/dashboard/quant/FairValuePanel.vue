@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Column } from '@/components/dataTable'
 import DataTable from '@/components/DataTable.vue'
+import GoldPriceAsOf from '@/components/GoldPriceAsOf.vue'
 import StateBlock from '@/components/StateBlock.vue'
 import { displayStamp, formatPercent, formatShare, formatUsd } from '@/lib/format'
 import type { QuantDecomposition, QuantDecompositionBlock } from '@/services/api'
@@ -41,7 +42,14 @@ const COLUMNS: ReadonlyArray<Column<QuantDecompositionBlock>> = [
 
   <div v-else class="stack stack--lg" :data-testid="TESTIDS.quantFairValue">
     <p class="section__conclusion">
-      市场价 <span class="num">{{ formatUsd(decomposition.market_price) }}</span>，公允价 <span class="num">{{ formatUsd(decomposition.fair_value) }}</span>，偏离 <span :data-testid="field('fair_value.deviation_pct')">{{ decomposition.deviation_pct === null ? '—' : formatPercent(decomposition.deviation_pct * 100) }}</span>；回归样本 <span :data-testid="field('fair_value.samples')">{{ decomposition.samples }}</span> 个， 拟合 R² <span :data-testid="field('fair_value.r2')">{{ num(decomposition.r2) }}</span>。
+      市场价 <span class="num">{{ formatUsd(decomposition.market_price) }}</span>
+      <!-- 这个市场价就是量化基准（gold_close 最后一点）：它的截至日必须跟着它 -->
+      <GoldPriceAsOf
+        :as-of="decomposition.as_of"
+        :basis-label="decomposition.basis_label"
+        as-of-field="fair_value.market_price_as_of"
+      />
+      ，公允价 <span class="num">{{ formatUsd(decomposition.fair_value) }}</span>，偏离 <span :data-testid="field('fair_value.deviation_pct')">{{ decomposition.deviation_pct === null ? '—' : formatPercent(decomposition.deviation_pct * 100) }}</span>；回归样本 <span :data-testid="field('fair_value.samples')">{{ decomposition.samples }}</span> 个， 拟合 R² <span :data-testid="field('fair_value.r2')">{{ num(decomposition.r2) }}</span>。
     </p>
 
     <dl class="metrics">

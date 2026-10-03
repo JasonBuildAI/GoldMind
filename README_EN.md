@@ -641,6 +641,15 @@ this is not one uniform refresh:
   cover long holidays, 62 days for monthly ones to cover publication delays. Observations past
   the cap become NaN **at composition time** (not filled forward and then labelled), so "stale"
   really means excluded.
+- **Wherever a gold price appears, its last refresh time appears with it** (since 2026-10-03).
+  Six places show the international gold price: the sidebar brief, the market section and its quote
+  block, the "current price" in today's conclusion, the degraded strategy snapshot, the quant
+  "base price", and the fair-value "market price". Each one carries that price's **own** as-of,
+  basis and source — the timestamp is a field the backend sends together with the price, never
+  derived from the browser clock. When no price is available all four fields are `null` and the page
+  says "gold price refresh time unknown (not returned by the backend)" rather than inventing a
+  "just now". The wording is assembled in exactly one component
+  (`app/src/components/GoldPriceAsOf.vue`), referenced by all six places.
 - **Observations have a revision ledger; historical panels can be rebuilt.**
   `factor_observations` is append-only: repeating a fetch for the same `(factor_key, obs_date)` is
   idempotent, and a revised value appends a new observation. Any historical verdict can therefore

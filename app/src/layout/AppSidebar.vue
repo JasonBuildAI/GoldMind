@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import GoldPriceAsOf from '@/components/GoldPriceAsOf.vue'
 import { displayStamp, formatNumber, formatPercent, formatUsd, trendOf } from '@/lib/format'
 import { FRESHNESS_BLOCKS, FRESHNESS_STATE_LABEL, useFreshnessStore } from '@/stores/freshness'
 import { useMarketStore } from '@/stores/market'
@@ -71,12 +72,6 @@ const dollar = computed(() => market.dollarRealtime)
 const goldTrend = computed(() => (gold.value ? trendOf(gold.value.window_return) : null))
 const dollarTrend = computed(() => (dollar.value ? trendOf(dollar.value.change_percent) : null))
 
-/** 报价的数据截至时间：两个报价各用各的字段，缺了就不显示这一行。 */
-const goldStamp = computed(() => {
-  const value = gold.value
-  return value ? displayStamp(value.price_as_of ?? value.updated_at) : null
-})
-
 function toneOf(value: number): string {
   return value > 0 ? 'is-up' : value < 0 ? 'is-down' : ''
 }
@@ -145,10 +140,11 @@ function toneOf(value: number): string {
               </dd>
             </div>
           </dl>
-          <p class="brief__meta">
-            {{ gold.price_basis_label || '口径未知' }}<template v-if="goldStamp"> · {{ goldStamp }}</template>
-            <template v-if="gold.data_source"> · {{ gold.data_source }}</template>
-          </p>
+          <GoldPriceAsOf
+            :as-of="gold.price_as_of ?? gold.updated_at"
+            :basis-label="gold.price_basis_label"
+            :source="gold.data_source"
+          />
         </template>
 
         <p v-else-if="market.statsError" class="brief__meta">

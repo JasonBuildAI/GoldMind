@@ -25,6 +25,10 @@ const SUMMARY: MarketSummaryResponse = {
     { institution: '接口返回的机构', target: 5400, probability: '高', timeframe: '2026年底' },
   ],
   current_price: 2690,
+  price_as_of: '2026-10-02T08:00:00',
+  price_basis: 'realtime',
+  price_basis_label: '实时报价',
+  price_source: '接口返回的来源',
   comprehensive_judgment: {
     bullish_summary: '接口返回的看多判断',
     bearish_summary: '接口返回的看空判断',
@@ -92,6 +96,33 @@ describe('Conclusion', () => {
     expect(hasText(root, '$2,690.00')).toBe(true)
   })
 
+  it('当前价格带自己的刷新时间、口径与来源', async () => {
+    // 只给数字不给时间，读者无法判断「$2,690 是刚才的报价，还是昨天的收盘」
+    mocked.getMarketSummary.mockResolvedValue(SUMMARY)
+
+    const { root } = await renderConclusion()
+
+    expect(byTestId(root, 'field-summary.price_as_of')?.textContent).toContain('2026-10-02 08:00')
+    expect(byTestId(root, 'field-summary.price_basis_label')?.textContent).toContain('实时报价')
+    expect(byTestId(root, 'field-summary.price_source')?.textContent).toContain('接口返回的来源')
+  })
+
+  it('金价取不到时如实写「时间未知」，不编一个时间', async () => {
+    mocked.getMarketSummary.mockResolvedValue({
+      ...SUMMARY,
+      current_price: null as unknown as number,
+      price_as_of: null,
+      price_basis: null,
+      price_basis_label: null,
+      price_source: null,
+    })
+
+    const { root } = await renderConclusion()
+
+    expect(byTestId(root, 'field-summary.price_as_of')?.textContent).toContain('时间未知')
+    expect(hasText(root, /后端未返回/)).toBe(true)
+  })
+
   it('机构没有目标价、模型写成 0 时显示「—」，不是 $0.00', async () => {
     // 回归：模型对「暂无目标价」会写 target: 0，Intl 把它渲染成 $0.00 —— 那是
     // 一个并不存在的价格。设计规范要求算不出的字段显示「—」，不填默认值。
@@ -147,6 +178,11 @@ describe('Conclusion', () => {
       market_consensus: [],
       institution_targets: [],
       current_price: 0,
+      // 正在分析：金价与它的时间都还没有 —— 四个字段一起为 null
+      price_as_of: null,
+      price_basis: null,
+      price_basis_label: null,
+      price_source: null,
       comprehensive_judgment: { bullish_summary: '', bearish_summary: '', neutral_summary: '' },
       core_view: '',
       investment_recommendation: '',

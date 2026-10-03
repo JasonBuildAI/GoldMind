@@ -436,6 +436,11 @@ export interface AdvicePriceSnapshot {
   low: number;
   amplitude_pct: number;
   full_window: boolean;
+  /** 快照价自己的交易日 / 口径 / 来源：只给数字读者无法判断「这是哪天的」 */
+  as_of: string | null;
+  basis: string | null;
+  basis_label: string | null;
+  source: string | null;
 }
 
 export interface InvestmentAdviceResponse {
@@ -479,6 +484,14 @@ export interface MarketSummaryResponse {
     timeframe: string;
   }[];
   current_price: number;
+  /**
+   * 当前价的时间 / 口径 / 来源：与 `current_price` 同源同刻写入。
+   * 金价取不到时四个字段一起为 null —— 不编价格，也不编时间。
+   */
+  price_as_of: string | null;
+  price_basis: string | null;
+  price_basis_label: string | null;
+  price_source: string | null;
   comprehensive_judgment: {
     bullish_summary: string;
     bearish_summary: string;
