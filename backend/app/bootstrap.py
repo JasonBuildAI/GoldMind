@@ -100,6 +100,12 @@ MIGRATIONS: tuple[Migration, ...] = (
         entry="apply",
     ),
     Migration(
+        key="news-digest-translation-columns",
+        description="消息板块补中文译文列（title_zh / brief_zh / translated_at / translation_model）",
+        module="scripts.migrate_news_digest_translation",
+        entry="apply",
+    ),
+    Migration(
         key="enum-values-uppercase",
         description="枚举列取值改为与模型一致的大写（仅 MySQL）",
         module="scripts.fix_enum_columns",

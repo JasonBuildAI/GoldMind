@@ -73,6 +73,13 @@ CREATE TABLE IF NOT EXISTS news_digest_items (
     published_at TIMESTAMP NOT NULL,
     fetched_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- 中文译文（叠加在英文原文之上；NULL = 尚未翻译）。
+    -- translation_model 让「换了模型」可判定，translated_at 让
+    -- 「这条中文什么时候生成的」可回答（见 app/models/news_digest.py）。
+    title_zh VARCHAR(500),
+    brief_zh TEXT,
+    translated_at TIMESTAMP,
+    translation_model VARCHAR(100),
     INDEX idx_news_digest_published (published_at),
     -- 去重按 url 查；TEXT 在 MySQL 下必须用前缀索引。
     -- 名字与 app/models/news_digest.py 的 Index 一致，两者由测试守住。

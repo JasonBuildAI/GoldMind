@@ -29,6 +29,24 @@ class NewsDigestItem(Base):
     fetched_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())
 
+    # ------------------------------------------------------------------ #
+    # 中文译文（2026-10-03）
+    #
+    # 来源池全是英文 RSS，读者要自己翻译。这四个字段存**叠加**在英文原文
+    # 之上的中文：`title` / `summary` 永远保留原样，中文只是补充。
+    #
+    # 为什么是四个而不是两个：`translation_model` 让「换了模型」这件事可判定
+    # —— 旧模型产的译文在新模型下可以识别为陈旧并重翻；`translated_at` 让
+    # 页面上「这条中文是什么时候生成的」有据可查（不拿当前时间顶替）。
+    #
+    # 全部可空：NULL 的准确含义就是「还没有译文」，不是「译文是空字符串」。
+    # 页面据此如实显示英文原标题 + 原因，而不是摆一段编出来的中文。
+    # ------------------------------------------------------------------ #
+    title_zh = Column(String(500))
+    brief_zh = Column(Text)
+    translated_at = Column(DateTime)
+    translation_model = Column(String(100))
+
 
 # 去重按 url 查（`WHERE url = ?`），没有索引就是全表扫描。
 # MySQL 下 utf8mb4 的 500 字符索引超长，所以用前缀索引 191；
