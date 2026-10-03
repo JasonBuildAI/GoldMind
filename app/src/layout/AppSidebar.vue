@@ -35,9 +35,12 @@ const DASHBOARD_NAV = [
   { href: './research.html', label: '研究' },
 ]
 
-/** 研究页导航：第一项是回看板（普通链接，没有客户端路由）。 */
+/**
+ * 研究页导航：第一项也是回看板（左栏顶部另有一个显式的返回按钮，
+ * 这里保留一项是为了两个入口的导航结构一致）。
+ */
 const RESEARCH_NAV = [
-  { href: './', label: '看板' },
+  { href: './index.html', label: '看板' },
   { href: '#verdict', label: '裁决' },
   { href: '#forward', label: '前向留出期' },
   { href: '#coverage', label: '覆盖度' },
@@ -79,9 +82,30 @@ function toneOf(value: number): string {
 
 <template>
   <header class="toolbar no-print" :data-testid="TESTIDS.header">
+    <!--
+      返回按钮：研究页是**独立入口**（research.html），没有客户端路由，
+      从它回看板只能靠一个普通链接。之前只在导航里放了「看板」一项，
+      混在一堆锚点中间既不像返回控件、也不显眼 —— 用户反馈「进研究板块以后
+      无法返回主页」。所以这里给一个真正的返回按钮，放在左栏最上面
+      （macOS 里返回控件就在左上角），并且带上明确的箭头与文字。
+      显式写 ./index.html：`./` 与 `./index.html` 在静态服务下等价，
+      但写全文件名在「路径是否以 / 结尾」这类部署差异下没有歧义。
+    -->
+    <a v-if="variant === 'research'" class="toolbar__back" href="./index.html">
+      <span class="toolbar__back-arrow" aria-hidden="true">‹</span>
+      返回看板
+    </a>
+
     <div class="toolbar__row">
       <div class="toolbar__brand">
-        <h1 class="toolbar__name">GoldMind</h1>
+        <!--
+          字标本身也是回主页的链接（macOS 的标准做法：点应用名回主页）。
+          与上面的返回按钮冗余是有意的 —— 返回这件事值得有两个入口，
+          用户反馈过找不到回看板的路。
+        -->
+        <a class="toolbar__home" href="./index.html">
+          <h1 class="toolbar__name">GoldMind</h1>
+        </a>
         <span class="toolbar__sub">
           {{ variant === 'dashboard' ? '黄金市场分析' : '量化研究 · 技能评估' }}
         </span>

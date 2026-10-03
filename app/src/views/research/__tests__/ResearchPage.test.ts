@@ -188,13 +188,47 @@ describe('ResearchPage', () => {
     expect(byTestId(mounted.root, TESTIDS.researchOverview)).toBeNull()
   })
 
-  it('报头有回看板的链接与锚点导航，且每页一个 h1', async () => {
+  it('左栏顶部有一个显式的返回按钮，指向看板入口', async () => {
+    // 回归：研究页是独立入口（research.html），没有客户端路由。之前回看板
+    // 只靠导航里的一个「看板」文字项，混在锚点中间既不像返回控件也不显眼 ——
+    // 用户直接反馈「进研究板块以后无法返回主页」。
+    const { root } = await renderResearch()
+
+    const back = root.querySelector<HTMLAnchorElement>('a.toolbar__back')
+    expect(back, '研究页左栏没有返回按钮').not.toBeNull()
+    expect(back!.textContent).toContain('返回看板')
+    // 显式指向看板入口（./index.html 与 ./ 在静态服务下等价，写全文件名没有歧义）
+    expect(back!.getAttribute('href')).toBe('./index.html')
+    // 返回按钮必须在导航**之前**（macOS 里返回控件在左上角）
+    const nav = root.querySelector('nav')!
+    expect(back!.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('看板入口有返回按钮；看板自己不需要（没有上一级）', async () => {
+    const [{ default: DashboardPage }, { useMarketStore }] = await Promise.all([
+      import('@/views/dashboard/DashboardPage.vue'),
+      import('@/stores/market'),
+    ])
+    const { createPinia } = await import('pinia')
+    const pinia = createPinia()
+    // 关掉轮询：整页测试不该留下定时器
+    useMarketStore(pinia).stats = fixtures.GOLD_STATS
+
+    const mounted = harness.mount(DashboardPage, { pinia, props: { autoPoll: false } })
+    await vi.waitFor(() => {
+      expect(byTestId(mounted.root, TESTIDS.headerNav)).not.toBeNull()
+    })
+    expect(byTestId(mounted.root, TESTIDS.headerNav)).not.toBeNull()
+    expect(mounted.root.querySelector('a.toolbar__back'), '看板不该有返回按钮').toBeNull()
+  })
+
+  it('左栏有回看板的链接与锚点导航，且每页一个 h1', async () => {
     const { root } = await renderResearch()
 
     expect(root.querySelectorAll('h1')).toHaveLength(1)
     const nav = root.querySelector('nav')!
     const back = [...nav.querySelectorAll('a')].find((a) => a.textContent?.includes('看板'))
-    expect(back, '研究页没有回看板的链接').toBeTruthy()
+    expect(back, '研究页导航里没有回看板的链接').toBeTruthy()
     // 锚点全部可达
     const anchors = [...nav.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')]
     const missing = anchors

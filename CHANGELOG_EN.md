@@ -16,6 +16,11 @@ Versioning follows [Semantic Versioning](https://semver.org/); the format follow
 
 ### Changed
 
+- **The research page now has an explicit back button.** It is a separate entry (`research.html`) with no
+  client-side router, so returning to the dashboard used to depend on a single "看板" text item buried
+  among the anchor links — users reported they could not get back to the main page. The top of the sidebar
+  now carries a "‹ 返回看板" button, and on **both** entries the wordmark links home;
+  `ResearchPage.test.ts` guards both.
 - **Layout switched to a two-column shell — left sidebar + content column — filling the whole page.**
   The wordmark, anchor nav, today's brief and data freshness moved out of the top bar into the left
   sidebar (`AppSidebar`: a sticky column, translucent, hairline on its right edge), and the content

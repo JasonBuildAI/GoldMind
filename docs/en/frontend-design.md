@@ -122,7 +122,7 @@ app/src/
 
 | Component | Responsibility | Constraint |
 |---|---|---|
-| `AppSidebar` | Left sidebar: wordmark, nav, and (dashboard only) today's brief and data freshness | `variant` picks dashboard vs research; the whole column is sticky (`pageStructure.test.ts` requires exactly one `<nav>` on the page, so both entries share it) |
+| `AppSidebar` | Left sidebar: wordmark, nav, and (dashboard only) today's brief and data freshness | `variant` picks dashboard vs research; the whole column is sticky (`pageStructure.test.ts` requires exactly one `<nav>` on the page, so both entries share it); the **research page must carry a back button**, and the wordmark links home on both |
 | `SectionBlock` | Section container: anchor, title, one-line note, actions | Title left-aligned; the `verdict` slot holds the "one-line conclusion" |
 | `PanelBlock` | Card / panel: title plus top-right meta | Same level uses `--shadow-1` only; nested panels use `plain` to drop the shadow |
 | `DataTable` | Generic table: column defs, row key, empty state, fixed source column | Horizontal scroll on narrow screens; cells prefer a same-named scoped slot |
@@ -186,6 +186,11 @@ Quote polling ──stores/market (30s, paused while hidden)──► market / d
 - The sidebar is a fixed `--sidebar-width` (300px), **`position: sticky` as a whole column** and independently
   scrollable; its background is one step deeper than the content surface (`--sidebar-bg`) with a hairline on its
   right edge.
+- **Getting back**: the research page is a separate entry (`research.html`) with no client-side router, so returning
+  to the dashboard can only be a plain link. The research sidebar therefore carries an explicit **back button**
+  (`a.toolbar__back`, "‹ 返回看板", pointing at `./index.html`), and on **both** entries the wordmark itself links
+  home (the macOS convention). Returning deserves two entry points: leaving "看板" as just another nav item lost
+  people (`ResearchPage.test.ts` guards this).
 - The content column is `grid-template-columns: minmax(0, 1fr)` and takes every remaining pixel — the body text is
   **no longer centred and narrowed to 1180px**. Readability is guaranteed by each section's own `--measure` (68ch)
   line-length cap instead of by squeezing the whole page, so tables and charts fit on one screen on a wide display.

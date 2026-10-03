@@ -46,7 +46,16 @@ test.describe('GoldMind 研究页端到端', () => {
     await page.goto('/research.html')
 
     await expect(page.getByRole('heading', { level: 1, name: 'GoldMind' })).toBeVisible()
-    await expect(page.getByRole('link', { name: '看板' })).toBeVisible()
+
+    // 返回看板的入口有两个，而且必须都能用：
+    //   1) 左栏顶部的返回按钮（可访问名「返回看板」）
+    //   2) 导航里的「看板」一项
+    // 注意 `name: '看板'` 是**子串**匹配，会同时命中上面那个按钮 —— 而且按钮在
+    // 导航之前，所以 `.first()` 拿到的正是返回按钮。两个都断言，不再只查一个。
+    await expect(page.getByRole('link', { name: '看板' }).first()).toBeVisible()
+    await expect(
+      page.getByTestId(TESTIDS.headerNav).getByRole('link', { name: '看板', exact: true }),
+    ).toBeVisible()
     for (const label of RESEARCH_NAV) {
       await expect(page.getByRole('link', { name: label, exact: true })).toBeVisible()
     }
