@@ -3,8 +3,8 @@
 > 🌐 [中文](../ARCHITECTURE.md) | **English**
 
 This document describes the **current implementation**. What the product should do is in
-[`00-产品方向.md`](./00-产品方向.md), commands and configuration are in
-[`../README.md`](../README.md), and the API specification is in [`API.md`](./API.md).
+[`00-产品方向.md`](../00-产品方向.md), commands and configuration are in
+[`README.md`](../../README.md), and the API specification is in [`api.md`](./api.md).
 
 > This document used to be a 765-line "enterprise architecture whitepaper", much of which
 > (Redis, message bus, WebSocket, K8s/Istio, WAF, auth middleware, RAG engine) **does not exist**
