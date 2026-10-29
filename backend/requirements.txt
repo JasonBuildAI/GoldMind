@@ -20,22 +20,22 @@
 #   pandas + numpy + beautifulsoup4 (yfinance)
 
 # FastAPI and Server
-fastapi==0.115.0
-uvicorn[standard]==0.22.0
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
 python-multipart==0.0.32
 
 # Database
-sqlalchemy==2.1.1
+sqlalchemy==2.1.6
 pymysql==1.2.3
 
 # LLM (all clients are built by app/services/llm_provider.py)
-langchain-core==1.2.7
-langchain-openai==1.1.6
-openai==2.54.0
+langchain-core==1.7.0
+langchain-openai==1.7.2
+openai==3.38.0
 
 # Validation
-pydantic==2.10.0
-pydantic-settings==2.12.0
+pydantic==2.14.1
+pydantic-settings==2.16.1
 
 # External Data
 yfinance==1.7.0
@@ -44,7 +44,7 @@ feedparser==6.0.14
 # GPR official daily index is a legacy .xls workbook; xlrd 2.x reads exactly
 # that format (and nothing else), so it stays pinned alongside the other
 # external-data clients.
-xlrd==2.0.1
+xlrd==2.0.2
 
 # Scheduler
 apscheduler==3.11.3
@@ -52,10 +52,10 @@ apscheduler==3.11.3
 # and without it Asia/Shanghai cannot be loaded. Locally it arrives via
 # pandas/tzlocal, but the production container installs only this file, so it
 # has to be listed explicitly.
-tzdata==2026.4
+tzdata==2026.5
 
 # Utilities
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 loguru==0.7.3
 # [socks] pulls in socksio. If the host sets a SOCKS proxy, httpx raises while
 # building a client without it, which makes every LLM call fail (see LLM_TRUST_ENV).
