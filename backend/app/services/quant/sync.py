@@ -338,9 +338,9 @@ def _apply_local_price_fallbacks(
 
 
 def _digest_count_series(db: Session) -> pd.Series:
-    """消息板块每日入库条数（高权威，抓取时已按黄金/货币相关性过滤）。
+    r"""消息板块每日入库条数（高权威，抓取时已按黄金/货币相关性过滤）。
 
-    时间口径：\`published_at\` 在抓取时已换算进 \`SCHEDULER_TIMEZONE\`（红线五），
+    时间口径：`published_at` 在抓取时已换算进 `SCHEDULER_TIMEZONE`（红线五），
     这里只按日期聚合，不再做时区运算。
     """
     days = [

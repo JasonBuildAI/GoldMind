@@ -1,4 +1,4 @@
-"""\`GET /api/gold/sources/status\` 的形状与落库联动。"""
+r"""`GET /api/gold/sources/status` 的形状与落库联动。"""
 from __future__ import annotations
 
 import pytest
