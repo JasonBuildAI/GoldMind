@@ -32,7 +32,29 @@ const MAX_RETRY_DELAY_MS = 10000;
 
 type RetryConfig = AxiosRequestConfig & { retry?: number };
 
-/** 429 优先按 Retry-After（秒）等待；普通失败走指数退避 + 抖动。 */
+/**
+ * 把 Retry-After 解析成毫秒。RFC 9110 允许两种形态：秒数，或 HTTP-date。
+ * HTTP-date 要换算成「距现在还有多久」，不能直接 Number()——那是 NaN。
+ */
+function parseRetryAfterMs(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null
+
+  const asNumber = Number(raw)
+  if (Number.isFinite(asNumber)) {
+    return asNumber > 0 ? asNumber * 1000 : null
+  }
+
+  if (typeof raw === 'string') {
+    const at = Date.parse(raw)
+    if (Number.isFinite(at)) {
+      // 时刻已经过去：服务端让我们重试，给最小等待即可
+      return Math.max(at - Date.now(), 1000)
+    }
+  }
+  return null
+}
+
+/** 429 优先按 Retry-After（秒或 HTTP-date）等待；普通失败走指数退避 + 抖动。 */
 function expectedRetryDelayMs(error: {
   response?: {
     status?: number;
@@ -46,9 +68,9 @@ function expectedRetryDelayMs(error: {
       headers['retry-after'] ??
       headers['Retry-After'] ??
       error.response?.data?.retry_after;
-    const seconds = Number(raw);
-    if (Number.isFinite(seconds) && seconds > 0) {
-      return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
+    const requested = parseRetryAfterMs(raw);
+    if (requested !== null) {
+      return Math.min(requested, MAX_RETRY_DELAY_MS);
     }
   }
   const backoff = Math.min(BASE_RETRY_DELAY_MS * 2 ** (retryNumber - 1), MAX_RETRY_DELAY_MS);
