@@ -93,7 +93,10 @@ export function niceTicks(domain: [number, number], count = 5): number[] {
  * 数据点少于 count 时逐个返回，避免出现重复的刻度标签。
  */
 export function evenIndices(length: number, count: number): number[] {
-  if (length <= 0) return []
+  if (length <= 0 || count <= 0) return []
+  // 只取一个刻度时 step = (length - 1) / 0 = Infinity，
+  // Math.round(0 * Infinity) 得 NaN —— 横轴标签会拿到不存在的坐标。
+  if (count === 1) return [0]
   if (length <= count) return Array.from({ length }, (_, index) => index)
   const step = (length - 1) / (count - 1)
   return Array.from({ length: count }, (_, index) => Math.round(index * step))
