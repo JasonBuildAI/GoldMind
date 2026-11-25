@@ -46,6 +46,20 @@ describe('formatPercent', () => {
     expect(formatPercent(-0.5)).toBe('\u22120.50%')
     expect(formatPercent(0)).toBe('+0.00%')
   })
+
+  it('舍入到 0 的负数不带减号，不出现「−0.00%」', () => {
+    // 回归：原实现先按原始值取符号再取绝对值格式化，
+    // -0.001 会得到「−0.00%」—— 符号和数字自相矛盾。
+    expect(formatPercent(-0.001)).toBe('+0.00%')
+    expect(formatPercent(-0.004, 2)).toBe('+0.00%')
+    expect(formatPercent(-0.04, 1)).toBe('+0.0%')
+  })
+
+  it('正负两侧的进位与符号一致', () => {
+    expect(formatPercent(0.004)).toBe('+0.00%')
+    expect(formatPercent(-0.006)).toBe('\u22120.01%')
+    expect(formatPercent(-1.005, 1)).toBe('\u22121.0%')
+  })
 })
 
 describe('trendOf', () => {
