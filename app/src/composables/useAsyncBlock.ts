@@ -26,7 +26,13 @@ export function useAsyncBlock<T>(
   const refreshing = ref(false)
   const error = ref<string | null>(null)
 
+  // 每次 load 领一个序号；只有最新那次的结果允许写回状态。
+  // 首屏加载与「重新分析」可能同时在飞，慢的那次后回来会让页面
+  // 把旧结果显示成新的（看起来像「点了没反应」）。
+  let latestToken = 0
+
   async function load(refresh = false): Promise<void> {
+    const token = ++latestToken
     if (refresh) {
       refreshing.value = true
     } else {
@@ -35,13 +41,19 @@ export function useAsyncBlock<T>(
     error.value = null
 
     try {
-      data.value = await fetcher(refresh)
+      const result = await fetcher(refresh)
+      if (token !== latestToken) return
+      data.value = result
     } catch (err) {
+      if (token !== latestToken) return
       error.value = describeApiError(err, options)
       data.value = null
     } finally {
-      loading.value = false
-      refreshing.value = false
+      // 过期的请求不能把仍在飞的新请求的状态关掉
+      if (token === latestToken) {
+        loading.value = false
+        refreshing.value = false
+      }
     }
   }
 
