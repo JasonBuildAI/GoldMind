@@ -41,8 +41,11 @@ export function formatShare(value: number, digits = 1): string {
 
 /** 涨跌幅 3.852 -> "+3.85%"；-0.5 -> "−0.50%"（用真正的减号，不是连字符） */
 export function formatPercent(value: number, digits = 2): string {
-  const sign = value >= 0 ? '+' : '\u2212'
-  return `${sign}${Math.abs(value).toFixed(digits)}%`
+  const body = Math.abs(value).toFixed(digits)
+  // 符号要跟着「显示出来的数」走：-0.001 舍入后是 0.00，
+  // 再打减号就成了「−0.00%」，符号和数字自相矛盾。
+  const sign = value < 0 && Number(body) !== 0 ? '\u2212' : '+'
+  return `${sign}${body}%`
 }
 
 /**
