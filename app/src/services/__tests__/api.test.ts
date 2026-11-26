@@ -224,6 +224,50 @@ describe('响应重试拦截器', () => {
     expect(attempts).toBe(2)
   })
 
+  it('429 的 Retry-After 是 HTTP-date 时按剩余时间等待', async () => {
+    // 回归：HTTP-date 形态（RFC 9110 允许）被 Number() 解析成 NaN，
+    // 于是退回抖动退避，可能比服务端给的时刻早得多再去撞限流窗口。
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-25T08:00:00Z'))
+    let attempts = 0
+    api.defaults.adapter = async (config) => {
+      attempts += 1
+      if (attempts === 1) {
+        return httpError(config, 429, {
+          headers: { 'retry-after': 'Wed, 25 Nov 2026 08:00:03 GMT' },
+        })
+      }
+      return ok(config, { recovered: true }) as never
+    }
+
+    const pending = goldApi.getStats()
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(attempts).toBe(1)
+    await vi.advanceTimersByTimeAsync(10)
+    await expect(pending).resolves.toEqual({ recovered: true })
+    expect(attempts).toBe(2)
+  })
+
+  it('429 的 Retry-After 是已经过去的 HTTP-date 时按最短等待处理', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-25T08:00:00Z'))
+    let attempts = 0
+    api.defaults.adapter = async (config) => {
+      attempts += 1
+      if (attempts === 1) {
+        return httpError(config, 429, {
+          headers: { 'retry-after': 'Wed, 25 Nov 2026 07:59:00 GMT' },
+        })
+      }
+      return ok(config, { recovered: true }) as never
+    }
+
+    const pending = goldApi.getStats()
+    await vi.advanceTimersByTimeAsync(1000)
+    await expect(pending).resolves.toEqual({ recovered: true })
+    expect(attempts).toBe(2)
+  })
+
   it('429 没有 Retry-After 时也按 body 的 retry_after 等待', async () => {
     vi.useFakeTimers()
     let attempts = 0
