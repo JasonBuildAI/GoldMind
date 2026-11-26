@@ -56,6 +56,39 @@ def test_retry_after_is_within_window():
 
 
 @pytest.mark.unit
+def test_retry_after_never_exceeds_the_window():
+    """回归：``retry_after`` 可能大于窗口长度，与 ``Retry-After`` 语义矛盾。
+
+    计算式是 ``window - (now - oldest)``，只要 ``now`` 比最早那条记录还早
+    （时钟回拨、跨进程共享记录、测试注入时间），差值就会超过整个窗口，
+    客户端于是被要求等一段「比窗口还长」的时间。
+    """
+    limiter = SlidingWindowRateLimiter(limit=1, window_seconds=30)
+    limiter.allow("ip", now=100.0)
+
+    # 时钟回拨：记录来自「未来」
+    allowed, retry_after = limiter.allow("ip", now=0.0)
+
+    assert allowed is False
+    assert 1 <= retry_after <= 30
+
+
+@pytest.mark.unit
+def test_retry_after_is_always_a_strictly_positive_int_within_window():
+    limiter = SlidingWindowRateLimiter(limit=2, window_seconds=10)
+    limiter.allow("ip", now=0.0)
+    limiter.allow("ip", now=9.999)
+
+    for now in (9.999, 10.0, 0.0, -50.0):
+        allowed, retry_after = limiter.allow("ip", now=now)
+        if allowed:
+            assert retry_after == 0
+            continue
+        assert isinstance(retry_after, int)
+        assert 1 <= retry_after <= 10
+
+
+@pytest.mark.unit
 def test_memory_does_not_grow_without_bound():
     """回归：原实现从不删除 IP 键，长期运行内存无界增长。
 

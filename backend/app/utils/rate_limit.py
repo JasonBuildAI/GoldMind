@@ -52,8 +52,12 @@ class SlidingWindowRateLimiter:
             if len(timestamps) >= self.limit:
                 # 保留窗口内的记录，供后续请求继续判断
                 self._records[key] = timestamps
-                oldest = timestamps[0]
-                retry_after = max(1, int(self.window - (current - oldest)) + 1)
+                # 剩余时间必须落在 [1, window]。若 now 早于最旧记录（时钟回拨、
+                # 跨进程共享记录、测试注入时间），差值会超过整个窗口，
+                # 客户端就会被告知要等一段比窗口还长的时间。
+                oldest = min(timestamps)
+                remaining = self.window - (current - oldest)
+                retry_after = min(self.window, max(1, int(remaining) + 1))
                 return False, retry_after
 
             timestamps.append(current)
